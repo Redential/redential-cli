@@ -82,13 +82,18 @@ export function getRootCommitSha(repoPath: string): string {
   return git(repoPath, ["rev-list", "--max-parents=0", "HEAD"]).trim().split("\n")[0];
 }
 
-export function getRemoteHostType(repoPath: string): RepoInfo["host_type"] {
-  let url: string;
+/** Raw `origin` remote URL, read purely from local git config — null if there's none. */
+export function getRemoteUrl(repoPath: string): string | null {
   try {
-    url = git(repoPath, ["remote", "get-url", "origin"]).trim();
+    return git(repoPath, ["remote", "get-url", "origin"]).trim();
   } catch {
-    return "none";
+    return null;
   }
+}
+
+export function getRemoteHostType(repoPath: string): RepoInfo["host_type"] {
+  const url = getRemoteUrl(repoPath);
+  if (!url) return "none";
   if (/github\.com/.test(url)) return "github";
   if (/gitlab\.com/.test(url)) return "gitlab";
   if (/bitbucket\.org/.test(url)) return "bitbucket";

@@ -48,8 +48,14 @@ schema, (3) entrada en docs/schema.md y CHANGELOG.md.
   + doc en docs/ que explique cómo funciona.
 - Cambios al schema del bundle = major o minor bump según compatibilidad.
 - El comando `scan` SIEMPRE imprime el JSON exacto antes de cualquier submit.
-- Si el remote del repo es accesible públicamente, `scan` sugiere conectar
-  la GitHub App en vez de escanear (guardrail anti-canibalización).
+- Si el remote del repo parece estar en un host público conocido
+  (github.com/gitlab.com/bitbucket.org), `scan` sugiere conectar la
+  GitHub App como alternativa (guardrail anti-canibalización) — pero SIN
+  bloquear el escaneo: host conocido != público de verdad, y sin red no
+  se puede distinguir. El caso de uso PRINCIPAL del CLI es justamente un
+  repo privado de empleador hosteado en github.com; bloquear ahí rompería
+  el producto. La verificación real de visibilidad queda para `submit`
+  (que sí tiene red).
 
 ## Límites para agentes
 

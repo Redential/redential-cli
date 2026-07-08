@@ -2,8 +2,8 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { Command } from "commander";
-import { runScan, listAuthors, ScanError } from "./scan.js";
-import { promptAuthors, promptConfirmAttestation } from "./prompt.js";
+import { ScanError } from "./errors.js";
+import { executeScanCommand } from "./scan-command.js";
 
 function getToolVersion(): string {
   const pkgUrl = new URL("../package.json", import.meta.url);
@@ -34,24 +34,13 @@ program
     false
   )
   .action(async (options: { repo: string; author: string[]; yes: boolean }) => {
-    const repoPath = resolve(options.repo);
     try {
-      let authors = options.author;
-      if (authors.length === 0) {
-        const candidates = listAuthors(repoPath);
-        if (candidates.length === 0) {
-          throw new ScanError("This repository has no commits yet — nothing to scan.");
-        }
-        authors = await promptAuthors(candidates);
-      }
-
-      let confirmed = options.yes;
-      if (!confirmed) {
-        confirmed = await promptConfirmAttestation();
-      }
-
-      const bundle = runScan({ repoPath, authors, confirmed, toolVersion: getToolVersion() });
-      console.log(JSON.stringify(bundle, null, 2));
+      await executeScanCommand({
+        repoPath: resolve(options.repo),
+        author: options.author,
+        yes: options.yes,
+        toolVersion: getToolVersion(),
+      });
     } catch (err) {
       if (err instanceof ScanError) {
         console.error(`Error: ${err.message}`);

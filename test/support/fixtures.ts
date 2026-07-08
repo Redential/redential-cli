@@ -98,6 +98,11 @@ export function setupSshSigningWithMismatchedTrust(dir: string, signerEmail: str
   run(dir, ["config", "gpg.ssh.allowedSignersFile", allowedSignersPath]);
 }
 
+/** Purely local git config — never dials out, no reachability is implied or checked. */
+export function setRemote(dir: string, url: string): void {
+  run(dir, ["remote", "add", "origin", url]);
+}
+
 export function cleanup(dir: string): void {
   rmSync(dir, { recursive: true, force: true });
 }

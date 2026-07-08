@@ -1,5 +1,5 @@
 import { createInterface, type Interface } from "node:readline/promises";
-import { ScanError } from "./scan.js";
+import { ScanError } from "./errors.js";
 
 export interface AuthorCandidate {
   email: string;

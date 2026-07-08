@@ -4,9 +4,11 @@ import { saltedHash } from "./hash.js";
 import { getOrCreateSalt } from "./salt.js";
 import { merkleRoot } from "./merkle.js";
 import { categorize } from "./categorize.js";
+import { assertNoSecrets } from "./secret-scan.js";
 import type { Bundle, CategoryName, LanguageShare, CategoryShare } from "./types.js";
 
-export class ScanError extends Error {}
+export { ScanError } from "./errors.js";
+import { ScanError } from "./errors.js";
 
 export interface AuthorCandidate {
   email: string;
@@ -116,6 +118,12 @@ export function runScan(opts: ScanOptions): Bundle {
     integrity: { merkle_root: merkleRoot(userCommits.map((c) => c.sha)), algorithm: "sha256" },
     attestation: { authorized_confirmation: true, confirmed_at: now.toISOString() },
   };
+
+  // Final gate before the bundle reaches any caller (scan's stdout, a
+  // future submit): the bundle's fields are all structurally bounded today
+  // and can't carry a secret, but this is the regression guard for the
+  // day a bug or a new field lets one through.
+  assertNoSecrets(JSON.stringify(bundle));
 
   return bundle;
 }
