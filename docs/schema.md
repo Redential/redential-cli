@@ -57,6 +57,32 @@ survives, the path does not. `ai-workflow` detects agent-assisted
 development signals (Co-Authored-By trailers, presence of agent config
 files) as counts/booleans only.
 
+## `detected_skills`
+
+Skills detected from the user's commits, e.g.:
+
+```json
+{ "slug": "payments/stripe", "commit_count": 12,
+  "first_seen": "2024-03-01T10:00:00Z", "last_seen": "2025-11-20T18:30:00Z" }
+```
+
+How detection works, and why it is safe to have in the bundle:
+
+- **Local reads, bounded output.** Detection reads diff contents via
+  `git show`/`git diff` — on the user's machine only, with ZERO network
+  calls, no LLMs — and matches them against deterministic signatures
+  (`signatures/*.json` in this repo: imports, config files, per-library API
+  patterns). See principle 3 ("Bounded output") in
+  [principles.md](principles.md).
+- **Closed vocabulary.** `slug` MUST be one of the entries in
+  [`taxonomy.json`](../taxonomy.json) (public, versioned in this repo). Any
+  slug outside that list makes the bundle invalid. The taxonomy is the
+  complete, enumerable universe of what detection can ever report.
+- **No evidence payload.** Per skill, only `commit_count`, `first_seen` and
+  `last_seen` — never the matched lines, file names, or any excerpt.
+- May be an empty array (no signatures matched); the field is always
+  present.
+
 ## `ownership`
 
 `user_commit_ratio` — the user's share of total commits. Aggregate only.
@@ -74,8 +100,9 @@ and when. The confirmation is part of the payload, not just a UI gate.
 
 ## What is deliberately absent
 
-No source code. No diffs. No file or directory names. No commit messages.
-No other contributors' names or emails. No remote URLs. No branch names.
-No secrets (a secret-scan runs over the serialized payload and blocks on
-match). If you need one of these for a feature, the answer is no — redesign
-the feature.
+No source code. No diffs (they are read locally for skill detection, but
+never leave the machine — only closed-vocabulary slugs do). No file or
+directory names. No commit messages. No other contributors' names or emails.
+No remote URLs. No branch names. No secrets (a secret-scan runs over the
+serialized payload and blocks on match). If you need one of these for a
+feature, the answer is no — redesign the feature.

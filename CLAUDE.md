@@ -53,6 +53,15 @@ schema, (3) entrada en docs/schema.md y CHANGELOG.md.
 
 ## Límites para agentes
 
+- REGLA INVIOLABLE — cero red en scan: `scan` no hace NINGUNA llamada de
+  red. La detección de skills es matching determinístico de diffs (leídos
+  localmente con `git show`/`git diff`) contra `signatures/*.json` (base de
+  firmas versionada en este repo: imports, config files, patrones de API
+  por librería). Nada de LLMs ni inferencia remota, en ninguna variante.
+- REGLA INVIOLABLE — vocabulario cerrado: el bundle solo admite skill slugs
+  presentes en `taxonomy.json` (público, en este repo). Un slug fuera de la
+  lista invalida el bundle. Slugs nuevos entran por PR a `taxonomy.json`,
+  jamás hardcodeados en el CLI.
 - Nunca crear archivos con secretos ni valores de ejemplo que parezcan
   reales (usar `xxx-EXAMPLE-xxx`).
 - Nunca agregar telemetría, analytics, ni llamadas de red fuera de

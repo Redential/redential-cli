@@ -8,7 +8,7 @@
   "required": [
     "schema_version", "runner", "tool_version", "created_at",
     "repo", "identity", "commits", "signed", "languages",
-    "categories", "ownership", "integrity", "attestation"
+    "categories", "detected_skills", "ownership", "integrity", "attestation"
   ],
   "properties": {
     "schema_version": { "const": "1.0.0" },
@@ -100,6 +100,25 @@
           },
           "commit_count": { "type": "integer", "minimum": 0 },
           "churn_share": { "type": "number", "minimum": 0, "maximum": 1 }
+        }
+      }
+    },
+    "detected_skills": {
+      "type": "array",
+      "description": "Skills detected LOCALLY by deterministic signature matching (signatures/*.json) over diff contents. Zero network, no LLMs. Closed vocabulary: every slug MUST exist in this repo's public taxonomy.json — a slug outside that list makes the bundle invalid (enforced by the CLI validator on top of this schema). May be empty.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["slug", "commit_count", "first_seen", "last_seen"],
+        "properties": {
+          "slug": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(-[a-z0-9]+)*/[a-z0-9]+(-[a-z0-9]+)*$",
+            "description": "Skill slug from taxonomy.json, e.g. \"payments/stripe\". The pattern bounds the shape; membership in taxonomy.json is validated separately and is mandatory."
+          },
+          "commit_count": { "type": "integer", "minimum": 1 },
+          "first_seen": { "type": "string", "format": "date-time" },
+          "last_seen": { "type": "string", "format": "date-time" }
         }
       }
     },
