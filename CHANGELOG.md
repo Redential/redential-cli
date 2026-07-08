@@ -18,6 +18,17 @@ always bump at least minor; breaking schema changes bump major.
 - Initial `taxonomy.json`: the closed public vocabulary of skill slugs. A
   slug outside this list invalidates the bundle. Placeholder set (~38
   slugs), to be expanded.
+- `redential scan`: first working CLI command. Reads local git history and
+  prints a proof bundle validated against `schema/bundle.v1.json`
+  (`detected_skills` stays `[]` until signature matching lands). Interactive
+  author-identity selection and authorization confirmation by default;
+  `--author <email>` (repeatable) and `--yes` for non-interactive use — kept
+  as two separate flags on purpose, since one answers "which emails are
+  mine" and the other "I'm authorized to scan this repo". See
+  [docs/scan.md](docs/scan.md). TypeScript, ESM, zero dependencies beyond
+  `commander` (`vitest` for tests) — no `@types/node` either; `src/`
+  ships its own minimal ambient Node type shims to keep the dependency
+  surface exactly at what CLAUDE.md permits.
 
 ### Changed
 - Principle 3 renamed from "Metadata-only" to "Bounded output": the CLI DOES

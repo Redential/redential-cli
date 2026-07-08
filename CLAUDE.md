@@ -71,3 +71,11 @@ schema, (3) entrada en docs/schema.md y CHANGELOG.md.
 - El repo redence puede estar montado como contexto de LECTURA. JAMÁS copiar
   a este repo (que es público) código, paths, URLs internas o convenciones
   que revelen arquitectura de redence.
+- Patrón executor/advisor: antes de arrancar un hito, presentale el plan al
+  subagent `advisor` y aplicá su respuesta. Si fallaste 2 veces el mismo
+  problema, consultalo antes del tercer intento. No lo consultes para
+  trabajo rutinario: es caro a propósito.
+- Gate de cierre: un hito NO está terminado hasta que el subagent
+  `reviewer` devuelva "VERDICT: APPROVED". Si devuelve CHANGES REQUIRED,
+  implementá los cambios y volvé a someterlo. El commit va después de la
+  aprobación, nunca antes.

@@ -44,6 +44,22 @@ Count and ratio of cryptographically signed commits (GPG/SSH/x509). The
 strongest local signal, because signatures cannot be forged retroactively
 without the key.
 
+A commit counts as signed only when git reports its signature status
+(`%G?`) as `G` — a good signature that verifies against a known key. Every
+other status is treated as unsigned, deliberately:
+
+- `U` (good signature, but the key isn't trusted/matched) and `E` (can't be
+  checked, e.g. no matching key available) mean the crypto operation itself
+  never actually confirmed anything — the raw signature bytes can be
+  present in the commit object without git ever having validated them.
+- `B` (bad signature) means the signature explicitly failed verification.
+- `X`/`Y`/`R` (expired signature / expired key / revoked key) mean the
+  signature was valid under conditions that no longer hold.
+
+Counting any of these as "signed" would let a fabricated or unverifiable
+signature masquerade as a strong trust signal. `G` is the only status where
+git has actually verified the signature against a key it recognizes.
+
 ## `languages`
 
 Share of churn by file EXTENSION only (`.ts`, `.py`). Never file names.
