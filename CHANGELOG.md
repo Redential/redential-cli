@@ -7,6 +7,20 @@ always bump at least minor; breaking schema changes bump major.
 
 ## [Unreleased]
 
+### Changed
+- `redential login` now makes a best-effort attempt to open
+  `verification_uri` in the default browser after printing it, instead of
+  only printing it — a deliberate reversal of the earlier design ("the CLI
+  itself never opens one"): most device-flow CLIs (`gh auth login`,
+  `vercel login`) auto-open, and the printed URL/code remain as the
+  fallback for any failure (headless/SSH/no browser). Implemented with
+  `node:child_process.spawn` only — no new dependency, no shell string on
+  any platform (Windows uses `rundll32 url.dll,FileProtocolHandler` instead
+  of `cmd /c start`, which can be split into a second command by a legal
+  URL character like `&`). `verification_uri` is server-controlled, so it's
+  validated as `http`/`https` before ever reaching a native opener. See
+  `docs/login-submit.md`.
+
 ### Fixed
 - `redential login`: polling `/api/cli/device/token` no longer treats
   `authorization_pending`/`slow_down` as a fatal network failure. The real

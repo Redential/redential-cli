@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import { AuthError } from "./errors.js";
 import { getSiteUrl } from "./config.js";
 import { saveCredentials } from "./credentials.js";
@@ -32,9 +33,66 @@ export interface LoginOptions {
   log?: (message: string) => void;
   // Injectable so tests don't have to wait out real polling intervals.
   sleepFn?: (ms: number) => Promise<void>;
+  // Injectable so tests don't spawn a real browser process.
+  openFn?: (url: string) => void;
 }
 
 const defaultSleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Best-effort auto-open of verification_uri in the default browser — never
+ * fatal, never blocks login: the printed URL/code are the fallback for any
+ * failure here (headless box, SSH session, unknown platform, no browser).
+ * `verification_uri` comes from the server's JSON response, so it's treated
+ * as untrusted input: only http/https is ever handed to a native opener
+ * (never file://, an app-custom scheme, etc.), and the re-serialized
+ * `URL#href` is passed — never the raw string — so it can't carry stray
+ * whitespace/quotes into the child process's argv.
+ *
+ * Uses `spawn`, never `exec`/a shell string: the URL is always its own argv
+ * element, so a URL crafted with shell metacharacters can't inject a second
+ * command. Windows is the one platform where even that isn't enough — `cmd
+ * /c start` re-parses the command line, and a legal URL character like `&`
+ * would split it into a second command — so win32 shells out to
+ * `rundll32 url.dll,FileProtocolHandler` instead, which never touches a
+ * shell at all. `detached` + `unref` + `stdio: "ignore"` keep the opener
+ * from holding the CLI's event loop open or inheriting its file
+ * descriptors; the `error` listener is required because `spawn` emits
+ * `error` asynchronously on ENOENT (missing `open`/`xdg-open`/`rundll32`) —
+ * without a listener that's an unhandled `error` event that crashes the
+ * whole process.
+ */
+function openBrowser(url: string): void {
+  let target: string;
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return;
+    target = parsed.href;
+  } catch {
+    return;
+  }
+
+  let command: string;
+  let args: string[];
+  if (process.platform === "darwin") {
+    command = "open";
+    args = [target];
+  } else if (process.platform === "win32") {
+    command = "rundll32";
+    args = ["url.dll,FileProtocolHandler", target];
+  } else {
+    command = "xdg-open";
+    args = [target];
+  }
+
+  try {
+    const child = spawn(command, args, { detached: true, stdio: "ignore" });
+    child.on("error", () => {});
+    child.unref();
+  } catch {
+    // Synchronous spawn failures (e.g. EACCES) are equally non-fatal.
+  }
+}
 
 /**
  * RFC 8628-shaped device authorization grant. Nothing on the server side of
@@ -45,11 +103,24 @@ const defaultSleep = (ms: number): Promise<void> => new Promise((resolve) => set
 export async function runLogin(opts: LoginOptions = {}): Promise<void> {
   const log = opts.log ?? console.log;
   const sleep = opts.sleepFn ?? defaultSleep;
+  const open = opts.openFn ?? openBrowser;
   const siteUrl = getSiteUrl();
 
   const auth = await requestDeviceAuthorization(siteUrl);
   log(`First, go to: ${auth.verification_uri}`);
   log(`Then enter this code: ${auth.user_code}`);
+  // Printed above first, so the URL/code are on screen even if the browser
+  // steals focus or auto-open silently does nothing. Guarded here too, not
+  // just inside the default openBrowser: an injected openFn (test or
+  // future caller) must never be able to fail login either — including one
+  // that returns a rejecting promise, which a synchronous try/catch alone
+  // wouldn't catch (openFn's type is synchronous, but nothing stops a
+  // caller from assigning an async function to it).
+  try {
+    void Promise.resolve(open(auth.verification_uri)).catch(() => {});
+  } catch {
+    // Auto-open is a convenience, never load-bearing.
+  }
   log("Waiting for confirmation...");
 
   let intervalMs = Math.max(auth.interval, 1) * 1000;

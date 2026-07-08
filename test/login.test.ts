@@ -26,6 +26,10 @@ function tempConfigDir(): string {
 }
 
 const instantSleep = () => Promise.resolve();
+// Every test but the two that specifically exercise openFn injects this —
+// without it, the default openBrowser would actually shell out and pop a
+// real browser window/tab for the mocked verification_uri on every test run.
+const noOpen = () => {};
 
 describe("runLogin (device flow against a mocked local server)", () => {
   it("polls until confirmed, then stores a 0600 credentials file scoped to the site", async () => {
@@ -58,7 +62,7 @@ describe("runLogin (device flow against a mocked local server)", () => {
 
     const configDir = tempConfigDir();
     const logs: string[] = [];
-    await runLogin({ configDir, log: (m) => logs.push(m), sleepFn: instantSleep });
+    await runLogin({ configDir, log: (m) => logs.push(m), sleepFn: instantSleep, openFn: noOpen });
 
     expect(pollCount).toBe(2);
     expect(logs.some((l) => l.includes("ABCD-1234"))).toBe(true);
@@ -89,7 +93,7 @@ describe("runLogin (device flow against a mocked local server)", () => {
     process.env.REDENTIAL_SITE_URL = server.url;
 
     const configDir = tempConfigDir();
-    await runLogin({ configDir, log: () => {}, sleepFn: instantSleep });
+    await runLogin({ configDir, log: () => {}, sleepFn: instantSleep, openFn: noOpen });
     expect(pollCount).toBe(2);
   });
 
@@ -107,7 +111,9 @@ describe("runLogin (device flow against a mocked local server)", () => {
     process.env.REDENTIAL_SITE_URL = server.url;
 
     const configDir = tempConfigDir();
-    await expect(runLogin({ configDir, log: () => {}, sleepFn: instantSleep })).rejects.toBeInstanceOf(AuthError);
+    await expect(
+      runLogin({ configDir, log: () => {}, sleepFn: instantSleep, openFn: noOpen })
+    ).rejects.toBeInstanceOf(AuthError);
   });
 
   it("throws AuthError when the code expires before confirmation", async () => {
@@ -124,7 +130,9 @@ describe("runLogin (device flow against a mocked local server)", () => {
     process.env.REDENTIAL_SITE_URL = server.url;
 
     const configDir = tempConfigDir();
-    await expect(runLogin({ configDir, log: () => {}, sleepFn: instantSleep })).rejects.toBeInstanceOf(AuthError);
+    await expect(
+      runLogin({ configDir, log: () => {}, sleepFn: instantSleep, openFn: noOpen })
+    ).rejects.toBeInstanceOf(AuthError);
   });
 
   it("throws AuthError when the deadline passes without a terminal response", async () => {
@@ -143,6 +151,60 @@ describe("runLogin (device flow against a mocked local server)", () => {
     process.env.REDENTIAL_SITE_URL = server.url;
 
     const configDir = tempConfigDir();
-    await expect(runLogin({ configDir, log: () => {}, sleepFn: instantSleep })).rejects.toBeInstanceOf(AuthError);
+    await expect(
+      runLogin({ configDir, log: () => {}, sleepFn: instantSleep, openFn: noOpen })
+    ).rejects.toBeInstanceOf(AuthError);
+  });
+
+  it("auto-opens verification_uri via the injected openFn", async () => {
+    const server = await startMockServer((req) => {
+      if (req.url === "/api/cli/device/authorize") {
+        return {
+          status: 200,
+          body: {
+            device_code: "dc-6",
+            user_code: "X",
+            verification_uri: "http://example.test/activate",
+            expires_in: 600,
+            interval: 0,
+          },
+        };
+      }
+      return { status: 200, body: { access_token: "tok" } };
+    });
+    servers.push(server);
+    process.env.REDENTIAL_SITE_URL = server.url;
+
+    const configDir = tempConfigDir();
+    const opened: string[] = [];
+    await runLogin({ configDir, log: () => {}, sleepFn: instantSleep, openFn: (url) => opened.push(url) });
+
+    expect(opened).toEqual(["http://example.test/activate"]);
+  });
+
+  it("does not fail login when openFn throws", async () => {
+    const server = await startMockServer((req) => {
+      if (req.url === "/api/cli/device/authorize") {
+        return {
+          status: 200,
+          body: { device_code: "dc-7", user_code: "X", verification_uri: "http://x", expires_in: 600, interval: 0 },
+        };
+      }
+      return { status: 200, body: { access_token: "tok" } };
+    });
+    servers.push(server);
+    process.env.REDENTIAL_SITE_URL = server.url;
+
+    const configDir = tempConfigDir();
+    await expect(
+      runLogin({
+        configDir,
+        log: () => {},
+        sleepFn: instantSleep,
+        openFn: () => {
+          throw new Error("no browser available");
+        },
+      })
+    ).resolves.toBeUndefined();
   });
 });

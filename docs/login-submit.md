@@ -21,9 +21,22 @@ for local development/testing against a mock server).
 
 1. `POST {SITE_URL}/api/cli/device/authorize`, empty body. Response:
    `{device_code, user_code, verification_uri, expires_in, interval}`.
-2. The CLI prints `verification_uri` and `user_code` and tells you to open
-   it in a browser — the CLI itself never opens one (no new dependency, no
-   surprise network/process spawn).
+2. The CLI prints `verification_uri` and `user_code`, then makes a
+   best-effort attempt to open `verification_uri` in your default browser
+   (`open` on macOS, `xdg-open` on Linux, `rundll32 url.dll,FileProtocolHandler`
+   on Windows — no shell string on any platform, no new dependency: this
+   uses only `node:child_process`). This **reverses** an earlier version of
+   this doc, which said the CLI would never do this ("no surprise
+   network/process spawn") — most CLIs with a device flow (`gh auth login`,
+   `vercel login`, etc.) auto-open, and the printed URL/code were never
+   removed as the fallback, so the tradeoff changed. Auto-open is never
+   load-bearing: any failure (headless box, SSH session, unknown platform,
+   no browser installed, the opener binary missing) is silently swallowed —
+   login proceeds exactly as if auto-open didn't exist. `verification_uri`
+   is server-controlled, so it's treated as untrusted before being handed to
+   a native opener: only `http`/`https` is ever opened (never `file://` or
+   an app-custom scheme), and the URL is always its own argv element, never
+   interpolated into a shell command.
 3. The CLI polls `POST {SITE_URL}/api/cli/device/token` with
    `{device_code}` every `interval` seconds until:
    - `{access_token}`, **HTTP 200** — success, stored locally (see below).

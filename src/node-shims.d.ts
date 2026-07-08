@@ -8,6 +8,7 @@ declare var process: {
   argv: string[];
   exitCode: number | undefined;
   env: Record<string, string | undefined>;
+  platform: string;
   stdin: unknown;
   stdout: unknown;
   stderr: unknown;
@@ -64,6 +65,15 @@ declare module "node:child_process" {
     args: string[],
     options?: { cwd?: string; encoding?: string; stdio?: unknown }
   ): string;
+  export interface ChildProcess {
+    on(event: "error", listener: (err: Error) => void): ChildProcess;
+    unref(): ChildProcess;
+  }
+  export function spawn(
+    command: string,
+    args: string[],
+    options?: { detached?: boolean; stdio?: unknown }
+  ): ChildProcess;
 }
 
 declare module "node:readline/promises" {
