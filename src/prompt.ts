@@ -27,15 +27,34 @@ function questionOrThrowOnClose(rl: Interface, prompt: string, closeMessage: str
   return Promise.race([rl.question(prompt), closed]);
 }
 
+function formatCandidate(c: AuthorCandidate): string {
+  return `${c.email} (${c.count} commit${c.count === 1 ? "" : "s"})`;
+}
+
 export async function promptAuthors(
   candidates: AuthorCandidate[],
   streams: PromptStreams = DEFAULT_STREAMS
 ): Promise<string[]> {
   const rl = createInterface(streams);
   try {
+    // A single candidate is almost always "you" — a Y/n confirmation (Y
+    // default, so pressing Enter accepts) is faster than making the user
+    // type "1" for the only option. 2+ candidates keep the numbered list:
+    // there's no single obvious default to pick for them.
+    if (candidates.length === 1) {
+      const [only] = candidates;
+      const answer = await questionOrThrowOnClose(
+        rl,
+        `Found 1 identity: ${formatCandidate(only)}. Is this you? (Y/n) `,
+        "Input closed before an author identity was selected."
+      );
+      const trimmed = answer.trim().toLowerCase();
+      return trimmed === "" || trimmed.startsWith("y") ? [only.email] : [];
+    }
+
     console.log("Which of these author identities are yours?");
     candidates.forEach((c, i) => {
-      console.log(`  ${i + 1}. ${c.email} (${c.count} commit${c.count === 1 ? "" : "s"})`);
+      console.log(`  ${i + 1}. ${formatCandidate(c)}`);
     });
     const answer = await questionOrThrowOnClose(
       rl,

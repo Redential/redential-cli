@@ -13,9 +13,12 @@ redential scan --author you@example.com --yes   # non-interactive
 1. **Enumerate authors.** `git log` is read locally (`git show`/`git diff`
    never leave the machine) to list distinct author emails and their commit
    counts.
-2. **Select identity.** Interactively, you pick which of those emails are
-   yours from a numbered list. Non-interactively, pass `--author <email>`
-   (repeatable) for every email that's yours.
+2. **Select identity.** With a single candidate, a Y/n confirmation ("Found
+   1 identity: you@example.com (12 commits). Is this you? (Y/n)", Y is the
+   default — pressing Enter accepts). With 2+ candidates, a numbered list
+   instead — there's no single obvious default to pick for those.
+   Non-interactively, pass `--author <email>` (repeatable) for every email
+   that's yours.
 3. **Confirm authorization.** You must explicitly confirm "I am authorized
    to analyze this repository" — interactively via a prompt, or
    non-interactively via `--yes`. This is a separate step from author

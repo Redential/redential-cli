@@ -8,6 +8,11 @@ always bump at least minor; breaking schema changes bump major.
 ## [Unreleased]
 
 ### Changed
+- `scan`'s interactive author selection (`promptAuthors`): with a single
+  candidate identity, replaced the numbered list with a Y/n confirmation
+  ("Found 1 identity: you@example.com (12 commits). Is this you? (Y/n)"),
+  Y as the default — pressing Enter accepts. The numbered list stays for
+  2+ candidates, where there's no single obvious default to pick.
 - `redential login` now makes a best-effort attempt to open
   `verification_uri` in the default browser after printing it, instead of
   only printing it — a deliberate reversal of the earlier design ("the CLI
