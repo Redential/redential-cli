@@ -1,0 +1,52 @@
+{
+  "slug": "db/redis",
+  "importPatterns": [
+    "from\\s+[\"']redis[\"']",
+    "require\\(\\s*[\"']redis[\"']\\s*\\)",
+    "from\\s+[\"']ioredis[\"']",
+    "require\\(\\s*[\"']ioredis[\"']\\s*\\)",
+    "from\\s+[\"']@upstash/redis[\"']",
+    "require\\(\\s*[\"']@upstash/redis[\"']\\s*\\)"
+  ],
+  "apiPatterns": [
+    "new\\s+Redis\\(",
+    "createClient\\(\\s*\\{[^}]*url",
+    "\\.hset\\(",
+    "\\.hget\\("
+  ],
+  "configFilePatterns": [],
+  "fixtures": {
+    "positive": [
+      {
+        "path": "src/lib/redis.ts",
+        "diff": "import Redis from \"ioredis\";\nconst redis = new Redis(process.env.REDIS_URL!);\nawait redis.hset(\"session:1\", \"token\", \"abc\");\nconst token = await redis.hget(\"session:1\", \"token\");"
+      },
+      {
+        "path": "src/lib/redis-client.js",
+        "diff": "const { createClient } = require(\"redis\");\nconst client = createClient({ url: process.env.REDIS_URL });\nawait client.connect();"
+      },
+      {
+        "path": "src/lib/upstash.ts",
+        "diff": "import { Redis } from \"@upstash/redis\";\nconst redis = new Redis({ url: process.env.UPSTASH_REDIS_REST_URL!, token: process.env.UPSTASH_REDIS_REST_TOKEN! });"
+      },
+      {
+        "path": "src/lib/redis2.ts",
+        "diff": "import { createClient } from \"redis\";\nconst client = createClient({ url: process.env.REDIS_URL });"
+      },
+      {
+        "path": "src/lib/upstash2.js",
+        "diff": "const { Redis } = require(\"@upstash/redis\");"
+      },
+      {
+        "path": "src/lib/ioredis2.js",
+        "diff": "const Redis = require(\"ioredis\");"
+      }
+    ],
+    "negative": [
+      {
+        "path": "README.md",
+        "diff": "redis is a candidate for our caching layer alongside ioredis and upstash, but we haven't decided yet."
+      }
+    ]
+  }
+}

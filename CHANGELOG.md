@@ -7,6 +7,51 @@ always bump at least minor; breaking schema changes bump major.
 
 ## [Unreleased]
 
+### Added
+- **Skill detection**: `detected_skills` is no longer always `[]` —
+  `scan` now matches the selected author's own commits (added diff lines,
+  read locally via `git show`, never leaving the machine) against a new
+  versioned signature database, `signatures/*.json`
+  (`src/skill-detect.ts`, `docs/signatures.md`). Zero network, no LLMs, per
+  principle 3 ("Bounded output"). Closed vocabulary is enforced in code,
+  not just documented: a signature naming a slug outside `taxonomy.json`
+  makes `detectSkills` throw before `runScan` can ever construct a bundle
+  — proven by a real-call-path privacy test
+  (`test/privacy/skill-detection-taxonomy.test.ts`), not a standalone unit
+  test of the check in isolation.
+  - Scope: the original ask mentioned "~150 libraries"; `taxonomy.json`
+    already had a placeholder set of 38 slugs ("to be expanded", per this
+    file's own history). Extended it to 48 (10 new: `auth/clerk`, 4 new
+    `ai/*` slugs — `langgraph`, `llamaindex`, `vercel-ai-sdk`, `whisper` —
+    and two new categories, `queues/*` and `observability/*`) and wrote one
+    signature per slug, rather than fabricating ~100 more without real
+    fixtures behind them. `taxonomy.json` bumped to `1.1.0` (additive; no
+    bundle schema change, since `schema/bundle.v1.json`'s `detected_skills`
+    shape was already declared — populating it isn't a shape change).
+  - Every signature carries its own `fixtures.positive`/`fixtures.negative`
+    (synthetic diffs) directly in the JSON file — one generic test
+    (`test/skill-detect.test.ts`) loads every `signatures/*.json` and
+    mechanically enforces: every positive fixture matches, no negative
+    fixture matches, every declared pattern is exercised by at least one
+    positive fixture (catches dead/typo'd regexes), and at least one
+    negative fixture is a genuine near-miss mentioning the library by name
+    (not just unrelated text) — this is what makes "contribute a signature
+    via PR" (`docs/signatures.md`) self-checking.
+  - Excludes the same paths already excluded from churn (lockfiles,
+    minified bundles, build output, single-commit generated dumps —
+    `src/churn-exclusions.ts`) and skips merge commits (consistent with
+    `getAllCommits`' own `--numstat`, which already emits nothing for
+    them) — a vendored dependency's content matching an import pattern
+    would be a false "you wrote this" signal.
+  - `detected_skills` is sorted by slug for deterministic, byte-identical
+    output across repeated scans of the same history (principle 4,
+    "User-reviewed").
+  - Ships as data files, not code: `signatures/` and `taxonomy.json` are
+    now in `package.json`'s `files` array (verified via `npm pack
+    --dry-run`) so they're present on disk next to `dist/` after
+    `npm install -g @redential/cli` — the CLI didn't read either file at
+    runtime before this milestone.
+
 ### Changed
 - `languages`/`categories` churn computation now excludes checked-in
   artifacts that aren't authored work: known lockfiles

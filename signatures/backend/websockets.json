@@ -1,0 +1,41 @@
+{
+  "slug": "backend/websockets",
+  "importPatterns": [
+    "from\\s+[\"']ws[\"']",
+    "from\\s+[\"']socket\\.io[\"']",
+    "require\\(\\s*[\"']ws[\"']\\s*\\)",
+    "require\\(\\s*[\"']socket\\.io[\"']\\s*\\)"
+  ],
+  "apiPatterns": [
+    "new\\s+WebSocket\\(",
+    "io\\(.*\\)\\.on\\(\\s*[\"']connection[\"']",
+    "wss\\.on\\(\\s*[\"']connection[\"']"
+  ],
+  "configFilePatterns": [],
+  "fixtures": {
+    "positive": [
+      {
+        "path": "src/ws/server.ts",
+        "diff": "import { WebSocketServer } from \"ws\";\nconst wss = new WebSocketServer({ port: 8080 });\nwss.on(\"connection\", (socket) => {\n  socket.send(\"hello\");\n});"
+      },
+      {
+        "path": "src/ws/client.ts",
+        "diff": "import { Server } from \"socket.io\";\nconst socket = new WebSocket(\"wss://example.com\");"
+      },
+      {
+        "path": "src/ws/legacy.js",
+        "diff": "const WebSocket = require(\"ws\");\nconst socket = new WebSocket(\"wss://example.com\");"
+      },
+      {
+        "path": "src/realtime/server.js",
+        "diff": "const socketio = require(\"socket.io\");\nsocketio(httpServer).on(\"connection\", (socket) => {\n  console.log(\"client connected\");\n});"
+      }
+    ],
+    "negative": [
+      {
+        "path": "README.md",
+        "diff": "We're evaluating WebSockets for real-time updates but haven't decided between ws and socket.io yet."
+      }
+    ]
+  }
+}

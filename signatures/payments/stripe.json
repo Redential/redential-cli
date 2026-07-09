@@ -1,0 +1,29 @@
+{
+  "slug": "payments/stripe",
+  "importPatterns": [
+    "from\\s+[\"']stripe[\"']",
+    "require\\(\\s*[\"']stripe[\"']\\s*\\)"
+  ],
+  "apiPatterns": [
+    "\\bstripe\\.(checkout|customers|subscriptions|paymentIntents|charges|webhooks|prices|products)\\b"
+  ],
+  "configFilePatterns": [],
+  "fixtures": {
+    "positive": [
+      {
+        "path": "src/lib/stripe.ts",
+        "diff": "import Stripe from \"stripe\";\nconst stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);\nconst session = await stripe.checkout.sessions.create({ mode: \"payment\" });"
+      },
+      {
+        "path": "src/lib/stripe.js",
+        "diff": "const Stripe = require(\"stripe\");"
+      }
+    ],
+    "negative": [
+      {
+        "path": "README.md",
+        "diff": "We considered using stripe for payments but chose mercadopago instead for LatAm support."
+      }
+    ]
+  }
+}

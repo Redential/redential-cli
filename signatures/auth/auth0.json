@@ -1,0 +1,36 @@
+{
+  "slug": "auth/auth0",
+  "importPatterns": [
+    "from\\s+[\"'](@auth0/nextjs-auth0|auth0)[\"']",
+    "require\\(\\s*[\"'](@auth0/nextjs-auth0|auth0)[\"']\\s*\\)"
+  ],
+  "apiPatterns": [
+    "\\bhandleAuth\\(",
+    "\\bhandleLogin\\(",
+    "\\bhandleCallback\\(",
+    "\\bwithApiAuthRequired\\("
+  ],
+  "configFilePatterns": [],
+  "fixtures": {
+    "positive": [
+      {
+        "path": "src/app/api/auth/[...auth0]/route.ts",
+        "diff": "import { handleAuth, handleLogin, handleCallback } from \"@auth0/nextjs-auth0\";\nexport const GET = handleAuth({\n  login: handleLogin(),\n  callback: handleCallback(),\n});"
+      },
+      {
+        "path": "src/lib/auth0-legacy.js",
+        "diff": "const auth0 = require(\"auth0\");"
+      },
+      {
+        "path": "src/app/api/protected/route.ts",
+        "diff": "import { withApiAuthRequired } from \"@auth0/nextjs-auth0\";\nexport const GET = withApiAuthRequired(async function handler(req) {\n  return Response.json({ ok: true });\n});"
+      }
+    ],
+    "negative": [
+      {
+        "path": "README.md",
+        "diff": "This project briefly evaluated Auth0 for identity but stuck with our custom JWT flow; we never wired up handleAuth or handleLogin in code."
+      }
+    ]
+  }
+}

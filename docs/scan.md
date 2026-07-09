@@ -28,10 +28,12 @@ redential scan --author you@example.com --yes   # non-interactive
 4. **Compute the bundle.** Every field in `schema/bundle.v1.json` is derived
    from `git log --numstat` filtered to your selected commits: volume, span,
    hourly/weekday cadence, signed-commit ratio, churn share by file
-   extension and by technical category (heuristic path/extension matching,
-   `signatures/*.json`-based skill detection lands in a later milestone —
-   `detected_skills` is always `[]` for now), and ownership share against
-   the repo's total commits.
+   extension and by technical category (heuristic path/extension matching),
+   ownership share against the repo's total commits, and detected skills
+   (deterministic local matching of your commits' diffs against
+   `signatures/*.json` — see [docs/signatures.md](signatures.md); zero
+   network, closed vocabulary, `detected_skills` may be empty if nothing
+   matched).
 5. **Print it.** The JSON printed IS the bundle — byte for byte what
    `submit` would send later.
 

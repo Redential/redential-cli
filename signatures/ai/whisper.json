@@ -1,0 +1,36 @@
+{
+  "slug": "ai/whisper",
+  "importPatterns": [],
+  "apiPatterns": [
+    "openai\\.audio\\.transcriptions\\.create\\(",
+    "[\"']whisper-1[\"']",
+    "pipeline\\(\\s*[\"']automatic-speech-recognition[\"']"
+  ],
+  "configFilePatterns": [],
+  "fixtures": {
+    "positive": [
+      {
+        "path": "src/lib/whisper-openai.ts",
+        "diff": "const transcript = await openai.audio.transcriptions.create({ file, model: \"whisper-1\" });"
+      },
+      {
+        "path": "src/lib/whisper-local.ts",
+        "diff": "import { pipeline } from \"@xenova/transformers\";\nconst transcriber = await pipeline(\"automatic-speech-recognition\", \"openai/whisper-tiny.en\");"
+      },
+      {
+        "path": "src/lib/whisper-local.js",
+        "diff": "const { pipeline } = require(\"@xenova/transformers\");\nconst transcriber = await pipeline(\"automatic-speech-recognition\");"
+      }
+    ],
+    "negative": [
+      {
+        "path": "README.md",
+        "diff": "We looked at OpenAI's Whisper model and the @xenova/transformers whisper-tiny build but ended up using a third-party transcription vendor instead."
+      },
+      {
+        "path": "src/lib/embeddings.ts",
+        "diff": "import { pipeline } from \"@xenova/transformers\";\nconst embedder = await pipeline(\"feature-extraction\", \"Xenova/all-MiniLM-L6-v2\");"
+      }
+    ]
+  }
+}

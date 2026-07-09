@@ -1,0 +1,29 @@
+{
+  "slug": "backend/fastapi",
+  "importPatterns": [
+    "from\\s+fastapi\\s+import"
+  ],
+  "apiPatterns": [
+    "FastAPI\\(\\)",
+    "@app\\.(get|post|put|delete)\\("
+  ],
+  "configFilePatterns": [],
+  "fixtures": {
+    "positive": [
+      {
+        "path": "app/main.py",
+        "diff": "from fastapi import FastAPI\napp = FastAPI()\n\n@app.get(\"/health\")\ndef health():\n    return {\"ok\": True}"
+      },
+      {
+        "path": "app/routes/items.py",
+        "diff": "from fastapi import APIRouter\n\n@app.post(\"/items\")\ndef create_item(item: dict):\n    return item"
+      }
+    ],
+    "negative": [
+      {
+        "path": "docs/notes.md",
+        "diff": "We evaluated FastAPI for the Python service but stuck with Flask for now."
+      }
+    ]
+  }
+}

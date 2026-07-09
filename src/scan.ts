@@ -5,6 +5,7 @@ import { getOrCreateSalt } from "./salt.js";
 import { merkleRoot } from "./merkle.js";
 import { categorize } from "./categorize.js";
 import { isExcludedPath, heuristicallyGeneratedPaths } from "./churn-exclusions.js";
+import { detectSkills, type DetectSkillsOptions } from "./skill-detect.js";
 import { assertNoSecrets } from "./secret-scan.js";
 import type { Bundle, CategoryName, LanguageShare, CategoryShare } from "./types.js";
 
@@ -33,6 +34,12 @@ export interface ScanOptions {
   toolVersion: string;
   now?: Date;
   configDir?: string;
+  // Overrides the signatures/taxonomy locations skill detection reads from.
+  // Exists ONLY so tests can point the REAL runScan path at fixture data
+  // (including a hostile signature naming a slug outside taxonomy.json, to
+  // prove the privacy guarantee holds in the actual call path, not a
+  // reimplementation of it) — production callers never set this.
+  skillDetectOptions?: DetectSkillsOptions;
 }
 
 const MS_PER_DAY = 86_400_000;
@@ -92,6 +99,7 @@ export function runScan(opts: ScanOptions): Bundle {
   const signedCount = userCommits.filter((c) => c.signed).length;
 
   const { languages, categories } = computeChurnBreakdown(userCommits);
+  const detectedSkills = detectSkills(userCommits, opts.repoPath, opts.skillDetectOptions);
 
   const bundle: Bundle = {
     schema_version: "1.0.0",
@@ -114,7 +122,7 @@ export function runScan(opts: ScanOptions): Bundle {
     signed: { count: signedCount, ratio: signedCount / userCommits.length },
     languages,
     categories,
-    detected_skills: [],
+    detected_skills: detectedSkills,
     ownership: { user_commit_ratio: userCommits.length / allCommits.length },
     integrity: { merkle_root: merkleRoot(userCommits.map((c) => c.sha)), algorithm: "sha256" },
     attestation: { authorized_confirmation: true, confirmed_at: now.toISOString() },

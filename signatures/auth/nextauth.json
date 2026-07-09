@@ -1,0 +1,47 @@
+{
+  "slug": "auth/nextauth",
+  "importPatterns": [
+    "from\\s+[\"']next-auth(/[a-zA-Z0-9_-]+)?[\"']",
+    "from\\s+[\"']@auth/(core|nextjs)[\"']",
+    "require\\(\\s*[\"']next-auth[\"']\\s*\\)"
+  ],
+  "apiPatterns": [
+    "\\bNextAuth\\(",
+    "\\bgetServerSession\\("
+  ],
+  "configFilePatterns": [],
+  "fixtures": {
+    "positive": [
+      {
+        "path": "src/app/api/auth/[...nextauth]/route.ts",
+        "diff": "import NextAuth from \"next-auth\";\nexport const { GET, POST } = NextAuth({ providers: [] });"
+      },
+      {
+        "path": "src/components/AuthButton.tsx",
+        "diff": "import { useSession, signIn, signOut } from \"next-auth/react\";\nconst { data: session } = useSession();"
+      },
+      {
+        "path": "src/lib/auth.ts",
+        "diff": "import { getServerSession } from \"next-auth\";\nconst session = await getServerSession(authOptions);"
+      },
+      {
+        "path": "src/lib/auth.js",
+        "diff": "const NextAuth = require(\"next-auth\");"
+      },
+      {
+        "path": "src/lib/auth-config.ts",
+        "diff": "import { Auth } from \"@auth/core\";"
+      }
+    ],
+    "negative": [
+      {
+        "path": "README.md",
+        "diff": "We evaluated NextAuth but ended up rolling our own session cookie logic instead of using useSession or getServerSession helpers from that library."
+      },
+      {
+        "path": "src/hooks/useSession.ts",
+        "diff": "import { createClient } from \"@supabase/supabase-js\";\nconst supabase = createClient(url, key);\nexport function useSession() {\n  return supabase.auth.getSession();\n}"
+      }
+    ]
+  }
+}

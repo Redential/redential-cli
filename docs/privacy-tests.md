@@ -24,7 +24,8 @@ wrong, not the test.
 |---|---|
 | `test/privacy/bundle-boundaries.test.ts` | A repo salted with fake secrets, a revealing path, a revealing remote URL, and a confidential commit message produces a bundle containing NONE of that text — only extensions, closed-vocabulary category names, `host_type`, and salted hashes survive. |
 | `test/privacy/secret-scan.test.ts` (all cases) | `assertNoSecrets`/`findSecretPatterns` catch AWS-key-shaped, PEM-key-shaped, `api_key=`-shaped, and `.env`-shaped strings in a serialized payload, throw before anything is printed, and never echo the matched secret in the error message — the regression guard mandated by principle 3, wired into `runScan` itself. |
-| `test/scan.test.ts` → detected_skills always `[]` in this milestone | The closed-vocabulary skill field can't yet contain anything outside the (empty) set, since signature matching hasn't landed. |
+| `test/privacy/skill-detection-taxonomy.test.ts` → "rejects before producing a bundle when a signature names a slug not in taxonomy.json" | Exercises the REAL `runScan` path (via `skillDetectOptions`' override, not a standalone unit test of `detectSkills`): a signature naming a slug outside the closed vocabulary makes `runScan` throw before a bundle is ever constructed — the check lives inside the call path itself, so a future refactor can't silently unwire it without failing this test. See [docs/signatures.md](signatures.md). |
+| `test/skill-detect.test.ts` → "every signature's slug is a member of taxonomy.json" | Structural backstop, independent of the runtime check above: every shipped `signatures/*.json` file is statically verified against the real `taxonomy.json` at test time, so a bad slug is caught in CI before it ever ships. |
 
 ## 4. User-reviewed
 

@@ -1,0 +1,37 @@
+{
+  "slug": "ai/langchain",
+  "importPatterns": [
+    "from\\s+[\"']langchain[\"']",
+    "from\\s+[\"']@langchain/core[\"']",
+    "from\\s+[\"']@langchain/openai[\"']"
+  ],
+  "apiPatterns": [
+    "ChatOpenAI\\(",
+    "PromptTemplate\\.fromTemplate\\(",
+    "RunnableSequence\\.from\\(",
+    "new\\s+ConversationChain\\("
+  ],
+  "configFilePatterns": [],
+  "fixtures": {
+    "positive": [
+      {
+        "path": "src/lib/langchain-chat.ts",
+        "diff": "import { ChatOpenAI } from \"langchain\";\nconst model = new ChatOpenAI({ temperature: 0 });\nconst prompt = PromptTemplate.fromTemplate(\"Hello {name}\");"
+      },
+      {
+        "path": "src/lib/langchain-core.ts",
+        "diff": "import { RunnableSequence } from \"@langchain/core\";\nconst chain = RunnableSequence.from([step1, step2]);"
+      },
+      {
+        "path": "src/lib/langchain-conv.ts",
+        "diff": "import { ConversationChain } from \"@langchain/openai\";\nconst chain = new ConversationChain({ llm: model });"
+      }
+    ],
+    "negative": [
+      {
+        "path": "README.md",
+        "diff": "We looked at langchain and langgraph for orchestration but wrote our own thin wrapper around OpenAI directly."
+      }
+    ]
+  }
+}

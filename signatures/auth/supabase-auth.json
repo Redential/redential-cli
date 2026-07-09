@@ -1,0 +1,29 @@
+{
+  "slug": "auth/supabase-auth",
+  "importPatterns": [
+    "from\\s+[\"']@supabase/(ssr|auth-helpers-nextjs|supabase-js)[\"']",
+    "require\\(\\s*[\"']@supabase/(ssr|auth-helpers-nextjs|supabase-js)[\"']\\s*\\)"
+  ],
+  "apiPatterns": [
+    "\\bsupabase\\.auth\\.(signInWithPassword|signInWithOAuth|getUser|getSession|exchangeCodeForSession|onAuthStateChange)\\("
+  ],
+  "configFilePatterns": [],
+  "fixtures": {
+    "positive": [
+      {
+        "path": "src/lib/supabase/server.ts",
+        "diff": "import { createServerClient } from \"@supabase/ssr\";\nconst supabase = createServerClient(url, key, cookieOptions);\nconst { data } = await supabase.auth.getUser();"
+      },
+      {
+        "path": "src/lib/supabase-client.js",
+        "diff": "const { createClient } = require(\"@supabase/supabase-js\");"
+      }
+    ],
+    "negative": [
+      {
+        "path": "README.md",
+        "diff": "We use Supabase for the Postgres database in this project, not for auth -- auth is handled by our own session cookies."
+      }
+    ]
+  }
+}

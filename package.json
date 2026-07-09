@@ -11,7 +11,9 @@
     "redential": "dist/cli.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "signatures",
+    "taxonomy.json"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",

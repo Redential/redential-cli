@@ -1,0 +1,21 @@
+{
+  "slug": "testing/vitest",
+  "importPatterns": [
+    "from\\s+[\"']vitest[\"']"
+  ],
+  "apiPatterns": [
+    "\\bvi\\.(fn|mock|spyOn)\\("
+  ],
+  "configFilePatterns": [
+    "(^|/)vitest\\.config\\.(js|ts|mjs)$"
+  ],
+  "fixtures": {
+    "positive": [
+      { "path": "vitest.config.ts", "diff": "export default { test: { environment: \"node\" } };" },
+      { "path": "src/foo.test.ts", "diff": "import { describe, it, expect, vi } from \"vitest\";\nconst mockFn = vi.fn();\nvi.mock(\"./foo\");\nconst spy = vi.spyOn(console, \"log\");" }
+    ],
+    "negative": [
+      { "path": "README.md", "diff": "We use vitest for testing; the config predates our earlier setup with a different runner." }
+    ]
+  }
+}

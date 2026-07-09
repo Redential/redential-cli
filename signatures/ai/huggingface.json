@@ -1,0 +1,31 @@
+{
+  "slug": "ai/huggingface",
+  "importPatterns": [
+    "from\\s+[\"']@huggingface/inference[\"']",
+    "from\\s+[\"']@xenova/transformers[\"']"
+  ],
+  "apiPatterns": [
+    "new\\s+HfInference\\(",
+    "\\.textGeneration\\(",
+    "\\.featureExtraction\\("
+  ],
+  "configFilePatterns": [],
+  "fixtures": {
+    "positive": [
+      {
+        "path": "src/lib/hf.ts",
+        "diff": "import { HfInference } from \"@huggingface/inference\";\nconst hf = new HfInference(process.env.HF_TOKEN);\nconst result = await hf.textGeneration({ model: \"gpt2\", inputs: \"Hello\" });"
+      },
+      {
+        "path": "src/lib/hf-embed.ts",
+        "diff": "import { pipeline } from \"@xenova/transformers\";\nconst extractor = await pipeline(\"feature-extraction\", \"BAAI/bge-small-en\");\nconst hf = new HfInference();\nconst vector = await hf.featureExtraction({ model: \"bge-small\", inputs: \"hello\" });"
+      }
+    ],
+    "negative": [
+      {
+        "path": "README.md",
+        "diff": "We tried the @huggingface/inference package and @xenova/transformers for local models but settled on OpenAI's hosted API for simplicity, without calling textGeneration or featureExtraction ourselves."
+      }
+    ]
+  }
+}

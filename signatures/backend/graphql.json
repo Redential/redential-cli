@@ -1,0 +1,36 @@
+{
+  "slug": "backend/graphql",
+  "importPatterns": [
+    "from\\s+[\"']graphql[\"']",
+    "from\\s+[\"']@apollo/server[\"']",
+    "from\\s+[\"']apollo-server[\"']"
+  ],
+  "apiPatterns": [
+    "\\bgql\\`",
+    "new\\s+ApolloServer\\(",
+    "buildSchema\\("
+  ],
+  "configFilePatterns": [],
+  "fixtures": {
+    "positive": [
+      {
+        "path": "src/graphql/schema.ts",
+        "diff": "import { gql } from \"@apollo/server\";\nexport const typeDefs = gql`\n  type Query {\n    hello: String\n  }\n`;"
+      },
+      {
+        "path": "src/server.ts",
+        "diff": "import { ApolloServer } from \"apollo-server\";\nconst server = new ApolloServer({ typeDefs, resolvers });"
+      },
+      {
+        "path": "src/schema.ts",
+        "diff": "import { buildSchema } from \"graphql\";\nconst schema = buildSchema(`type Query { hello: String }`);"
+      }
+    ],
+    "negative": [
+      {
+        "path": "README.md",
+        "diff": "We discussed adopting GraphQL for the public API but decided REST was simpler for now."
+      }
+    ]
+  }
+}

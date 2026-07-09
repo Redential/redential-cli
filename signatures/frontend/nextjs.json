@@ -1,0 +1,43 @@
+{
+  "slug": "frontend/nextjs",
+  "importPatterns": [
+    "from\\s+[\"']next/navigation[\"']",
+    "from\\s+[\"']next/server[\"']",
+    "from\\s+[\"']next/link[\"']",
+    "from\\s+[\"']next/image[\"']"
+  ],
+  "apiPatterns": [
+    "export\\s+async\\s+function\\s+generateStaticParams",
+    "export\\s+async\\s+function\\s+generateMetadata",
+    "getServerSideProps"
+  ],
+  "configFilePatterns": [
+    "(^|/)next\\.config\\.(js|ts|mjs)$"
+  ],
+  "fixtures": {
+    "positive": [
+      {
+        "path": "app/blog/[slug]/page.tsx",
+        "diff": "import { useRouter } from \"next/navigation\";\nimport Link from \"next/link\";\nexport async function generateStaticParams() {\n  return [];\n}"
+      },
+      {
+        "path": "app/api/hello/route.ts",
+        "diff": "import { NextResponse } from \"next/server\";\nexport async function generateMetadata() {\n  return {};\n}"
+      },
+      {
+        "path": "pages/index.tsx",
+        "diff": "import Image from \"next/image\";\nexport async function getServerSideProps() {\n  return { props: {} };\n}"
+      },
+      {
+        "path": "next.config.js",
+        "diff": "module.exports = { reactStrictMode: true };"
+      }
+    ],
+    "negative": [
+      {
+        "path": "README.md",
+        "diff": "We're evaluating Next.js (often abbreviated nextjs) for the rewrite but haven't started migrating pages yet."
+      }
+    ]
+  }
+}

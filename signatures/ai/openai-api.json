@@ -1,0 +1,36 @@
+{
+  "slug": "ai/openai-api",
+  "importPatterns": [
+    "from\\s+[\"']openai[\"']",
+    "require\\(\\s*[\"']openai[\"']\\s*\\)"
+  ],
+  "apiPatterns": [
+    "new\\s+OpenAI\\(",
+    "openai\\.chat\\.completions\\.create\\(",
+    "openai\\.embeddings\\.create\\(",
+    "openai\\.images\\.generate\\("
+  ],
+  "configFilePatterns": [],
+  "fixtures": {
+    "positive": [
+      {
+        "path": "src/lib/openai.ts",
+        "diff": "import OpenAI from \"openai\";\nconst openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });\nconst completion = await openai.chat.completions.create({ model: \"gpt-4\", messages: [] });"
+      },
+      {
+        "path": "src/lib/openai-embed.js",
+        "diff": "const OpenAI = require(\"openai\");\nconst embedding = await openai.embeddings.create({ model: \"text-embedding-3-small\", input: text });"
+      },
+      {
+        "path": "src/lib/openai-image.ts",
+        "diff": "const image = await openai.images.generate({ prompt: \"a cat wearing sunglasses\" });"
+      }
+    ],
+    "negative": [
+      {
+        "path": "README.md",
+        "diff": "We evaluated openai's API pricing before choosing Anthropic's Claude for our chatbot backend."
+      }
+    ]
+  }
+}

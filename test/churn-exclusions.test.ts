@@ -39,7 +39,7 @@ describe("isExcludedPath", () => {
 });
 
 function fakeCommit(sha: string, churn: RawCommit["churn"]): RawCommit {
-  return { sha, email: "a@example.com", authorDate: new Date(), signed: false, churn };
+  return { sha, email: "a@example.com", authorDate: new Date(), signed: false, churn, isMerge: false };
 }
 
 describe("heuristicallyGeneratedPaths", () => {

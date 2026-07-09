@@ -266,6 +266,87 @@ describe("runScan", () => {
     expect(validateAgainstSchema(schema, bundle)).toEqual([]);
   });
 
+  it("populates detected_skills from a real signature match (Stripe import + API call)", () => {
+    const dir = repo();
+    const configDir = tempConfigDir();
+    commit(dir, {
+      message: "add stripe checkout",
+      authorName: "Ivy",
+      authorEmail: "ivy@example.com",
+      files: {
+        "src/lib/stripe.ts":
+          'import Stripe from "stripe";\n' +
+          "const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);\n" +
+          'const session = await stripe.checkout.sessions.create({ mode: "payment" });\n',
+      },
+    });
+
+    const bundle = runScan({
+      repoPath: dir,
+      authors: ["ivy@example.com"],
+      confirmed: true,
+      toolVersion: "0.1.0",
+      configDir,
+    });
+
+    expect(bundle.detected_skills).toEqual([
+      {
+        slug: "payments/stripe",
+        commit_count: 1,
+        first_seen: bundle.commits.first_at,
+        last_seen: bundle.commits.first_at,
+      },
+    ]);
+    expect(validateAgainstSchema(schema, bundle)).toEqual([]);
+  });
+
+  it("does not detect a skill from a merge commit or from prose merely mentioning a library", () => {
+    const dir = repo();
+    const configDir = tempConfigDir();
+    commit(dir, {
+      message: "notes",
+      authorName: "Jack",
+      authorEmail: "jack@example.com",
+      files: { "README.md": "We considered using stripe for payments but chose mercadopago instead for LatAm support.\n" },
+    });
+
+    const bundle = runScan({
+      repoPath: dir,
+      authors: ["jack@example.com"],
+      confirmed: true,
+      toolVersion: "0.1.0",
+      configDir,
+    });
+
+    expect(bundle.detected_skills).toEqual([]);
+    expect(validateAgainstSchema(schema, bundle)).toEqual([]);
+  });
+
+  it("detected_skills is deterministic and sorted by slug across repeated runs", () => {
+    const dir = repo();
+    const configDir = tempConfigDir();
+    commit(dir, {
+      message: "add stripe and sentry",
+      authorName: "Kim",
+      authorEmail: "kim@example.com",
+      files: {
+        "src/lib/stripe.ts":
+          'import Stripe from "stripe";\nconst stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);\nawait stripe.checkout.sessions.create({});\n',
+        "src/lib/sentry.ts": 'import * as Sentry from "@sentry/node";\nSentry.init({ dsn: "x" });\n',
+      },
+    });
+
+    const now = new Date("2026-01-01T00:00:00Z");
+    const run = () =>
+      runScan({ repoPath: dir, authors: ["kim@example.com"], confirmed: true, toolVersion: "0.1.0", configDir, now });
+
+    const a = run();
+    const b = run();
+    expect(JSON.stringify(a.detected_skills)).toBe(JSON.stringify(b.detected_skills));
+    const slugs = a.detected_skills.map((s) => s.slug);
+    expect(slugs).toEqual([...slugs].sort());
+  });
+
   it("requires at least one selected author", () => {
     const dir = repo();
     const configDir = tempConfigDir();

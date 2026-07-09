@@ -1,0 +1,31 @@
+{
+  "slug": "ai/llamaindex",
+  "importPatterns": [
+    "from\\s+[\"']llamaindex[\"']",
+    "require\\(\\s*[\"']llamaindex[\"']\\s*\\)"
+  ],
+  "apiPatterns": [
+    "VectorStoreIndex\\.fromDocuments\\(",
+    "new\\s+SimpleDirectoryReader\\(",
+    "new\\s+QueryEngine\\("
+  ],
+  "configFilePatterns": [],
+  "fixtures": {
+    "positive": [
+      {
+        "path": "src/lib/llamaindex.ts",
+        "diff": "import { VectorStoreIndex, SimpleDirectoryReader } from \"llamaindex\";\nconst documents = await new SimpleDirectoryReader().loadData(\"./data\");\nconst index = await VectorStoreIndex.fromDocuments(documents);"
+      },
+      {
+        "path": "src/lib/llamaindex-query.js",
+        "diff": "const { QueryEngine } = require(\"llamaindex\");\nconst queryEngine = new QueryEngine(index);"
+      }
+    ],
+    "negative": [
+      {
+        "path": "README.md",
+        "diff": "We tried llamaindex for document indexing but built a custom VectorStoreIndex-like wrapper around Postgres instead."
+      }
+    ]
+  }
+}

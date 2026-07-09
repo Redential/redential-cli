@@ -1,0 +1,31 @@
+{
+  "slug": "db/supabase",
+  "importPatterns": [
+    "from\\s+[\"']@supabase/supabase-js[\"']",
+    "require\\(\\s*[\"']@supabase/supabase-js[\"']\\s*\\)"
+  ],
+  "apiPatterns": [
+    "supabase\\.from\\(",
+    "supabase\\.storage\\.",
+    "supabase\\.rpc\\("
+  ],
+  "configFilePatterns": [],
+  "fixtures": {
+    "positive": [
+      {
+        "path": "src/lib/supabase.ts",
+        "diff": "import { createClient } from \"@supabase/supabase-js\";\nconst supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_ANON_KEY!);\nconst { data } = await supabase.from(\"profiles\").select(\"*\").eq(\"id\", userId);\nawait supabase.storage.from(\"avatars\").upload(path, file);\nconst { data: total } = await supabase.rpc(\"get_total_revenue\");"
+      },
+      {
+        "path": "src/lib/supabase.js",
+        "diff": "const { createClient } = require(\"@supabase/supabase-js\");"
+      }
+    ],
+    "negative": [
+      {
+        "path": "README.md",
+        "diff": "supabase.auth.signInWithPassword handles our login; we're not using supabase for storage or database queries here."
+      }
+    ]
+  }
+}

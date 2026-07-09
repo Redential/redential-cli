@@ -1,0 +1,34 @@
+{
+  "slug": "queues/trigger-dev",
+  "importPatterns": [
+    "from\\s+[\"']@trigger\\.dev/sdk(/v3)?[\"']",
+    "require\\(\\s*[\"']@trigger\\.dev/sdk(/v3)?[\"']\\s*\\)"
+  ],
+  "apiPatterns": [
+    "client\\.defineJob\\(",
+    "\\btask\\(\\s*\\{[\\s\\S]*?run\\s*:\\s*async"
+  ],
+  "configFilePatterns": [],
+  "fixtures": {
+    "positive": [
+      {
+        "path": "src/jobs/example.ts",
+        "diff": "import { client } from \"@trigger.dev/sdk\";\nclient.defineJob({\n  id: \"example-job\",\n  name: \"Example Job\",\n  version: \"0.0.1\",\n  trigger: eventTrigger({ name: \"example.event\" }),\n  run: async (payload, io, ctx) => {\n    await io.logger.info(\"Hello world\");\n  },\n});"
+      },
+      {
+        "path": "src/trigger/task-example.ts",
+        "diff": "import { task } from \"@trigger.dev/sdk/v3\";\nexport const myTask = task({\n  id: \"my-task\",\n  run: async (payload) => {\n    return { success: true };\n  },\n});"
+      },
+      {
+        "path": "src/jobs/require-example.js",
+        "diff": "const { client } = require(\"@trigger.dev/sdk\");"
+      }
+    ],
+    "negative": [
+      {
+        "path": "README.md",
+        "diff": "We evaluated trigger.dev for background jobs but stuck with bullmq since we already run redis."
+      }
+    ]
+  }
+}

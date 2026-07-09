@@ -1,0 +1,20 @@
+{
+  "slug": "data/pandas",
+  "importPatterns": [
+    "import\\s+pandas",
+    "from\\s+pandas\\s+import"
+  ],
+  "apiPatterns": [
+    "pd\\.(DataFrame|read_csv|read_sql|read_parquet)\\("
+  ],
+  "configFilePatterns": [],
+  "fixtures": {
+    "positive": [
+      { "path": "analysis.py", "diff": "import pandas as pd\ndf = pd.read_csv(\"data.csv\")" },
+      { "path": "etl.py", "diff": "from pandas import DataFrame\nimport pandas as pd\ndf = pd.DataFrame({\"a\": [1, 2, 3]})\ndf2 = pd.read_sql(\"select 1\", conn)\ndf3 = pd.read_parquet(\"file.parquet\")" }
+    ],
+    "negative": [
+      { "path": "README.md", "diff": "We process data with pandas but haven't migrated the old read_csv based loaders yet." }
+    ]
+  }
+}

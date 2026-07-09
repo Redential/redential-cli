@@ -1,0 +1,51 @@
+{
+  "slug": "observability/sentry",
+  "importPatterns": [
+    "from\\s+[\"']@sentry/node[\"']",
+    "require\\(\\s*[\"']@sentry/node[\"']\\s*\\)",
+    "from\\s+[\"']@sentry/nextjs[\"']",
+    "require\\(\\s*[\"']@sentry/nextjs[\"']\\s*\\)",
+    "from\\s+[\"']@sentry/react[\"']",
+    "require\\(\\s*[\"']@sentry/react[\"']\\s*\\)"
+  ],
+  "apiPatterns": [
+    "Sentry\\.init\\(",
+    "Sentry\\.captureException\\(",
+    "Sentry\\.captureMessage\\("
+  ],
+  "configFilePatterns": [],
+  "fixtures": {
+    "positive": [
+      {
+        "path": "src/instrument.ts",
+        "diff": "import * as Sentry from \"@sentry/node\";\nSentry.init({ dsn: process.env.SENTRY_DSN });\ntry {\n  doWork();\n} catch (err) {\n  Sentry.captureException(err);\n}\nSentry.captureMessage(\"Deploy started\");"
+      },
+      {
+        "path": "src/instrument.js",
+        "diff": "const Sentry = require(\"@sentry/node\");"
+      },
+      {
+        "path": "sentry.client.config.ts",
+        "diff": "import * as Sentry from \"@sentry/nextjs\";\nSentry.init({ dsn: process.env.SENTRY_DSN });"
+      },
+      {
+        "path": "src/instrument-nextjs.js",
+        "diff": "const Sentry = require(\"@sentry/nextjs\");"
+      },
+      {
+        "path": "src/App.tsx",
+        "diff": "import * as Sentry from \"@sentry/react\";"
+      },
+      {
+        "path": "src/App.js",
+        "diff": "const Sentry = require(\"@sentry/react\");"
+      }
+    ],
+    "negative": [
+      {
+        "path": "README.md",
+        "diff": "sentry integration is planned but we currently just log errors to the console without any error tracking service."
+      }
+    ]
+  }
+}

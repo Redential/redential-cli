@@ -1,0 +1,20 @@
+{
+  "slug": "infra/docker",
+  "importPatterns": [],
+  "apiPatterns": [],
+  "configFilePatterns": [
+    "(^|/)Dockerfile$",
+    "(^|/)docker-compose\\.ya?ml$",
+    "(^|/)compose\\.ya?ml$"
+  ],
+  "fixtures": {
+    "positive": [
+      { "path": "Dockerfile", "diff": "FROM node:20-alpine\nWORKDIR /app\nCOPY . .\nRUN npm ci\nCMD [\"node\", \"index.js\"]" },
+      { "path": "docker-compose.yml", "diff": "version: \"3.8\"\nservices:\n  app:\n    build: .\n    ports:\n      - \"3000:3000\"" },
+      { "path": "infra/compose.yaml", "diff": "services:\n  web:\n    image: nginx:latest" }
+    ],
+    "negative": [
+      { "path": "README.md", "diff": "We containerize the app with docker; the build steps are documented in the deploy guide, not in a checked-in Dockerfile yet." }
+    ]
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "slug": "auth/clerk",
+  "importPatterns": [
+    "from\\s+[\"']@clerk/(nextjs|clerk-react|clerk-sdk-node)[\"']",
+    "require\\(\\s*[\"']@clerk/(nextjs|clerk-react|clerk-sdk-node)[\"']\\s*\\)"
+  ],
+  "apiPatterns": [
+    "\\bClerkProvider\\b",
+    "\\bclerkClient\\.",
+    "auth\\(\\)\\.protect\\("
+  ],
+  "configFilePatterns": [],
+  "fixtures": {
+    "positive": [
+      {
+        "path": "src/app/layout.tsx",
+        "diff": "import { ClerkProvider } from \"@clerk/nextjs\";\nexport default function RootLayout({ children }) {\n  return <ClerkProvider>{children}</ClerkProvider>;\n}"
+      },
+      {
+        "path": "src/components/Profile.tsx",
+        "diff": "import { useUser, useAuth } from \"@clerk/clerk-react\";\nconst { user } = useUser();\nconst { isSignedIn } = useAuth();"
+      },
+      {
+        "path": "src/middleware.ts",
+        "diff": "import { clerkClient, auth } from \"@clerk/nextjs/server\";\nexport function middleware() {\n  auth().protect();\n  return clerkClient.users.getUser(userId);\n}"
+      },
+      {
+        "path": "src/lib/clerk-server.js",
+        "diff": "const { clerkClient } = require(\"@clerk/clerk-sdk-node\");"
+      }
+    ],
+    "negative": [
+      {
+        "path": "README.md",
+        "diff": "We looked at Clerk for auth UI components but decided to build our own sign-in form instead."
+      },
+      {
+        "path": "src/hooks/useAuth.ts",
+        "diff": "import { useUser } from \"@auth0/nextjs-auth0/client\";\nexport function useAuth() {\n  const { user } = useUser();\n  return { user };\n}"
+      }
+    ]
+  }
+}

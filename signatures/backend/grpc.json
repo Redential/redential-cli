@@ -1,0 +1,30 @@
+{
+  "slug": "backend/grpc",
+  "importPatterns": [
+    "from\\s+[\"']@grpc/grpc-js[\"']",
+    "require\\(\\s*[\"']@grpc/grpc-js[\"']\\s*\\)"
+  ],
+  "apiPatterns": [
+    "grpc\\.loadPackageDefinition\\(",
+    "new\\s+grpc\\.Server\\("
+  ],
+  "configFilePatterns": [],
+  "fixtures": {
+    "positive": [
+      {
+        "path": "src/grpc/server.ts",
+        "diff": "import * as grpc from \"@grpc/grpc-js\";\nconst proto = grpc.loadPackageDefinition(packageDefinition);\nconst server = new grpc.Server();"
+      },
+      {
+        "path": "src/grpc/client.js",
+        "diff": "const grpc = require(\"@grpc/grpc-js\");\nconst client = new proto.MyService(host, grpc.credentials.createInsecure());"
+      }
+    ],
+    "negative": [
+      {
+        "path": "docs/architecture.md",
+        "diff": "Internally we considered grpc for service-to-service calls but chose plain HTTP/JSON APIs instead."
+      }
+    ]
+  }
+}

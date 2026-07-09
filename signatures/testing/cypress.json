@@ -1,0 +1,21 @@
+{
+  "slug": "testing/cypress",
+  "importPatterns": [
+    "from\\s+[\"']cypress[\"']"
+  ],
+  "apiPatterns": [
+    "\\bcy\\.(visit|get|click|type)\\("
+  ],
+  "configFilePatterns": [
+    "(^|/)cypress\\.config\\.(js|ts)$"
+  ],
+  "fixtures": {
+    "positive": [
+      { "path": "cypress.config.ts", "diff": "export default { e2e: { baseUrl: \"http://localhost:3000\" } };" },
+      { "path": "cypress/e2e/home.cy.ts", "diff": "import { defineConfig } from \"cypress\";\ncy.visit(\"/\");\ncy.get(\"button\");\ncy.click(\"button\");\ncy.type(\"hello\");" }
+    ],
+    "negative": [
+      { "path": "README.md", "diff": "We use cypress for end-to-end testing but haven't added the visit calls for the new pages yet." }
+    ]
+  }
+}

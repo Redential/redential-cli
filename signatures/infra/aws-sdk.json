@@ -1,0 +1,24 @@
+{
+  "slug": "infra/aws-sdk",
+  "importPatterns": [
+    "from\\s+[\"']@aws-sdk/client-s3[\"']",
+    "from\\s+[\"']@aws-sdk/client-dynamodb[\"']",
+    "require\\(\\s*[\"']aws-sdk[\"']\\s*\\)"
+  ],
+  "apiPatterns": [
+    "new S3Client\\(",
+    "new DynamoDBClient\\(",
+    "\\.send\\(new \\w+Command\\("
+  ],
+  "configFilePatterns": [],
+  "fixtures": {
+    "positive": [
+      { "path": "src/lib/s3.ts", "diff": "import { S3Client, PutObjectCommand } from \"@aws-sdk/client-s3\";\nconst client = new S3Client({ region: \"us-east-1\" });\nawait client.send(new PutObjectCommand({ Bucket: \"x\" }));" },
+      { "path": "src/lib/dynamo.ts", "diff": "import { DynamoDBClient } from \"@aws-sdk/client-dynamodb\";\nconst ddb = new DynamoDBClient({});" },
+      { "path": "src/lib/legacy.js", "diff": "const AWS = require(\"aws-sdk\");\nconst s3 = new AWS.S3();" }
+    ],
+    "negative": [
+      { "path": "README.md", "diff": "We use the aws sdk for uploading to S3 but haven't wired up DynamoDB support yet." }
+    ]
+  }
+}

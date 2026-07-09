@@ -1,0 +1,31 @@
+{
+  "slug": "queues/rabbitmq",
+  "importPatterns": [
+    "from\\s+[\"']amqplib[\"']",
+    "require\\(\\s*[\"']amqplib[\"']\\s*\\)"
+  ],
+  "apiPatterns": [
+    "amqp\\.connect\\(",
+    "channel\\.assertQueue\\(",
+    "channel\\.publish\\("
+  ],
+  "configFilePatterns": [],
+  "fixtures": {
+    "positive": [
+      {
+        "path": "src/queues/rabbit.ts",
+        "diff": "import amqp from \"amqplib\";\nconst connection = await amqp.connect(process.env.AMQP_URL!);\nconst channel = await connection.createChannel();\nawait channel.assertQueue(\"tasks\");\nchannel.publish(\"\", \"tasks\", Buffer.from(JSON.stringify(payload)));"
+      },
+      {
+        "path": "src/queues/rabbit.js",
+        "diff": "const amqp = require(\"amqplib\");"
+      }
+    ],
+    "negative": [
+      {
+        "path": "README.md",
+        "diff": "rabbitmq via amqplib was on the table but we standardized on bullmq for simplicity."
+      }
+    ]
+  }
+}

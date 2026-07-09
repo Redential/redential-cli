@@ -1,0 +1,21 @@
+{
+  "slug": "infra/kubernetes",
+  "importPatterns": [],
+  "apiPatterns": [
+    "apiVersion:\\s*apps/v1",
+    "kind:\\s*Deployment",
+    "kind:\\s*Service"
+  ],
+  "configFilePatterns": [
+    "(^|/)(deployment|service|ingress)\\.ya?ml$"
+  ],
+  "fixtures": {
+    "positive": [
+      { "path": "k8s/deployment.yaml", "diff": "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: web\nspec:\n  replicas: 3" },
+      { "path": "k8s/service.yaml", "diff": "apiVersion: v1\nkind: Service\nspec:\n  selector:\n    app: web\n  ports:\n    - port: 80" }
+    ],
+    "negative": [
+      { "path": "README.md", "diff": "We deploy to kubernetes but haven't finished the ingress config for the staging cluster yet." }
+    ]
+  }
+}

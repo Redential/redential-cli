@@ -1,0 +1,37 @@
+{
+  "slug": "auth/jwt",
+  "importPatterns": [
+    "from\\s+[\"']jsonwebtoken[\"']",
+    "from\\s+[\"']jose[\"']",
+    "require\\(\\s*[\"']jsonwebtoken[\"']\\s*\\)"
+  ],
+  "apiPatterns": [
+    "\\bjwt\\.sign\\(",
+    "\\bjwt\\.verify\\(",
+    "\\bjwtVerify\\(",
+    "\\bSignJWT\\("
+  ],
+  "configFilePatterns": [],
+  "fixtures": {
+    "positive": [
+      {
+        "path": "src/lib/jwt.ts",
+        "diff": "import jwt from \"jsonwebtoken\";\nconst token = jwt.sign({ userId }, secret, { expiresIn: \"1h\" });\nconst decoded = jwt.verify(token, secret);"
+      },
+      {
+        "path": "src/lib/jose-jwt.ts",
+        "diff": "import { SignJWT, jwtVerify } from \"jose\";\nconst token = await new SignJWT({ userId }).sign(secretKey);\nconst { payload } = await jwtVerify(token, secretKey);"
+      },
+      {
+        "path": "src/lib/jwt-legacy.js",
+        "diff": "const jwt = require(\"jsonwebtoken\");"
+      }
+    ],
+    "negative": [
+      {
+        "path": "README.md",
+        "diff": "This service issues opaque session cookies rather than JWT tokens, so we don't call jwt.sign or jwt.verify anywhere in this file."
+      }
+    ]
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "slug": "ai/vercel-ai-sdk",
+  "importPatterns": [
+    "from\\s+[\"']@ai-sdk/openai[\"']",
+    "from\\s+[\"']@ai-sdk/anthropic[\"']",
+    "from\\s+[\"']ai/react[\"']"
+  ],
+  "apiPatterns": [
+    "\\bstreamText\\(",
+    "\\bgenerateText\\(",
+    "\\buseChat\\(",
+    "\\bstreamObject\\("
+  ],
+  "configFilePatterns": [],
+  "fixtures": {
+    "positive": [
+      {
+        "path": "src/lib/chat.ts",
+        "diff": "import { openai } from \"@ai-sdk/openai\";\nimport { streamText } from \"ai\";\nconst result = await streamText({ model: openai(\"gpt-4o\"), prompt: \"hi\" });"
+      },
+      {
+        "path": "src/lib/chat-anthropic.ts",
+        "diff": "import { anthropic } from \"@ai-sdk/anthropic\";\nimport { generateText } from \"ai\";\nconst { text } = await generateText({ model: anthropic(\"claude-3-opus\"), prompt: \"hi\" });"
+      },
+      {
+        "path": "src/components/Chat.tsx",
+        "diff": "import { useChat } from \"ai/react\";\nfunction Chat() {\n  const { messages, input, handleSubmit } = useChat();\n  return null;\n}"
+      },
+      {
+        "path": "src/lib/chat-object.ts",
+        "diff": "import { openai } from \"@ai-sdk/openai\";\nimport { streamObject } from \"ai\";\nconst result = await streamObject({ model: openai(\"gpt-4o\"), schema });"
+      }
+    ],
+    "negative": [
+      {
+        "path": "README.md",
+        "diff": "We considered the Vercel AI SDK (the ai package) for streaming chat but our use case doesn't need useChat-style hooks, so we call the provider APIs directly."
+      }
+    ]
+  }
+}

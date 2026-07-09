@@ -1,0 +1,41 @@
+{
+  "slug": "auth/oauth-oidc",
+  "importPatterns": [
+    "from\\s+[\"']openid-client[\"']",
+    "from\\s+[\"']oauth4webapi[\"']",
+    "require\\(\\s*[\"'](openid-client|oauth4webapi)[\"']\\s*\\)"
+  ],
+  "apiPatterns": [
+    "grant_type=authorization_code",
+    "response_type=code",
+    "code_verifier",
+    "\\.well-known/openid-configuration"
+  ],
+  "configFilePatterns": [],
+  "fixtures": {
+    "positive": [
+      {
+        "path": "src/lib/oidc.ts",
+        "diff": "import { Configuration, authorizationCodeGrant } from \"openid-client\";\nconst config = new Configuration(issuer, clientId, clientSecret);"
+      },
+      {
+        "path": "src/lib/oauth-client.ts",
+        "diff": "import * as oauth from \"oauth4webapi\";\nconst tokenUrl = `https://provider.example.com/token?grant_type=authorization_code&code_verifier=${codeVerifier}`;"
+      },
+      {
+        "path": "src/lib/oidc-discovery.ts",
+        "diff": "import { discovery } from \"openid-client\";\nconst authUrl = `${issuer}/authorize?response_type=code&client_id=${clientId}&redirect_uri=${redirectUri}`;\nconst discoveryUrl = `${issuer}/.well-known/openid-configuration`;"
+      },
+      {
+        "path": "src/lib/oidc-legacy.js",
+        "diff": "const { Issuer } = require(\"openid-client\");"
+      }
+    ],
+    "negative": [
+      {
+        "path": "README.md",
+        "diff": "We discussed adding generic OAuth/OIDC support with PKCE and discovery documents but shipped Supabase's built-in provider instead."
+      }
+    ]
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "slug": "observability/posthog",
+  "importPatterns": [
+    "from\\s+[\"']posthog-js[\"']",
+    "require\\(\\s*[\"']posthog-js[\"']\\s*\\)",
+    "from\\s+[\"']posthog-node[\"']",
+    "require\\(\\s*[\"']posthog-node[\"']\\s*\\)"
+  ],
+  "apiPatterns": [
+    "posthog\\.capture\\(",
+    "posthog\\.identify\\(",
+    "new\\s+PostHog\\("
+  ],
+  "configFilePatterns": [],
+  "fixtures": {
+    "positive": [
+      {
+        "path": "src/lib/analytics.ts",
+        "diff": "import posthog from \"posthog-js\";\nposthog.init(process.env.NEXT_PUBLIC_POSTHOG_KEY!);\nposthog.identify(userId, { email });\nposthog.capture(\"signup_completed\");"
+      },
+      {
+        "path": "src/lib/analytics.js",
+        "diff": "const posthog = require(\"posthog-js\");"
+      },
+      {
+        "path": "src/server/posthog.ts",
+        "diff": "import { PostHog } from \"posthog-node\";\nconst posthog = new PostHog(process.env.POSTHOG_API_KEY!, { host: \"https://app.posthog.com\" });"
+      },
+      {
+        "path": "src/server/posthog.js",
+        "diff": "const { PostHog } = require(\"posthog-node\");"
+      }
+    ],
+    "negative": [
+      {
+        "path": "README.md",
+        "diff": "posthog is on our roadmap for product analytics but right now we only use plain console logging."
+      }
+    ]
+  }
+}

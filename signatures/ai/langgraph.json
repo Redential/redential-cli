@@ -1,0 +1,31 @@
+{
+  "slug": "ai/langgraph",
+  "importPatterns": [
+    "from\\s+[\"']@langchain/langgraph[\"']",
+    "require\\(\\s*[\"']@langchain/langgraph[\"']\\s*\\)"
+  ],
+  "apiPatterns": [
+    "new\\s+StateGraph\\(",
+    "\\.addNode\\(",
+    "\\.addEdge\\("
+  ],
+  "configFilePatterns": [],
+  "fixtures": {
+    "positive": [
+      {
+        "path": "src/lib/graph.ts",
+        "diff": "import { StateGraph } from \"@langchain/langgraph\";\nconst graph = new StateGraph({ channels: {} });\ngraph.addNode(\"agent\", agentNode);\ngraph.addEdge(\"agent\", \"tools\");\nconst app = graph.compile();"
+      },
+      {
+        "path": "src/lib/graph.js",
+        "diff": "const { StateGraph } = require(\"@langchain/langgraph\");\nconst graph = new StateGraph({ channels: {} });\ngraph.addNode(\"start\", startNode);"
+      }
+    ],
+    "negative": [
+      {
+        "path": "README.md",
+        "diff": "We looked at LangGraph and its StateGraph/addNode/addEdge API but stuck with plain langchain chains instead."
+      }
+    ]
+  }
+}

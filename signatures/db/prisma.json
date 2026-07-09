@@ -1,0 +1,36 @@
+{
+  "slug": "db/prisma",
+  "importPatterns": [
+    "from\\s+[\"']@prisma/client[\"']",
+    "require\\(\\s*[\"']@prisma/client[\"']\\s*\\)"
+  ],
+  "apiPatterns": [
+    "new\\s+PrismaClient\\(",
+    "prisma\\.\\w+\\.(findMany|findUnique|findFirst|create|update|delete|upsert)\\("
+  ],
+  "configFilePatterns": [
+    "(^|/)schema\\.prisma$"
+  ],
+  "fixtures": {
+    "positive": [
+      {
+        "path": "src/db/prisma.ts",
+        "diff": "import { PrismaClient } from \"@prisma/client\";\nconst prisma = new PrismaClient();\nconst users = await prisma.user.findMany({ where: { active: true } });"
+      },
+      {
+        "path": "src/db/prisma.js",
+        "diff": "const { PrismaClient } = require(\"@prisma/client\");"
+      },
+      {
+        "path": "prisma/schema.prisma",
+        "diff": "model User {\n  id Int @id @default(autoincrement())\n  email String @unique\n}"
+      }
+    ],
+    "negative": [
+      {
+        "path": "README.md",
+        "diff": "We looked at prisma for the ORM layer but decided to write raw SQL with pg instead."
+      }
+    ]
+  }
+}

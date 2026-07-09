@@ -1,0 +1,37 @@
+{
+  "slug": "payments/mercadopago",
+  "importPatterns": [
+    "from\\s+[\"']mercadopago[\"']",
+    "require\\(\\s*[\"']mercadopago[\"']\\s*\\)"
+  ],
+  "apiPatterns": [
+    "new\\s+MercadoPagoConfig\\(",
+    "new\\s+Preference\\(",
+    "new\\s+Payment\\(",
+    "\\bmercadopago\\.preferences\\.",
+    "\\bmercadopago\\.payment\\."
+  ],
+  "configFilePatterns": [],
+  "fixtures": {
+    "positive": [
+      {
+        "path": "src/lib/mercadopago.ts",
+        "diff": "import { MercadoPagoConfig, Preference, Payment } from \"mercadopago\";\nconst client = new MercadoPagoConfig({ accessToken: process.env.MP_ACCESS_TOKEN });\nconst preference = new Preference(client);\nconst payment = new Payment(client);"
+      },
+      {
+        "path": "src/lib/mercadopago-legacy.js",
+        "diff": "const mercadopago = require(\"mercadopago\");\nmercadopago.preferences.create(preferenceData);"
+      },
+      {
+        "path": "src/lib/mercadopago-payment.js",
+        "diff": "const mercadopago = require(\"mercadopago\");\nmercadopago.payment.create(paymentData);"
+      }
+    ],
+    "negative": [
+      {
+        "path": "README.md",
+        "diff": "We support MercadoPago as a payment option for LatAm customers, but that integration lives entirely in the billing microservice, not this repo -- no imports here."
+      }
+    ]
+  }
+}

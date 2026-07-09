@@ -13,6 +13,10 @@ export interface RawCommit {
   authorDate: Date;
   signed: boolean;
   churn: FileChurn[];
+  // 2+ parents. `--numstat` already emits no per-file churn for merges (so
+  // they contribute nothing to language/category shares); skill detection
+  // mirrors that and skips them too, rather than reading a combined diff.
+  isMerge: boolean;
 }
 
 function git(repoPath: string, args: string[]): string {
@@ -37,7 +41,7 @@ export function getAllCommits(repoPath: string): RawCommit[] {
       "log",
       "--reverse",
       "--numstat",
-      `--format=${RECORD_SEP}%H${FIELD_SEP}%ae${FIELD_SEP}%aI${FIELD_SEP}%G?`,
+      `--format=${RECORD_SEP}%H${FIELD_SEP}%ae${FIELD_SEP}%aI${FIELD_SEP}%G?${FIELD_SEP}%P`,
     ]);
   } catch {
     return [];
@@ -48,7 +52,7 @@ export function getAllCommits(repoPath: string): RawCommit[] {
     .filter((chunk) => chunk.trim().length > 0)
     .map((chunk) => {
       const lines = chunk.split("\n");
-      const [sha, email, authorDateIso, signatureStatus] = lines[0].split(FIELD_SEP);
+      const [sha, email, authorDateIso, signatureStatus, parents] = lines[0].split(FIELD_SEP);
       const churn: FileChurn[] = [];
       for (let i = 1; i < lines.length; i++) {
         const line = lines[i].trim();
@@ -73,6 +77,7 @@ export function getAllCommits(repoPath: string): RawCommit[] {
         // docs/schema.md's `signed` section for why.
         signed: signatureStatus === "G",
         churn,
+        isMerge: parents.trim().split(/\s+/).filter(Boolean).length > 1,
       };
     });
 }
@@ -98,4 +103,60 @@ export function getRemoteHostType(repoPath: string): RepoInfo["host_type"] {
   if (/gitlab\.com/.test(url)) return "gitlab";
   if (/bitbucket\.org/.test(url)) return "bitbucket";
   return "other";
+}
+
+export interface AddedLines {
+  path: string;
+  addedLines: string;
+}
+
+/**
+ * Lines a single (non-merge — caller's responsibility to skip those,
+ * matching `getAllCommits`' own numstat behavior) commit ADDED, grouped by
+ * file — the input to skill-detection pattern matching (src/skill-detect.ts).
+ * Never removed/context lines: we care what was introduced, not what a diff
+ * happened to touch. `--no-color`/`--no-ext-diff`/`core.quotepath=off` keep
+ * the user's own git config (color.ui, an external diff tool, quoted
+ * non-ASCII paths) from corrupting this parser — this reads local git
+ * output, but the shape of that output must stay ours to depend on.
+ */
+export function getCommitAddedLines(repoPath: string, sha: string): AddedLines[] {
+  let out: string;
+  try {
+    out = git(repoPath, [
+      "-c",
+      "core.quotepath=off",
+      "show",
+      sha,
+      "--unified=0",
+      "--format=",
+      "--no-color",
+      "--no-ext-diff",
+    ]);
+  } catch {
+    return [];
+  }
+
+  const files: AddedLines[] = [];
+  let currentPath: string | null = null;
+  let currentLines: string[] = [];
+  const flush = () => {
+    if (currentPath) files.push({ path: currentPath, addedLines: currentLines.join("\n") });
+  };
+  for (const line of out.split("\n")) {
+    if (line.startsWith("+++ b/")) {
+      flush();
+      currentPath = line.slice("+++ b/".length);
+      currentLines = [];
+    } else if (line.startsWith("+++ /dev/null")) {
+      // Deleted file — nothing was added to it.
+      flush();
+      currentPath = null;
+      currentLines = [];
+    } else if (line.startsWith("+") && !line.startsWith("+++")) {
+      currentLines.push(line.slice(1));
+    }
+  }
+  flush();
+  return files;
 }

@@ -1,0 +1,39 @@
+{
+  "slug": "db/drizzle",
+  "importPatterns": [
+    "from\\s+[\"']drizzle-orm[\"']",
+    "require\\(\\s*[\"']drizzle-orm[\"']\\s*\\)"
+  ],
+  "apiPatterns": [
+    "drizzle\\("
+  ],
+  "configFilePatterns": [
+    "(^|/)drizzle\\.config\\.(ts|js)$"
+  ],
+  "fixtures": {
+    "positive": [
+      {
+        "path": "src/db/drizzle.ts",
+        "diff": "import { drizzle } from \"drizzle-orm\";\nimport { eq } from \"drizzle-orm\";\nconst db = drizzle(pool);\nconst rows = await db.select().from(users).where(eq(users.id, id));"
+      },
+      {
+        "path": "src/db/drizzle.js",
+        "diff": "const { drizzle } = require(\"drizzle-orm\");"
+      },
+      {
+        "path": "drizzle.config.ts",
+        "diff": "export default { schema: \"./src/schema.ts\", out: \"./drizzle\" };"
+      }
+    ],
+    "negative": [
+      {
+        "path": "README.md",
+        "diff": "drizzle-orm is on our shortlist but we're currently using raw postgres queries."
+      },
+      {
+        "path": "src/db/knex.ts",
+        "diff": "import knex from \"knex\";\nconst db = knex({ client: \"pg\" });\nconst rows = await db.select().from(\"users\").where({ id });"
+      }
+    ]
+  }
+}

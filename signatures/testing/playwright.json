@@ -1,0 +1,23 @@
+{
+  "slug": "testing/playwright",
+  "importPatterns": [
+    "from\\s+[\"']@playwright/test[\"']"
+  ],
+  "apiPatterns": [
+    "page\\.goto\\(",
+    "page\\.locator\\(",
+    "\\btest\\.describe\\("
+  ],
+  "configFilePatterns": [
+    "(^|/)playwright\\.config\\.(js|ts)$"
+  ],
+  "fixtures": {
+    "positive": [
+      { "path": "playwright.config.ts", "diff": "export default { testDir: \"./tests\" };" },
+      { "path": "tests/example.spec.ts", "diff": "import { test, expect } from \"@playwright/test\";\ntest.describe(\"homepage\", () => {\n  test(\"loads\", async ({ page }) => {\n    await page.goto(\"/\");\n    await page.locator(\"h1\").click();\n  });\n});" }
+    ],
+    "negative": [
+      { "path": "README.md", "diff": "We use playwright for end-to-end tests, but haven't written the config file yet." }
+    ]
+  }
+}

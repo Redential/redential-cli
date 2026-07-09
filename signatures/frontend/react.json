@@ -1,0 +1,31 @@
+{
+  "slug": "frontend/react",
+  "importPatterns": [
+    "from\\s+[\"']react[\"']"
+  ],
+  "apiPatterns": [
+    "\\buseState\\(",
+    "\\buseEffect\\(",
+    "\\buseCallback\\(",
+    "\\buseMemo\\("
+  ],
+  "configFilePatterns": [],
+  "fixtures": {
+    "positive": [
+      {
+        "path": "src/components/Counter.tsx",
+        "diff": "import { useState, useEffect } from \"react\";\nfunction Counter() {\n  const [count, setCount] = useState(0);\n  useEffect(() => { console.log(count); }, [count]);\n  return null;\n}"
+      },
+      {
+        "path": "src/hooks/useThing.ts",
+        "diff": "import { useCallback, useMemo } from \"react\";\nconst memoized = useMemo(() => compute(), []);\nconst onClick = useCallback(() => {}, []);"
+      }
+    ],
+    "negative": [
+      {
+        "path": "README.md",
+        "diff": "We're evaluating React for the rewrite but haven't started implementing anything yet."
+      }
+    ]
+  }
+}

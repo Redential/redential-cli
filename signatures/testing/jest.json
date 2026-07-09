@@ -1,0 +1,25 @@
+{
+  "slug": "testing/jest",
+  "importPatterns": [
+    "from\\s+[\"']@jest/globals[\"']"
+  ],
+  "apiPatterns": [
+    "\\bjest\\.(fn|mock|spyOn)\\("
+  ],
+  "configFilePatterns": [
+    "(^|/)jest\\.config\\.(js|ts|cjs|mjs|json)$"
+  ],
+  "fixtures": {
+    "positive": [
+      { "path": "jest.config.ts", "diff": "export default { testEnvironment: \"node\" };" },
+      { "path": "src/foo.test.ts", "diff": "import { describe, it, expect, jest } from \"@jest/globals\";\nconst spy = jest.spyOn(console, \"log\");\njest.mock(\"./foo\");\nconst mockFn = jest.fn();\nexpect(result).toMatchSnapshot();" }
+    ],
+    "negative": [
+      { "path": "README.md", "diff": "We currently use jest for unit tests but are evaluating a migration to a faster runner." },
+      {
+        "path": "src/foo.test.ts",
+        "diff": "import { describe, it, expect } from \"vitest\";\nit(\"matches the snapshot\", () => {\n  expect(result).toMatchSnapshot();\n});"
+      }
+    ]
+  }
+}

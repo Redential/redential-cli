@@ -1,0 +1,31 @@
+{
+  "slug": "ai/anthropic-api",
+  "importPatterns": [
+    "from\\s+[\"']@anthropic-ai/sdk[\"']",
+    "require\\(\\s*[\"']@anthropic-ai/sdk[\"']\\s*\\)"
+  ],
+  "apiPatterns": [
+    "new\\s+Anthropic\\(",
+    "anthropic\\.messages\\.create\\(",
+    "anthropic\\.messages\\.stream\\("
+  ],
+  "configFilePatterns": [],
+  "fixtures": {
+    "positive": [
+      {
+        "path": "src/lib/anthropic.ts",
+        "diff": "import Anthropic from \"@anthropic-ai/sdk\";\nconst anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });\nconst message = await anthropic.messages.create({ model: \"claude-3-opus\", max_tokens: 1024, messages: [] });"
+      },
+      {
+        "path": "src/lib/anthropic-stream.js",
+        "diff": "const Anthropic = require(\"@anthropic-ai/sdk\");\nconst stream = anthropic.messages.stream({ model: \"claude-3-opus\", messages: [] });"
+      }
+    ],
+    "negative": [
+      {
+        "path": "README.md",
+        "diff": "We compared Anthropic's Claude models against OpenAI before picking a provider for the sdk integration."
+      }
+    ]
+  }
+}

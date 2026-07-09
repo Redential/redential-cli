@@ -1,0 +1,28 @@
+{
+  "slug": "frontend/tailwind",
+  "importPatterns": [
+    "@tailwind\\s+(base|components|utilities)"
+  ],
+  "apiPatterns": [],
+  "configFilePatterns": [
+    "(^|/)tailwind\\.config\\.(js|ts|cjs|mjs)$"
+  ],
+  "fixtures": {
+    "positive": [
+      {
+        "path": "tailwind.config.js",
+        "diff": "module.exports = { content: [\"./src/**/*.{js,ts,jsx,tsx}\"], theme: { extend: {} }, plugins: [] };"
+      },
+      {
+        "path": "src/styles/globals.css",
+        "diff": "@tailwind base;\n@tailwind components;\n@tailwind utilities;"
+      }
+    ],
+    "negative": [
+      {
+        "path": "README.md",
+        "diff": "We style everything with tailwind utility classes directly in JSX, configured via a tailwind config file described in the docs."
+      }
+    ]
+  }
+}

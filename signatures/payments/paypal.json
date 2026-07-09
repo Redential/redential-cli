@@ -1,0 +1,41 @@
+{
+  "slug": "payments/paypal",
+  "importPatterns": [
+    "from\\s+[\"']@paypal/checkout-server-sdk[\"']",
+    "from\\s+[\"']@paypal/react-paypal-js[\"']",
+    "require\\(\\s*[\"']@paypal/checkout-server-sdk[\"']\\s*\\)"
+  ],
+  "apiPatterns": [
+    "\\bPayPalButtons\\b",
+    "\\bpaypal\\.orders\\.",
+    "\\bpaypal\\.payments\\.",
+    "new\\s+paypal\\.core\\.PayPalHttpClient\\("
+  ],
+  "configFilePatterns": [],
+  "fixtures": {
+    "positive": [
+      {
+        "path": "src/components/Checkout.tsx",
+        "diff": "import { PayPalButtons } from \"@paypal/react-paypal-js\";\nexport function Checkout() {\n  return <PayPalButtons createOrder={createOrder} />;\n}"
+      },
+      {
+        "path": "src/lib/paypal-server.ts",
+        "diff": "import paypal from \"@paypal/checkout-server-sdk\";\nconst client = new paypal.core.PayPalHttpClient(environment);\nconst order = await client.execute(new paypal.orders.OrdersCreateRequest());"
+      },
+      {
+        "path": "src/lib/paypal-capture.ts",
+        "diff": "import paypal from \"@paypal/checkout-server-sdk\";\nconst capture = await client.execute(new paypal.payments.CapturesGetRequest(captureId));"
+      },
+      {
+        "path": "src/lib/paypal-legacy.js",
+        "diff": "const paypal = require(\"@paypal/checkout-server-sdk\");"
+      }
+    ],
+    "negative": [
+      {
+        "path": "README.md",
+        "diff": "We compared PayPal against Stripe for checkout but went with Stripe for better subscription support."
+      }
+    ]
+  }
+}

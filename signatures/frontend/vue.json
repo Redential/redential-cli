@@ -1,0 +1,31 @@
+{
+  "slug": "frontend/vue",
+  "importPatterns": [
+    "from\\s+[\"']vue[\"']"
+  ],
+  "apiPatterns": [
+    "defineComponent\\(",
+    "defineProps\\(",
+    "defineEmits\\(",
+    "<script\\s+setup\\b"
+  ],
+  "configFilePatterns": [],
+  "fixtures": {
+    "positive": [
+      {
+        "path": "src/components/Widget.vue",
+        "diff": "<script setup>\nimport { defineProps, defineEmits } from \"vue\";\nconst props = defineProps({ title: String });\nconst emit = defineEmits([\"update\"]);\n</script>"
+      },
+      {
+        "path": "src/components/Legacy.ts",
+        "diff": "import { defineComponent } from \"vue\";\nexport default defineComponent({\n  name: \"Legacy\",\n});"
+      }
+    ],
+    "negative": [
+      {
+        "path": "README.md",
+        "diff": "We looked at Vue for the new dashboard but stuck with React for consistency with the rest of the stack."
+      }
+    ]
+  }
+}

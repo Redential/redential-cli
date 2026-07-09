@@ -1,0 +1,33 @@
+{
+  "slug": "queues/bullmq",
+  "importPatterns": [
+    "from\\s+[\"']bullmq[\"']",
+    "require\\(\\s*[\"']bullmq[\"']\\s*\\)"
+  ],
+  "apiPatterns": [
+    "new\\s+QueueEvents\\("
+  ],
+  "configFilePatterns": [],
+  "fixtures": {
+    "positive": [
+      {
+        "path": "src/queues/email.ts",
+        "diff": "import { Queue, Worker, QueueEvents } from \"bullmq\";\nconst emailQueue = new Queue(\"emails\", { connection });\nconst worker = new Worker(\"emails\", async (job) => {\n  console.log(job.data);\n}, { connection });\nconst events = new QueueEvents(\"emails\", { connection });"
+      },
+      {
+        "path": "src/queues/email.js",
+        "diff": "const { Queue } = require(\"bullmq\");"
+      }
+    ],
+    "negative": [
+      {
+        "path": "README.md",
+        "diff": "bullmq looked promising for our job queue but we picked rabbitmq with amqplib for pub/sub instead."
+      },
+      {
+        "path": "src/workers/image-worker.ts",
+        "diff": "const worker = new Worker(\"./resize.js\");\nworker.postMessage(job);"
+      }
+    ]
+  }
+}

@@ -1,0 +1,39 @@
+{
+  "slug": "ai/vector-search",
+  "importPatterns": [
+    "from\\s+[\"']@pinecone-database/pinecone[\"']",
+    "from\\s+[\"']chromadb[\"']",
+    "from\\s+[\"']@qdrant/js-client-rest[\"']"
+  ],
+  "apiPatterns": [
+    "\\.similaritySearch\\(",
+    "new\\s+PineconeClient\\("
+  ],
+  "configFilePatterns": [],
+  "fixtures": {
+    "positive": [
+      {
+        "path": "src/lib/pinecone.ts",
+        "diff": "import { PineconeClient } from \"@pinecone-database/pinecone\";\nconst pinecone = new PineconeClient();\nawait pinecone.Index(\"docs\").upsert({ vectors });"
+      },
+      {
+        "path": "src/lib/chroma.ts",
+        "diff": "import { ChromaClient } from \"chromadb\";\nconst collection = await client.getOrCreateCollection({ name: \"docs\" });\nconst results = await collection.similaritySearch(\"query text\", 5);"
+      },
+      {
+        "path": "src/lib/qdrant.ts",
+        "diff": "import { QdrantClient } from \"@qdrant/js-client-rest\";\nconst client = new QdrantClient({ url: \"http://localhost:6333\" });\nawait client.upsert(\"docs\", { points });"
+      }
+    ],
+    "negative": [
+      {
+        "path": "README.md",
+        "diff": "We evaluated pinecone, chromadb, and qdrant for vector search but decided pgvector inside Postgres covers our similarity search needs without a separate vector database."
+      },
+      {
+        "path": "src/db/users.ts",
+        "diff": "await prisma.user.upsert({ where: { id }, create: data, update: data });"
+      }
+    ]
+  }
+}

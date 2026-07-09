@@ -1,0 +1,41 @@
+{
+  "slug": "db/mongodb",
+  "importPatterns": [
+    "from\\s+[\"']mongodb[\"']",
+    "require\\(\\s*[\"']mongodb[\"']\\s*\\)",
+    "from\\s+[\"']mongoose[\"']",
+    "require\\(\\s*[\"']mongoose[\"']\\s*\\)"
+  ],
+  "apiPatterns": [
+    "new\\s+MongoClient\\(",
+    "mongoose\\.connect\\(",
+    "\\.aggregate\\(\\["
+  ],
+  "configFilePatterns": [],
+  "fixtures": {
+    "positive": [
+      {
+        "path": "src/db/mongo.ts",
+        "diff": "import { MongoClient } from \"mongodb\";\nconst client = new MongoClient(process.env.MONGO_URL!);\nconst results = await client.db(\"app\").collection(\"users\").aggregate([{ $match: { active: true } }]);"
+      },
+      {
+        "path": "src/db/mongo.js",
+        "diff": "const { MongoClient } = require(\"mongodb\");"
+      },
+      {
+        "path": "src/db/mongoose.ts",
+        "diff": "import mongoose from \"mongoose\";\nmongoose.connect(process.env.MONGO_URL!);"
+      },
+      {
+        "path": "src/db/mongoose.js",
+        "diff": "const mongoose = require(\"mongoose\");"
+      }
+    ],
+    "negative": [
+      {
+        "path": "README.md",
+        "diff": "We compared mongodb and postgres before picking postgres for relational data needs."
+      }
+    ]
+  }
+}

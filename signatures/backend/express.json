@@ -1,0 +1,33 @@
+{
+  "slug": "backend/express",
+  "importPatterns": [
+    "from\\s+[\"']express[\"']",
+    "require\\(\\s*[\"']express[\"']\\s*\\)"
+  ],
+  "apiPatterns": [
+    "express\\(\\)"
+  ],
+  "configFilePatterns": [],
+  "fixtures": {
+    "positive": [
+      {
+        "path": "src/server.ts",
+        "diff": "import express from \"express\";\nconst app = express();\napp.use(express.json());\napp.get(\"/health\", (req, res) => res.json({ ok: true }));"
+      },
+      {
+        "path": "src/routes/users.js",
+        "diff": "const express = require(\"express\");\nconst router = express.Router();\nrouter.get(\"/users\", (req, res) => { res.json([]); });\nrouter.post(\"/users\", (req, res) => { res.status(201).end(); });"
+      }
+    ],
+    "negative": [
+      {
+        "path": "README.md",
+        "diff": "Our backend used to run on Express but we migrated everything to Fastify last year."
+      },
+      {
+        "path": "src/server.ts",
+        "diff": "import Fastify from \"fastify\";\nconst app = Fastify();\napp.get(\"/health\", async (req, res) => ({ ok: true }));"
+      }
+    ]
+  }
+}

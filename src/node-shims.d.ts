@@ -38,12 +38,25 @@ declare module "node:fs" {
     options?: { recursive?: boolean }
   ): void;
   export function unlinkSync(path: string): void;
+  export interface Dirent {
+    name: string;
+    isDirectory(): boolean;
+    isFile(): boolean;
+  }
+  export function readdirSync(
+    path: string | URL,
+    options: { withFileTypes: true }
+  ): Dirent[];
 }
 
 declare module "node:path" {
   export function join(...parts: string[]): string;
   export function resolve(...parts: string[]): string;
   export function extname(path: string): string;
+}
+
+declare module "node:url" {
+  export function fileURLToPath(url: string | URL): string;
 }
 
 declare module "node:os" {

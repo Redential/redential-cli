@@ -1,0 +1,33 @@
+{
+  "slug": "db/postgres",
+  "importPatterns": [
+    "from\\s+[\"']pg[\"']",
+    "require\\(\\s*[\"']pg[\"']\\s*\\)"
+  ],
+  "apiPatterns": [
+    "new\\s+Client\\([\\s\\S]*?connectionString"
+  ],
+  "configFilePatterns": [],
+  "fixtures": {
+    "positive": [
+      {
+        "path": "src/db/pool.ts",
+        "diff": "import { Pool } from \"pg\";\nconst pool = new Pool({ connectionString: process.env.DATABASE_URL });\nconst result = await pool.query(\"SELECT * FROM users WHERE id = $1\", [id]);"
+      },
+      {
+        "path": "src/db/client.js",
+        "diff": "const { Client } = require(\"pg\");\nconst client = new Client({\n  connectionString: process.env.DATABASE_URL,\n});\nawait client.connect();"
+      }
+    ],
+    "negative": [
+      {
+        "path": "README.md",
+        "diff": "We evaluated postgres as our database but ultimately chose MySQL for this service due to team familiarity."
+      },
+      {
+        "path": "src/db/mysql.ts",
+        "diff": "import mysql from \"mysql2/promise\";\nconst pool = mysql.createPool({ uri: process.env.DATABASE_URL });\nconst [rows] = await pool.query(\"SELECT * FROM users WHERE id = ?\", [id]);"
+      }
+    ]
+  }
+}
