@@ -182,8 +182,8 @@ always bump at least minor; breaking schema changes bump major.
 - `assertNoSecrets`/`findSecretPatterns` (`src/secret-scan.ts`): scans the
   final serialized bundle for AWS-key-, PEM-key-, `api_key=`-, and
   `.env`-shaped strings and refuses to return a bundle if any match — the
-  regression guard CLAUDE.md mandates ("Secret-scan del PAYLOAD antes de
-  cualquier output/submit"), wired into `runScan` itself. Never echoes the
+  regression guard CLAUDE.md mandates ("Secret-scan of the PAYLOAD before
+  any output/submit"), wired into `runScan` itself. Never echoes the
   matched value in its own error message.
 - Known-public-host warning: if the repo's remote looks like GitHub,
   GitLab, or Bitbucket (and carries no embedded credentials/token), `scan`
