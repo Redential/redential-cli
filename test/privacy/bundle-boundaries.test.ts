@@ -61,11 +61,11 @@ function buildHostileRepo(): string {
 }
 
 describe("bundle boundaries (hostile fixture)", () => {
-  it("never leaks paths, secrets, commit messages, remote URL, or other contributors", () => {
+  it("never leaks paths, secrets, commit messages, remote URL, or other contributors", async () => {
     const dir = buildHostileRepo();
     const configDir = tempConfigDir();
 
-    const bundle = runScan({
+    const bundle = await runScan({
       repoPath: dir,
       authors: ["you@example.com"],
       confirmed: true,

@@ -7,6 +7,7 @@ that `submit` would upload later — nothing is sent anywhere by `scan` itself.
 redential scan --repo <path>              # interactive author + confirmation
 redential scan --author you@example.com --yes   # non-interactive
 redential scan --repo <path> --json       # force JSON-only, even in a terminal
+redential scan --since 2years             # limit analysis to the last 2 years
 ```
 
 ## How it works
@@ -152,6 +153,67 @@ stdout) prints **only** the raw JSON, byte-identical to before this
 summary existed — `--json` forces that same JSON-only behavior even on a
 terminal, for scripts that run interactively but still want machine
 output.
+
+## Huge repositories and `--since`
+
+`scan` walks git history once, streaming the whole way through — it never
+buffers a huge repo's full `git log` output in memory, and it never holds
+more than one batch's worth of diff content at a time (skill detection
+fetches added-line diffs in bounded batches of ~200 commits via a single
+`git show` process per batch, not one process per commit). A
+programmatically generated 20,000-commit fixture scans in a few seconds
+(asserted under 60s in `test/slow/huge-repo.test.ts` — a separate suite
+excluded from the default `npm test`, since building and scanning 20,000
+commits, while still fast, shouldn't gate every quick local test run; run
+it directly with `npm run test:slow`. CI runs it as its own job on
+`ubuntu-latest`, see `.github/workflows/ci.yml`).
+
+**Progress.** On a real TTY, `scan` prints a running line to **stderr**
+(never stdout) while it walks history:
+
+```
+scanning commits... 12,400/80,000
+```
+
+throttled to roughly every 200 commits so a huge walk doesn't scroll
+thousands of lines, and always finishing at the exact total. Piped or
+redirected stdout (`scan | jq`, `--json`) gets **no progress output at
+all** — `scan`'s stdout contract (JSON only, byte-identical either way) is
+unaffected regardless of how large the repo is; this is covered by a test
+(`test/scan-command.test.ts`'s "huge-repo progress" block) that asserts
+piped output is identical whether or not a progress reporter would have
+fired.
+
+**`--since <spec>` limits the WALK, not the truth.** Pass a relative window
+(`2years`, `18months`, `30days` — singular or plural) or an absolute date
+(`2024-01-01`, or anything else JavaScript's `Date` parses):
+
+```bash
+redential scan --since 2years
+redential scan --since 2024-01-01
+```
+
+This does **not** add any new field to the bundle. It changes which
+commits the existing fields are computed over: `commits.user_total`,
+`first_at`/`last_at`/`span_days`, the hour/weekday histograms,
+`identity.other_contributors_count`, and `ownership.user_commit_ratio` all
+simply reflect the analyzed window instead of full history — see
+[docs/schema.md](schema.md#commits) for the exact field-by-field
+breakdown. This is strictly narrower disclosure than a full scan, never a
+way to fabricate or hide history: a windowed scan can only ever show
+*less* of the repo's real activity, never claim activity that didn't
+happen. Two fields are deliberately **exempt** from the window and always
+reflect the whole repo: `repo.age_days` and `repo.repo_fingerprint` (both
+derived from the repo's true root commit) — otherwise a windowed scan
+could misleadingly make an old repo look freshly created. On a TTY, the
+wrapped summary states the active window next to the span line (e.g. "2
+years, 1,847 commits (last 2 years)"), so it's never ambiguous whether a
+window was applied.
+
+If `--since` excludes every commit in the repo (but the repo isn't
+actually empty), `scan` fails with a message naming the window rather than
+the generic "no commits yet" error, so it's clear the fix is to widen or
+drop `--since`, not that the repo has no history at all.
 
 ## Design notes
 

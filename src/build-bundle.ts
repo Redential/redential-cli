@@ -15,6 +15,11 @@ export interface BuildBundleOptions {
   promptAuthorsFn?: (candidates: AuthorCandidate[]) => Promise<string[]>;
   promptConfirmFn?: () => Promise<boolean>;
   warn?: (message: string) => void;
+  // Raw --since spec, forwarded to runScan (src/since.ts parses it). See
+  // scan-command.ts / docs/scan.md for the CLI-facing behavior.
+  since?: string;
+  // Forwarded to runScan — see ScanOptions.onProgress.
+  onProgress?: (scanned: number, total: number) => void;
 }
 
 /**
@@ -32,7 +37,7 @@ export async function buildBundleInteractively(opts: BuildBundleOptions): Promis
 
   let authors = opts.author;
   if (authors.length === 0) {
-    const candidates = listAuthors(opts.repoPath);
+    const candidates = await listAuthors(opts.repoPath);
     if (candidates.length === 0) {
       throw new ScanError("This repository has no commits yet — nothing to scan.");
     }
@@ -50,5 +55,7 @@ export async function buildBundleInteractively(opts: BuildBundleOptions): Promis
     confirmed,
     toolVersion: opts.toolVersion,
     configDir: opts.configDir,
+    since: opts.since,
+    onProgress: opts.onProgress,
   });
 }

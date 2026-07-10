@@ -397,4 +397,129 @@ describe("executeScanCommand", () => {
     };
     expect(stripVolatile(ttyLogs[0])).toEqual(stripVolatile(nonTtyLogs[0]));
   });
+
+  describe("huge-repo progress", () => {
+    it("writes progress ONLY via progressWrite, never through the stdout `log` callback, when isTTY is true", async () => {
+      const dir = repoWithOneCommit();
+      const logs: string[] = [];
+      const progressWrites: string[] = [];
+      await executeScanCommand({
+        repoPath: dir,
+        author: ["you@example.com"],
+        yes: true,
+        toolVersion: "test",
+        configDir: tempConfigDir(),
+        log: (m) => logs.push(m),
+        isTTY: true,
+        progressWrite: (m) => progressWrites.push(m),
+      });
+
+      expect(progressWrites.length).toBeGreaterThan(0);
+      expect(progressWrites.join("")).toContain("scanning commits...");
+      // The one-commit fixture means scanned === total immediately — the
+      // reporter must still reach the final line and terminate it with \n.
+      expect(progressWrites.join("")).toContain("scanning commits... 1/1\n");
+      // Never leaked into stdout: JSON first, then the wrapped summary —
+      // nothing else, and neither contains the progress line's text.
+      expect(logs).toHaveLength(2);
+      expect(logs[0]).not.toContain("scanning commits");
+      expect(logs[1]).not.toContain("scanning commits");
+    });
+
+    it("never writes progress when stdout is not a TTY — piped JSON output is untouched", async () => {
+      const dir = repoWithOneCommit();
+      const logs: string[] = [];
+      const progressWrites: string[] = [];
+      await executeScanCommand({
+        repoPath: dir,
+        author: ["you@example.com"],
+        yes: true,
+        toolVersion: "test",
+        configDir: tempConfigDir(),
+        log: (m) => logs.push(m),
+        isTTY: false,
+        progressWrite: (m) => progressWrites.push(m),
+      });
+
+      expect(progressWrites).toHaveLength(0);
+      expect(logs).toHaveLength(1);
+      expect(() => JSON.parse(logs[0])).not.toThrow();
+    });
+
+    it("piped stdout is byte-identical whether or not a huge-repo progress reporter would have fired", async () => {
+      const dir = repoWithOneCommit();
+      const configDir = tempConfigDir();
+
+      const withoutProgressWrite: string[] = [];
+      await executeScanCommand({
+        repoPath: dir,
+        author: ["you@example.com"],
+        yes: true,
+        toolVersion: "test",
+        configDir,
+        log: (m) => withoutProgressWrite.push(m),
+        isTTY: false,
+      });
+
+      const withProgressWrite: string[] = [];
+      await executeScanCommand({
+        repoPath: dir,
+        author: ["you@example.com"],
+        yes: true,
+        toolVersion: "test",
+        configDir,
+        log: (m) => withProgressWrite.push(m),
+        isTTY: false,
+        progressWrite: () => {
+          throw new Error("progressWrite must never be called when stdout is not a TTY");
+        },
+      });
+
+      // Only created_at/attestation.confirmed_at (wall-clock `now`) can
+      // legitimately differ between the two separate scans — same
+      // stripVolatile approach as the byte-identical TTY/non-TTY test above.
+      const stripVolatile = (raw: string) => {
+        const b = JSON.parse(raw);
+        delete b.created_at;
+        delete b.attestation.confirmed_at;
+        return b;
+      };
+      expect(withProgressWrite.map(stripVolatile)).toEqual(withoutProgressWrite.map(stripVolatile));
+    });
+  });
+
+  describe("--since window", () => {
+    it("shows the window label in the wrapped summary when isTTY is true", async () => {
+      const dir = repoWithOneCommit();
+      const logs: string[] = [];
+      await executeScanCommand({
+        repoPath: dir,
+        author: ["you@example.com"],
+        yes: true,
+        toolVersion: "test",
+        configDir: tempConfigDir(),
+        log: (m) => logs.push(m),
+        isTTY: true,
+        since: "2years",
+      });
+
+      expect(logs[1]).toContain("last 2 years");
+    });
+
+    it("omits the window label when --since is not passed", async () => {
+      const dir = repoWithOneCommit();
+      const logs: string[] = [];
+      await executeScanCommand({
+        repoPath: dir,
+        author: ["you@example.com"],
+        yes: true,
+        toolVersion: "test",
+        configDir: tempConfigDir(),
+        log: (m) => logs.push(m),
+        isTTY: true,
+      });
+
+      expect(logs[1]).not.toContain("last ");
+    });
+  });
 });

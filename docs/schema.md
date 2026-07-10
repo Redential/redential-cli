@@ -19,17 +19,22 @@ false` everywhere — unknown fields are invalid by design).
 - `host_type` — only the KIND of host ("github"). Never the URL, org, or
   repo name. The employer name is a separate claim the user makes in the
   Redential UI, clearly labeled as unverified.
-- `age_days` — first commit to now.
+- `age_days` — the repo's TRUE root commit to now. Always the whole repo's
+  age, even when `scan --since <spec>` limits the WALK to a recent window
+  (see docs/scan.md#huge-repositories-and---since) — this field answers
+  "how old is this repo", never "how old is the analyzed window".
 - `repo_fingerprint` — salted hash of the root commit sha. The server can
   detect the same repo being re-submitted (consistency) without ever knowing
-  which repo it is.
+  which repo it is. Also always the true root, unaffected by `--since`.
 
 ## `identity`
 
 - `author_identity_hashes` — the user explicitly selects which author
   emails are theirs during `scan`; only salted hashes are included. Other
   contributors are never identified in any form.
-- `other_contributors_count` — an aggregate count, nothing else.
+- `other_contributors_count` — an aggregate count, nothing else. Counted
+  only among commits in the analyzed window (see `commits` below) when
+  `--since` is set — narrower disclosure, not broader.
 
 ## `commits`
 
@@ -37,6 +42,18 @@ Volume (`user_total`), span (`first_at`, `last_at`, `span_days`) and cadence
 (`hour_histogram` 24 buckets UTC, `weekday_histogram` 7 buckets). The
 histograms double as a behavioral fingerprint: they can be compared against
 the same user's verified public activity as a soft authenticity anchor.
+
+**`--since <spec>` and this section.** `scan --since <spec>` (relative:
+`2years`/`18months`/`30days`; absolute: `2024-01-01`) limits the commit
+WALK to that window — see docs/scan.md#huge-repositories-and---since for
+the full CLI-facing behavior. No new bundle field exists for this: every
+field above simply reflects the analyzed window instead of full history —
+`user_total` counts only windowed commits, `first_at`/`last_at`/`span_days`
+bound the window, and the histograms only tally windowed commits. This is
+narrower disclosure than a full scan, never fabricated or hidden history —
+`repo.age_days` and `repo.repo_fingerprint` stay window-independent (see
+`repo` above) specifically so a windowed scan can never be mistaken for
+"this repo is only N days old".
 
 ## `signed`
 
@@ -131,6 +148,8 @@ How detection works, and why it is safe to have in the bundle:
 ## `ownership`
 
 `user_commit_ratio` — the user's share of total commits. Aggregate only.
+Computed over the analyzed window when `--since` is set (see `commits`
+above), same as `identity.other_contributors_count`.
 
 ## `integrity`
 

@@ -234,6 +234,12 @@ export interface FormatSummaryOptions {
    */
   hasSession?: boolean;
   alreadySubmittedIdentical?: boolean;
+  /** Human label for an active `--since` window ("last 2 years", "since
+   * 2024-01-01" — src/since.ts's describeSince), shown next to the
+   * span/commit-count line. Undefined/omitted means no window was applied
+   * (the default: full history). Local CLI input, not bundle data — same
+   * category as hasSession/alreadySubmittedIdentical above. */
+  sinceLabel?: string;
 }
 
 export function formatSummary(bundle: Bundle, opts: FormatSummaryOptions = {}): string {
@@ -259,8 +265,9 @@ export function formatSummary(bundle: Bundle, opts: FormatSummaryOptions = {}): 
   lines.push("");
 
   const commitCount = bundle.commits.user_total.toLocaleString("en-US");
+  const windowSuffix = opts.sinceLabel ? ` ${colors.DIM}(${opts.sinceLabel})${colors.RESET}` : "";
   lines.push(
-    `  ${colors.BOLD}${humanizeSpan(bundle.commits.span_days)}, ${commitCount} commits${colors.RESET}`
+    `  ${colors.BOLD}${humanizeSpan(bundle.commits.span_days)}, ${commitCount} commits${colors.RESET}${windowSuffix}`
   );
   lines.push("");
 

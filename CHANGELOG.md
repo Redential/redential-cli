@@ -8,6 +8,36 @@ always bump at least minor; breaking schema changes bump major.
 ## [Unreleased]
 
 ### Added
+- **`scan` handles huge repositories gracefully.** Three changes, all in
+  service of the same goal: `scan` staying fast, bounded, and honest on a
+  repo with tens of thousands of commits. See
+  [docs/scan.md](docs/scan.md#huge-repositories-and---since).
+  - **Streaming, batched commit walk.** `git.ts`'s commit walk now streams
+    `git log`'s output incrementally via `spawn` instead of buffering it
+    all through `execFileSync` (which silently hit Node's default 1MB
+    child-process buffer on a large-enough repo, previously misread as
+    "no commits"). Skill detection's diff-content fetch now runs in
+    batches of ~200 commits per `git show` process instead of one process
+    per commit — the dominant cost at scale was subprocess spawn count,
+    not git's own work — so at most one batch's diff text is ever held in
+    memory at once. A programmatically generated 20,000-commit fixture now
+    scans in a few seconds; asserted under 60s in a new, separate slow
+    suite (`test/slow/`, `npm run test:slow`, excluded from the default
+    `npm test`; CI runs it as its own `ubuntu-latest` job).
+  - **Huge-repo progress on stderr.** On a real TTY, `scan` prints a
+    throttled "scanning commits... N/Total" line to stderr while it walks
+    history. Piped/redirected stdout (`scan | jq`, `--json`) gets no
+    progress output at all — the existing JSON-only stdout contract is
+    byte-identical either way, covered by a dedicated test.
+  - **`--since <spec>` flag.** Limits analysis to commits at or after a
+    relative window (`2years`, `18months`, `30days`) or an absolute date
+    (`2024-01-01`) — `src/since.ts`. No new bundle field: `first_at`,
+    `span_days`, and the other window-scoped fields simply reflect the
+    analyzed window (see [docs/schema.md](docs/schema.md#commits)).
+    `repo.age_days`/`repo.repo_fingerprint` deliberately stay
+    window-independent, always reflecting the repo's true root commit. The
+    wrapped summary states the active window (e.g. "last 2 years") next to
+    the span line when one is applied.
 - **Closing next-step hint on the wrapped summary.** `scan`'s TTY-only
   "wrapped" summary now ends with a next-step CTA after the "Nothing left
   your machine" line, in one of three states: no stored session shows

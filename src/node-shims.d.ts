@@ -11,7 +11,7 @@ declare var process: {
   platform: string;
   stdin: unknown;
   stdout: { isTTY?: boolean };
-  stderr: unknown;
+  stderr: { isTTY?: boolean; write(chunk: string): boolean };
   exit(code?: number): never;
 };
 
@@ -78,14 +78,26 @@ declare module "node:child_process" {
     args: string[],
     options?: { cwd?: string; encoding?: string; stdio?: unknown }
   ): string;
+  // Just enough of a Readable stream to consume a spawned process' stdio:
+  // encoding-aware "data" events (string chunks once setEncoding is
+  // called) for streaming/batched command output, never buffering it all
+  // via execFileSync's return value — see git.ts's getAllCommits and
+  // getCommitsAddedLines.
+  export interface ReadableStream {
+    setEncoding(encoding: string): void;
+    on(event: "data", listener: (chunk: string) => void): ReadableStream;
+  }
   export interface ChildProcess {
+    stdout: ReadableStream | null;
+    stderr: ReadableStream | null;
     on(event: "error", listener: (err: Error) => void): ChildProcess;
+    on(event: "close", listener: (code: number | null) => void): ChildProcess;
     unref(): ChildProcess;
   }
   export function spawn(
     command: string,
     args: string[],
-    options?: { detached?: boolean; stdio?: unknown }
+    options?: { cwd?: string; detached?: boolean; stdio?: unknown }
   ): ChildProcess;
 }
 

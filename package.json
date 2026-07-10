@@ -35,7 +35,8 @@
     "build": "tsc -p tsconfig.json",
     "dev": "tsc --watch",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
+    "test": "vitest run --exclude \"**/test/slow/**\"",
+    "test:slow": "vitest run test/slow",
     "prepublishOnly": "npm test && npm run build"
   },
   "dependencies": {

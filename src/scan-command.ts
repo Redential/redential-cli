@@ -1,9 +1,15 @@
 import { buildBundleInteractively, type BuildBundleOptions } from "./build-bundle.js";
 import { formatSummary } from "./summary.js";
+import { describeSince } from "./since.js";
 import { getSiteUrl } from "./config.js";
 import { readCredentials } from "./credentials.js";
 import { bundleContentHash, readLastSubmission } from "./submission-record.js";
 import type { Bundle } from "./types.js";
+
+// Commits between stderr progress writes — keeps a huge repo's walk from
+// spamming thousands of lines, while still giving visible movement well
+// inside the 60s budget a 20k-commit scan targets (docs/scan.md).
+const PROGRESS_INTERVAL = 200;
 
 export type ScanCommandOptions = BuildBundleOptions & {
   log?: (message: string) => void;
@@ -20,7 +26,36 @@ export type ScanCommandOptions = BuildBundleOptions & {
   // box-drawing. cli.ts computes this from process.platform/process.env;
   // tests set it explicitly, same pattern as isTTY.
   plain?: boolean;
+  // Where the huge-repo progress line ("scanning commits... N/Total") is
+  // written — ALWAYS stderr, NEVER the `log` callback above (which backs
+  // stdout). Defaults to `process.stderr.write`; tests inject a collector
+  // instead of a real stream. Only used when `isTTY` is true — see
+  // buildProgressReporter below.
+  progressWrite?: (message: string) => void;
 };
+
+/**
+ * Builds the onProgress callback threaded into runScan (via
+ * buildBundleInteractively), or undefined when progress shouldn't be shown
+ * at all — piped/non-TTY stdout stays completely silent on stderr too, so
+ * `scan | jq` output is never at risk of interleaving weirdly with a
+ * script that also inspects stderr. Throttled to PROGRESS_INTERVAL so a
+ * 20k-commit walk doesn't write 20,000 lines; always writes the final
+ * scanned === total line so the terminal doesn't sit on a stale count.
+ */
+function buildProgressReporter(opts: ScanCommandOptions): ((scanned: number, total: number) => void) | undefined {
+  if (!opts.isTTY) return undefined;
+  const write = opts.progressWrite ?? ((message: string) => process.stderr.write(message));
+  let lastWritten = 0;
+  return (scanned: number, total: number) => {
+    if (scanned !== total && scanned - lastWritten < PROGRESS_INTERVAL) return;
+    lastWritten = scanned;
+    // \r overwrites the previous line in place rather than scrolling —
+    // counts only, never a sha/path/email (this can end up in CI logs).
+    write(`\rscanning commits... ${scanned.toLocaleString("en-US")}/${total.toLocaleString("en-US")}`);
+    if (scanned === total) write("\n");
+  };
+}
 
 /**
  * Local-only session/submission state for the wrapped summary's closing
@@ -62,11 +97,17 @@ function nextStepsState(bundle: Bundle, configDir: string | undefined): {
  */
 export async function executeScanCommand(opts: ScanCommandOptions): Promise<void> {
   const log = opts.log ?? console.log;
-  const bundle = await buildBundleInteractively(opts);
+  const bundle = await buildBundleInteractively({ ...opts, onProgress: buildProgressReporter(opts) });
   const bundleJson = JSON.stringify(bundle, null, 2);
 
   log(bundleJson);
   if (opts.isTTY && !opts.json) {
-    log(formatSummary(bundle, { plain: opts.plain, ...nextStepsState(bundle, opts.configDir) }));
+    log(
+      formatSummary(bundle, {
+        plain: opts.plain,
+        sinceLabel: opts.since !== undefined ? describeSince(opts.since) : undefined,
+        ...nextStepsState(bundle, opts.configDir),
+      })
+    );
   }
 }

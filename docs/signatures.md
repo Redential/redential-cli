@@ -2,10 +2,13 @@
 
 `scan` fills `detected_skills` (schema/bundle.v1.json) by matching the
 selected author's own commits — ADDED diff lines only, read locally via
-`git show` (`src/git.ts`'s `getCommitAddedLines`) — against two layers of
-local, versioned, public data. Zero network, no LLMs, per docs/principles.md
-principle 3 ("Bounded output"): the only content-derived value that can ever
-leave the machine is a slug from the closed vocabulary in `taxonomy.json`.
+`git show`, batched across ~200 commits per process for huge-repo
+performance (`src/git.ts`'s `getCommitsAddedLines`; see
+[docs/scan.md](scan.md#huge-repositories-and---since)) — against two layers
+of local, versioned, public data. Zero network, no LLMs, per
+docs/principles.md principle 3 ("Bounded output"): the only content-derived
+value that can ever leave the machine is a slug from the closed vocabulary
+in `taxonomy.json`.
 
 ## Tier 1 — generic import detection
 

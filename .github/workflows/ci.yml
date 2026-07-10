@@ -42,3 +42,23 @@ jobs:
       - run: npm test
 
       - run: npm run build
+
+  # The 20,000-commit perf/memory suite (test/slow/) — excluded from the
+  # matrix job's `npm test` above (package.json) since it's slow enough,
+  # and narrow enough in what it proves (huge-repo scan time and memory),
+  # that it shouldn't gate every OS/Node cell. Runs on ubuntu-latest only —
+  # the goal is proving the 60s budget holds somewhere real in CI, not on
+  # every platform.
+  huge-repo:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "npm"
+
+      - run: npm ci
+
+      - run: npm run test:slow

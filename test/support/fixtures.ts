@@ -109,6 +109,58 @@ export function setRemote(dir: string, url: string): void {
   run(dir, ["remote", "add", "origin", url]);
 }
 
+/**
+ * A repo with `commitCount` commits, built via `git fast-import` instead of
+ * one `git commit` invocation per commit — the latter is far too slow to
+ * build a huge-repo fixture at test time (thousands of separate git
+ * processes just to set up the test, before the thing actually under test
+ * even runs). `git fast-import` accepts the whole history as a single
+ * stream on stdin and builds it in well under a second even at 20,000
+ * commits. Each commit touches one of 50 rotating files (`src/fileN.ts`),
+ * one hour apart starting 2020-01-01 — enough file/date spread to exercise
+ * churn, language/category, and cadence-histogram code paths, not just
+ * commit count. Every 50th commit (the first touch of each rotating file)
+ * introduces a fresh `import Stripe from "stripe"` line, so skill
+ * detection has real (if sparse — see docs/scan.md) work to do too.
+ */
+export function createRepoWithGeneratedHistory(commitCount: number): string {
+  const dir = mkdtempSync(join(tmpdir(), "redential-huge-"));
+  run(dir, ["init", "-q", "-b", "main"]);
+  run(dir, ["config", "core.autocrlf", "false"]);
+
+  const startTs = Math.floor(new Date("2020-01-01T00:00:00Z").getTime() / 1000);
+  let stream = "";
+  for (let i = 0; i < commitCount; i++) {
+    const ts = startTs + i * 3600;
+    const path = `src/file${i % 50}.ts`;
+    const isFirstTouch = i < 50;
+    const content = isFirstTouch
+      ? `import Stripe from "stripe";\nexport const value${i} = ${i};\n`
+      : `export const value${i} = ${i};\n`;
+    const message = `commit ${i}\n`;
+
+    stream += `commit refs/heads/main\n`;
+    stream += `mark :${i + 1}\n`;
+    stream += `author Perf Tester <perf@example.com> ${ts} +0000\n`;
+    stream += `committer Perf Tester <perf@example.com> ${ts} +0000\n`;
+    stream += `data ${Buffer.byteLength(message, "utf8")}\n${message}`;
+    if (i > 0) stream += `from :${i}\n`;
+    stream += `M 100644 inline ${path}\n`;
+    stream += `data ${Buffer.byteLength(content, "utf8")}\n${content}`;
+  }
+
+  execFileSync("git", ["fast-import", "--quiet"], {
+    cwd: dir,
+    input: stream,
+    // Well beyond the default 1MB — the whole generated stream for 20,000
+    // commits is only a few MB, but this is test setup, not the code under
+    // test, so there's no reason to make it fragile at the edge.
+    maxBuffer: 1024 * 1024 * 1024,
+  });
+  run(dir, ["checkout", "-q", "main"]);
+  return dir;
+}
+
 export function cleanup(dir: string): void {
   // maxRetries/retryDelay: on Windows, a just-closed git process or an
   // antivirus scanner can hold a brief file lock after this function is

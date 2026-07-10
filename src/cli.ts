@@ -67,7 +67,11 @@ program
     "force JSON-only output, even on an interactive terminal (default when piped)",
     false
   )
-  .action(async (options: { repo: string; author: string[]; yes: boolean; json: boolean }) => {
+  .option(
+    "--since <spec>",
+    'limit analysis to commits at/after this date — a relative window ("2years", "18months", "30days") or an absolute date ("2024-01-01"); see docs/scan.md'
+  )
+  .action(async (options: { repo: string; author: string[]; yes: boolean; json: boolean; since?: string }) => {
     await run(() =>
       executeScanCommand({
         repoPath: resolve(options.repo),
@@ -77,6 +81,7 @@ program
         isTTY: process.stdout.isTTY === true,
         json: options.json,
         plain: shouldUsePlainOutput(process.platform, process.env),
+        since: options.since,
       })
     );
   });

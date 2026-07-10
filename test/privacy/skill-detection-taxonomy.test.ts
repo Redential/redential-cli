@@ -40,7 +40,7 @@ function tempPackageMapFile(map: Record<string, string>): string {
  * naming a slug outside taxonomy.json must never produce a bundle at all.
  */
 describe("skill detection: a slug outside taxonomy.json can never reach a bundle", () => {
-  it("rejects before producing a bundle when a signature names a slug not in taxonomy.json", () => {
+  it("rejects before producing a bundle when a signature names a slug not in taxonomy.json", async () => {
     const dir = createRepo();
     dirs.push(dir);
     const configDir = tempConfigDir();
@@ -61,7 +61,7 @@ describe("skill detection: a slug outside taxonomy.json can never reach a bundle
       fixtures: { positive: [], negative: [] },
     });
 
-    expect(() =>
+    await expect(
       runScan({
         repoPath: dir,
         authors: ["mallory@example.com"],
@@ -70,10 +70,10 @@ describe("skill detection: a slug outside taxonomy.json can never reach a bundle
         configDir,
         skillDetectOptions: { signaturesDir: hostileDir },
       })
-    ).toThrow(ScanError);
+    ).rejects.toThrow(ScanError);
   });
 
-  it("rejects before producing a bundle when a package-map.json entry names a slug not in taxonomy.json", () => {
+  it("rejects before producing a bundle when a package-map.json entry names a slug not in taxonomy.json", async () => {
     const dir = createRepo();
     dirs.push(dir);
     const configDir = tempConfigDir();
@@ -93,7 +93,7 @@ describe("skill detection: a slug outside taxonomy.json can never reach a bundle
       "some-innocuous-package": "evil/not-in-taxonomy",
     });
 
-    expect(() =>
+    await expect(
       runScan({
         repoPath: dir,
         authors: ["mallory@example.com"],
@@ -102,10 +102,10 @@ describe("skill detection: a slug outside taxonomy.json can never reach a bundle
         configDir,
         skillDetectOptions: { packageMapPath: hostileMapPath },
       })
-    ).toThrow(ScanError);
+    ).rejects.toThrow(ScanError);
   });
 
-  it("still scans normally against the real, shipped signatures/taxonomy.json", () => {
+  it("still scans normally against the real, shipped signatures/taxonomy.json", async () => {
     const dir = createRepo();
     dirs.push(dir);
     const configDir = tempConfigDir();
@@ -118,7 +118,7 @@ describe("skill detection: a slug outside taxonomy.json can never reach a bundle
 
     // No skillDetectOptions override — the default (real) signatures/
     // and taxonomy.json, proving the guard above isn't why real scans work.
-    expect(() =>
+    await expect(
       runScan({
         repoPath: dir,
         authors: ["alice@example.com"],
@@ -126,6 +126,6 @@ describe("skill detection: a slug outside taxonomy.json can never reach a bundle
         toolVersion: "0.1.0",
         configDir,
       })
-    ).not.toThrow();
+    ).resolves.not.toThrow();
   });
 });

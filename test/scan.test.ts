@@ -34,7 +34,7 @@ function tempConfigDir(): string {
 }
 
 describe("runScan", () => {
-  it("computes ownership and identity across multiple author identities", () => {
+  it("computes ownership and identity across multiple author identities", async () => {
     const dir = repo();
     const configDir = tempConfigDir();
     commit(dir, {
@@ -56,7 +56,7 @@ describe("runScan", () => {
       files: { "src/other.ts": "console.log(3)\n" },
     });
 
-    const bundle = runScan({
+    const bundle = await runScan({
       repoPath: dir,
       authors: ["alice@example.com"],
       confirmed: true,
@@ -77,7 +77,7 @@ describe("runScan", () => {
     expect(validateAgainstSchema(schema, bundle)).toEqual([]);
   });
 
-  it("counts signed vs unsigned commits", () => {
+  it("counts signed vs unsigned commits", async () => {
     const dir = repo();
     const configDir = tempConfigDir();
     setupSshSigning(dir, "carol@example.com");
@@ -96,7 +96,7 @@ describe("runScan", () => {
       sign: false,
     });
 
-    const bundle = runScan({
+    const bundle = await runScan({
       repoPath: dir,
       authors: ["carol@example.com"],
       confirmed: true,
@@ -109,7 +109,7 @@ describe("runScan", () => {
     expect(validateAgainstSchema(schema, bundle)).toEqual([]);
   });
 
-  it("does not count a signature that can't be verified (mismatched key) as signed", () => {
+  it("does not count a signature that can't be verified (mismatched key) as signed", async () => {
     const dir = repo();
     const configDir = tempConfigDir();
     setupSshSigningWithMismatchedTrust(dir, "dana@example.com");
@@ -121,7 +121,7 @@ describe("runScan", () => {
       sign: true,
     });
 
-    const bundle = runScan({
+    const bundle = await runScan({
       repoPath: dir,
       authors: ["dana@example.com"],
       confirmed: true,
@@ -134,10 +134,10 @@ describe("runScan", () => {
     expect(validateAgainstSchema(schema, bundle)).toEqual([]);
   });
 
-  it("rejects an empty repository", () => {
+  it("rejects an empty repository", async () => {
     const dir = repo();
     const configDir = tempConfigDir();
-    expect(() =>
+    await expect(
       runScan({
         repoPath: dir,
         authors: ["nobody@example.com"],
@@ -145,11 +145,11 @@ describe("runScan", () => {
         toolVersion: "0.1.0",
         configDir,
       })
-    ).toThrow(ScanError);
-    expect(listAuthors(dir)).toEqual([]);
+    ).rejects.toThrow(ScanError);
+    expect(await listAuthors(dir)).toEqual([]);
   });
 
-  it("handles a repo with a single commit", () => {
+  it("handles a repo with a single commit", async () => {
     const dir = repo();
     const configDir = tempConfigDir();
     commit(dir, {
@@ -159,7 +159,7 @@ describe("runScan", () => {
       files: { "README.md": "hello\n" },
     });
 
-    const bundle = runScan({
+    const bundle = await runScan({
       repoPath: dir,
       authors: ["dana@example.com"],
       confirmed: true,
@@ -175,7 +175,7 @@ describe("runScan", () => {
     expect(validateAgainstSchema(schema, bundle)).toEqual([]);
   });
 
-  it("requires explicit confirmation before producing a bundle", () => {
+  it("requires explicit confirmation before producing a bundle", async () => {
     const dir = repo();
     const configDir = tempConfigDir();
     commit(dir, {
@@ -184,7 +184,7 @@ describe("runScan", () => {
       authorEmail: "eve@example.com",
       files: { "a.ts": "1\n" },
     });
-    expect(() =>
+    await expect(
       runScan({
         repoPath: dir,
         authors: ["eve@example.com"],
@@ -192,10 +192,10 @@ describe("runScan", () => {
         toolVersion: "0.1.0",
         configDir,
       })
-    ).toThrow(ScanError);
+    ).rejects.toThrow(ScanError);
   });
 
-  it("excludes lockfiles, minified bundles, build dirs, and single-commit dumps from languages/categories", () => {
+  it("excludes lockfiles, minified bundles, build dirs, and single-commit dumps from languages/categories", async () => {
     const dir = repo();
     const configDir = tempConfigDir();
     // A big lockfile (would fall into "other"), a vendored minified bundle
@@ -215,7 +215,7 @@ describe("runScan", () => {
       },
     });
 
-    const bundle = runScan({
+    const bundle = await runScan({
       repoPath: dir,
       authors: ["grace@example.com"],
       confirmed: true,
@@ -229,7 +229,7 @@ describe("runScan", () => {
     expect(validateAgainstSchema(schema, bundle)).toEqual([]);
   });
 
-  it("excludes a single-commit large add with no later history, even outside a recognized dir/name", () => {
+  it("excludes a single-commit large add with no later history, even outside a recognized dir/name", async () => {
     const dir = repo();
     const configDir = tempConfigDir();
     // Deliberately a DIFFERENT extension and category from the real file
@@ -253,7 +253,7 @@ describe("runScan", () => {
       files: { "server/index.ts": "console.log(1)\n" },
     });
 
-    const bundle = runScan({
+    const bundle = await runScan({
       repoPath: dir,
       authors: ["heidi@example.com"],
       confirmed: true,
@@ -266,7 +266,7 @@ describe("runScan", () => {
     expect(validateAgainstSchema(schema, bundle)).toEqual([]);
   });
 
-  it("populates detected_skills from a real signature match (Stripe import + API call)", () => {
+  it("populates detected_skills from a real signature match (Stripe import + API call)", async () => {
     const dir = repo();
     const configDir = tempConfigDir();
     commit(dir, {
@@ -281,7 +281,7 @@ describe("runScan", () => {
       },
     });
 
-    const bundle = runScan({
+    const bundle = await runScan({
       repoPath: dir,
       authors: ["ivy@example.com"],
       confirmed: true,
@@ -300,7 +300,7 @@ describe("runScan", () => {
     expect(validateAgainstSchema(schema, bundle)).toEqual([]);
   });
 
-  it("does not detect a skill from a merge commit or from prose merely mentioning a library", () => {
+  it("does not detect a skill from a merge commit or from prose merely mentioning a library", async () => {
     const dir = repo();
     const configDir = tempConfigDir();
     commit(dir, {
@@ -310,7 +310,7 @@ describe("runScan", () => {
       files: { "README.md": "We considered using stripe for payments but chose mercadopago instead for LatAm support.\n" },
     });
 
-    const bundle = runScan({
+    const bundle = await runScan({
       repoPath: dir,
       authors: ["jack@example.com"],
       confirmed: true,
@@ -322,7 +322,7 @@ describe("runScan", () => {
     expect(validateAgainstSchema(schema, bundle)).toEqual([]);
   });
 
-  it("detected_skills is deterministic and sorted by slug across repeated runs", () => {
+  it("detected_skills is deterministic and sorted by slug across repeated runs", async () => {
     const dir = repo();
     const configDir = tempConfigDir();
     commit(dir, {
@@ -340,14 +340,14 @@ describe("runScan", () => {
     const run = () =>
       runScan({ repoPath: dir, authors: ["kim@example.com"], confirmed: true, toolVersion: "0.1.0", configDir, now });
 
-    const a = run();
-    const b = run();
+    const a = await run();
+    const b = await run();
     expect(JSON.stringify(a.detected_skills)).toBe(JSON.stringify(b.detected_skills));
     const slugs = a.detected_skills.map((s) => s.slug);
     expect(slugs).toEqual([...slugs].sort());
   });
 
-  it("requires at least one selected author", () => {
+  it("requires at least one selected author", async () => {
     const dir = repo();
     const configDir = tempConfigDir();
     commit(dir, {
@@ -356,12 +356,12 @@ describe("runScan", () => {
       authorEmail: "frank@example.com",
       files: { "a.ts": "1\n" },
     });
-    expect(() =>
+    await expect(
       runScan({ repoPath: dir, authors: [], confirmed: true, toolVersion: "0.1.0", configDir })
-    ).toThrow(ScanError);
+    ).rejects.toThrow(ScanError);
   });
 
-  it("aggregates detected_skills across multiple non-consecutive commits", () => {
+  it("aggregates detected_skills across multiple non-consecutive commits", async () => {
     const dir = repo();
     const configDir = tempConfigDir();
     // Each "stripe" commit must ADD a fresh import line of its own — git
@@ -406,7 +406,7 @@ describe("runScan", () => {
       authorDate: "2026-01-05T10:00:00Z",
     });
 
-    const bundle = runScan({
+    const bundle = await runScan({
       repoPath: dir,
       authors: ["liam@example.com"],
       confirmed: true,
@@ -425,7 +425,7 @@ describe("runScan", () => {
     expect(validateAgainstSchema(schema, bundle)).toEqual([]);
   });
 
-  it("scans a 300-commit repo in under 30 seconds", () => {
+  it("scans a 300-commit repo in under 30 seconds", async () => {
     const dir = repo();
     const configDir = tempConfigDir();
     for (let i = 0; i < 300; i++) {
@@ -442,7 +442,7 @@ describe("runScan", () => {
     }
 
     const start = Date.now();
-    const bundle = runScan({
+    const bundle = await runScan({
       repoPath: dir,
       authors: ["nora@example.com"],
       confirmed: true,
@@ -454,4 +454,130 @@ describe("runScan", () => {
     expect(bundle.commits.user_total).toBe(300);
     expect(elapsedMs).toBeLessThan(30_000);
   }, 90_000);
+});
+
+describe("runScan — --since window", () => {
+  function repoWithThreeCommits(): { dir: string; configDir: string } {
+    const dir = repo();
+    const configDir = tempConfigDir();
+    commit(dir, {
+      message: "oldest",
+      authorName: "Oscar",
+      authorEmail: "oscar@example.com",
+      files: { "a.ts": "1\n" },
+      authorDate: "2020-01-01T00:00:00Z",
+    });
+    commit(dir, {
+      message: "middle",
+      authorName: "Oscar",
+      authorEmail: "oscar@example.com",
+      files: { "b.ts": "2\n" },
+      authorDate: "2023-01-01T00:00:00Z",
+    });
+    commit(dir, {
+      message: "newest",
+      authorName: "Oscar",
+      authorEmail: "oscar@example.com",
+      files: { "c.ts": "3\n" },
+      authorDate: "2025-01-01T00:00:00Z",
+    });
+    return { dir, configDir };
+  }
+
+  it("limits the walk to commits at/after the window — first_at/span_days reflect only the window, no new bundle field", async () => {
+    const { dir, configDir } = repoWithThreeCommits();
+    const now = new Date("2025-06-01T00:00:00Z");
+
+    const bundle = await runScan({
+      repoPath: dir,
+      authors: ["oscar@example.com"],
+      confirmed: true,
+      toolVersion: "0.1.0",
+      configDir,
+      now,
+      since: "1years",
+    });
+
+    // Only "newest" (2025-01-01) is within 1 year of 2025-06-01 — "middle"
+    // (2023) and "oldest" (2020) fall outside the window entirely.
+    expect(bundle.commits.user_total).toBe(1);
+    expect(bundle.commits.first_at).toBe("2025-01-01T00:00:00.000Z");
+    expect(bundle.commits.last_at).toBe("2025-01-01T00:00:00.000Z");
+    expect(bundle.commits.span_days).toBe(0);
+    expect(Object.keys(bundle.commits).sort()).toEqual(
+      ["first_at", "hour_histogram", "last_at", "span_days", "user_total", "weekday_histogram"].sort()
+    );
+  });
+
+  it("repo.age_days reflects the TRUE repo root, unaffected by --since", async () => {
+    const { dir, configDir } = repoWithThreeCommits();
+    const now = new Date("2025-06-01T00:00:00Z");
+
+    const windowed = await runScan({
+      repoPath: dir,
+      authors: ["oscar@example.com"],
+      confirmed: true,
+      toolVersion: "0.1.0",
+      configDir,
+      now,
+      since: "1years",
+    });
+    const full = await runScan({
+      repoPath: dir,
+      authors: ["oscar@example.com"],
+      confirmed: true,
+      toolVersion: "0.1.0",
+      configDir,
+      now,
+    });
+
+    const expectedAgeDays = Math.floor(
+      (now.getTime() - new Date("2020-01-01T00:00:00Z").getTime()) / 86_400_000
+    );
+    expect(windowed.repo.age_days).toBe(expectedAgeDays);
+    expect(windowed.repo.age_days).toBe(full.repo.age_days);
+  });
+
+  it("rejects with a window-specific message when --since excludes every commit but the repo isn't empty", async () => {
+    const { dir, configDir } = repoWithThreeCommits();
+    await expect(
+      runScan({
+        repoPath: dir,
+        authors: ["oscar@example.com"],
+        confirmed: true,
+        toolVersion: "0.1.0",
+        configDir,
+        now: new Date("2025-06-01T00:00:00Z"),
+        since: "1days",
+      })
+    ).rejects.toThrow(/No commits found after/);
+  });
+
+  it("rejects an unparseable --since spec", async () => {
+    const { dir, configDir } = repoWithThreeCommits();
+    await expect(
+      runScan({
+        repoPath: dir,
+        authors: ["oscar@example.com"],
+        confirmed: true,
+        toolVersion: "0.1.0",
+        configDir,
+        since: "not-a-window",
+      })
+    ).rejects.toThrow(ScanError);
+  });
+
+  it("accepts an absolute --since date", async () => {
+    const { dir, configDir } = repoWithThreeCommits();
+    const bundle = await runScan({
+      repoPath: dir,
+      authors: ["oscar@example.com"],
+      confirmed: true,
+      toolVersion: "0.1.0",
+      configDir,
+      since: "2024-01-01",
+    });
+    expect(bundle.commits.user_total).toBe(1);
+    expect(bundle.commits.first_at).toBe("2025-01-01T00:00:00.000Z");
+  });
 });

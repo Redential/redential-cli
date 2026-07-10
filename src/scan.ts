@@ -1,5 +1,12 @@
 import { extname } from "node:path";
-import { getAllCommits, getRemoteHostType, getRootCommitSha, type RawCommit } from "./git.js";
+import {
+  getAllCommits,
+  getCommitCount,
+  getRemoteHostType,
+  getRootCommitDate,
+  getRootCommitSha,
+  type RawCommit,
+} from "./git.js";
 import { saltedHash } from "./hash.js";
 import { getOrCreateSalt } from "./salt.js";
 import { merkleRoot } from "./merkle.js";
@@ -7,6 +14,7 @@ import { categorize } from "./categorize.js";
 import { isExcludedPath, heuristicallyGeneratedPaths } from "./churn-exclusions.js";
 import { detectSkills, type DetectSkillsOptions } from "./skill-detect.js";
 import { assertNoSecrets } from "./secret-scan.js";
+import { parseSince } from "./since.js";
 import type { Bundle, CategoryName, LanguageShare, CategoryShare } from "./types.js";
 
 export { ScanError } from "./errors.js";
@@ -17,9 +25,9 @@ export interface AuthorCandidate {
   count: number;
 }
 
-export function listAuthors(repoPath: string): AuthorCandidate[] {
+export async function listAuthors(repoPath: string): Promise<AuthorCandidate[]> {
   const counts = new Map<string, number>();
-  for (const c of getAllCommits(repoPath)) {
+  for (const c of await getAllCommits(repoPath)) {
     counts.set(c.email, (counts.get(c.email) ?? 0) + 1);
   }
   return [...counts.entries()]
@@ -40,6 +48,16 @@ export interface ScanOptions {
   // prove the privacy guarantee holds in the actual call path, not a
   // reimplementation of it) — production callers never set this.
   skillDetectOptions?: DetectSkillsOptions;
+  // Raw --since spec ("2years", "18months", "2024-01-01" — see
+  // src/since.ts). Limits the WALK to commits at/after this date; no new
+  // bundle field is added for it — commits.first_at/span_days simply end
+  // up reflecting the analyzed window. See docs/scan.md's "huge
+  // repositories" section for exactly what this does and doesn't change.
+  since?: string;
+  // Commits scanned so far / total commits in the walked window — drives
+  // scan-command.ts's stderr progress line for huge repos. Never given
+  // anything beyond running counts (no sha, path, or email).
+  onProgress?: (scanned: number, total: number) => void;
 }
 
 const MS_PER_DAY = 86_400_000;
@@ -49,7 +67,7 @@ function normalizeExtension(filePath: string): string | null {
   return /^\.[a-z0-9]+$/.test(ext) ? ext : null;
 }
 
-export function runScan(opts: ScanOptions): Bundle {
+export async function runScan(opts: ScanOptions): Promise<Bundle> {
   if (!opts.confirmed) {
     throw new ScanError(
       "Authorization not confirmed. Re-run with --yes after confirming you are authorized to analyze this repository, or answer the interactive prompt."
@@ -61,8 +79,20 @@ export function runScan(opts: ScanOptions): Bundle {
     );
   }
 
-  const allCommits = getAllCommits(opts.repoPath);
+  const now = opts.now ?? new Date();
+  const sinceDate = opts.since !== undefined ? parseSince(opts.since, now) : undefined;
+
+  const total = getCommitCount(opts.repoPath, sinceDate);
+  const allCommits = await getAllCommits(opts.repoPath, {
+    since: sinceDate,
+    onProgress: opts.onProgress ? (scanned) => opts.onProgress!(scanned, total) : undefined,
+  });
   if (allCommits.length === 0) {
+    if (sinceDate && getCommitCount(opts.repoPath) > 0) {
+      throw new ScanError(
+        `No commits found after ${sinceDate.toISOString().slice(0, 10)} (--since "${opts.since}"). Try a wider window, or omit --since.`
+      );
+    }
     throw new ScanError("This repository has no commits yet — nothing to scan.");
   }
 
@@ -72,7 +102,6 @@ export function runScan(opts: ScanOptions): Bundle {
     throw new ScanError(`No commits found for the selected author(s): ${opts.authors.join(", ")}`);
   }
 
-  const now = opts.now ?? new Date();
   const distinctAuthors = new Set(allCommits.map((c) => c.email));
   const otherContributorsCount = [...distinctAuthors].filter((e) => !authorSet.has(e)).length;
 
@@ -80,7 +109,10 @@ export function runScan(opts: ScanOptions): Bundle {
   const authorHashes = opts.authors.map((e) => saltedHash(salt, e));
 
   const rootSha = getRootCommitSha(opts.repoPath);
-  const repoFirstCommitDate = allCommits[0].authorDate;
+  // Always the TRUE root of the repo's history, never the start of a
+  // `--since` window — repo.age_days answers "how old is this repo", not
+  // "how old is the analyzed window" (docs/schema.md, docs/scan.md).
+  const repoFirstCommitDate = getRootCommitDate(opts.repoPath, rootSha);
   const ageDays = Math.floor((now.getTime() - repoFirstCommitDate.getTime()) / MS_PER_DAY);
   const hostType = getRemoteHostType(opts.repoPath);
   const repoFingerprint = saltedHash(salt, rootSha);
@@ -99,7 +131,7 @@ export function runScan(opts: ScanOptions): Bundle {
   const signedCount = userCommits.filter((c) => c.signed).length;
 
   const { languages, categories } = computeChurnBreakdown(userCommits);
-  const detectedSkills = detectSkills(userCommits, opts.repoPath, opts.skillDetectOptions);
+  const detectedSkills = await detectSkills(userCommits, opts.repoPath, opts.skillDetectOptions);
 
   const bundle: Bundle = {
     schema_version: "1.0.0",

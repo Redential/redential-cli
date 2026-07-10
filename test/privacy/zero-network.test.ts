@@ -50,7 +50,7 @@ function tempConfigDir(): string {
 }
 
 describe("zero network calls during scan", () => {
-  it("never touches http/https across listAuthors, the guardrail check, and runScan", () => {
+  it("never touches http/https across listAuthors, the guardrail check, and runScan", async () => {
     const dir = createRepo();
     dirs.push(dir);
     setRemote(dir, "https://github.com/acme/example.git");
@@ -63,8 +63,8 @@ describe("zero network calls during scan", () => {
     const configDir = tempConfigDir();
 
     isKnownPublicHost(getRemoteUrl(dir));
-    listAuthors(dir);
-    runScan({
+    await listAuthors(dir);
+    await runScan({
       repoPath: dir,
       authors: ["you@example.com"],
       confirmed: true,

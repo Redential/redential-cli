@@ -73,7 +73,7 @@ describe("secret-scan", () => {
       while (dirs.length > 0) cleanup(dirs.pop()!);
     });
 
-    it("refuses to return a bundle when a secret-shaped value reaches the payload", () => {
+    it("refuses to return a bundle when a secret-shaped value reaches the payload", async () => {
       const dir = createRepo();
       dirs.push(dir);
       const configDir = mkdtempSync(join(tmpdir(), "redential-config-"));
@@ -89,7 +89,7 @@ describe("secret-scan", () => {
       // comes from package.json) — used here purely to prove the gate is
       // actually reached from runScan's own return path, not just testable
       // in isolation on assertNoSecrets/findSecretPatterns directly.
-      expect(() =>
+      await expect(
         runScan({
           repoPath: dir,
           authors: ["you@example.com"],
@@ -97,7 +97,7 @@ describe("secret-scan", () => {
           toolVersion: FAKE_AWS_KEY,
           configDir,
         })
-      ).toThrow(ScanError);
+      ).rejects.toThrow(ScanError);
     });
   });
 });

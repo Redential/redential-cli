@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
-import { getCommitAddedLines, type RawCommit } from "./git.js";
+import { getCommitsAddedLines, type RawCommit } from "./git.js";
 import { isExcludedPath, heuristicallyGeneratedPaths } from "./churn-exclusions.js";
 import { extractImportedPackages } from "./import-detect.js";
 import { ScanError } from "./errors.js";
@@ -189,6 +189,15 @@ export interface DetectSkillsOptions {
   packageMapPath?: string;
 }
 
+// Diff content for this many commits is fetched (and held) at once, via a
+// single batched `git show` process (git.ts's getCommitsAddedLines),
+// instead of one process per commit — at huge-repo scale, per-commit
+// subprocess spawning is the dominant cost, not git's own diff work. Also
+// bounds how much diff text is ever in memory simultaneously: one batch's
+// worth, not the whole history's (see docs/scan.md's "huge repositories"
+// section).
+const DIFF_BATCH_SIZE = 200;
+
 /**
  * Deterministic, local, two-tier skill detection (principle 3, "Bounded
  * output") — see docs/signatures.md. Tier 1: generic import parsing
@@ -207,11 +216,11 @@ export interface DetectSkillsOptions {
  * vendored dependency's content matching an import pattern would be a
  * false "you wrote this" signal, not a real one.
  */
-export function detectSkills(
+export async function detectSkills(
   userCommits: RawCommit[],
   repoPath: string,
   opts: DetectSkillsOptions = {}
-): DetectedSkill[] {
+): Promise<DetectedSkill[]> {
   const signatures = loadSignatures(opts.signaturesDir);
   const taxonomySlugs = loadTaxonomySlugs(opts.taxonomyPath);
   const compiled = compile(signatures, taxonomySlugs);
@@ -236,24 +245,32 @@ export function detectSkills(
     matchedDates.get(slug)!.push(commit.authorDate);
   };
 
-  for (const commit of userCommits) {
-    if (commit.isMerge) continue;
-    const files = getCommitAddedLines(repoPath, commit.sha).filter(
-      (f) => !isExcludedPath(f.path) && !generatedPaths.has(f.path)
+  const nonMergeCommits = userCommits.filter((c) => !c.isMerge);
+  for (let i = 0; i < nonMergeCommits.length; i += DIFF_BATCH_SIZE) {
+    const batch = nonMergeCommits.slice(i, i + DIFF_BATCH_SIZE);
+    const addedLinesBySha = await getCommitsAddedLines(
+      repoPath,
+      batch.map((c) => c.sha)
     );
-    if (files.length === 0) continue;
 
-    for (const file of files) {
-      // Tier 1: generic import detection against the flat package map.
-      for (const pkg of extractImportedPackages(file.addedLines, file.path)) {
-        const slug = packageMap.get(pkg);
-        if (slug) recordMatch(slug, commit);
+    for (const commit of batch) {
+      const files = (addedLinesBySha.get(commit.sha) ?? []).filter(
+        (f) => !isExcludedPath(f.path) && !generatedPaths.has(f.path)
+      );
+      if (files.length === 0) continue;
+
+      for (const file of files) {
+        // Tier 1: generic import detection against the flat package map.
+        for (const pkg of extractImportedPackages(file.addedLines, file.path)) {
+          const slug = packageMap.get(pkg);
+          if (slug) recordMatch(slug, commit);
+        }
       }
-    }
-    // Tier 2: config-file/API-usage signatures.
-    for (const sig of compiled) {
-      if (matchedCommits.get(sig.slug)?.has(commit.sha)) continue;
-      if (files.some((f) => matches(f, sig))) recordMatch(sig.slug, commit);
+      // Tier 2: config-file/API-usage signatures.
+      for (const sig of compiled) {
+        if (matchedCommits.get(sig.slug)?.has(commit.sha)) continue;
+        if (files.some((f) => matches(f, sig))) recordMatch(sig.slug, commit);
+      }
     }
   }
 
