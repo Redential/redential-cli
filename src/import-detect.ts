@@ -11,7 +11,17 @@
 // anchored to reject the three near-miss classes that matter in practice:
 // comments, package names embedded in string literals, and doc files.
 
-export type ImportLanguage = "js" | "python" | "go" | "ruby" | "php";
+export type ImportLanguage =
+  | "js"
+  | "python"
+  | "go"
+  | "ruby"
+  | "php"
+  | "rust"
+  | "java"
+  | "kotlin"
+  | "csharp"
+  | "swift";
 
 const DOC_EXTENSIONS = new Set([".md", ".mdx", ".txt", ".rst", ".markdown"]);
 
@@ -24,6 +34,15 @@ function languageForPath(filePath: string): ImportLanguage | null {
   if (ext === ".go") return "go";
   if (ext === ".rb" || lower.endsWith("/gemfile") || lower === "gemfile") return "ruby";
   if (ext === ".php" || lower.endsWith("/composer.json") || lower === "composer.json") return "php";
+  if (ext === ".rs" || lower.endsWith("/cargo.toml") || lower === "cargo.toml") return "rust";
+  if (ext === ".java") return "java";
+  if (ext === ".kt" || ext === ".kts") return "kotlin";
+  if (ext === ".cs" || ext === ".csproj") return "csharp";
+  // Package.swift is itself a .swift file (SPM manifests are Swift source
+  // using the PackageDescription DSL) — extractSwift tells it apart from
+  // ordinary source by filename, same pattern as extractRust/extractCSharp
+  // telling a manifest apart from source by filePath.
+  if (ext === ".swift") return "swift";
   return null;
 }
 
@@ -238,6 +257,220 @@ function extractPhp(text: string, filePath: string): string[] {
   return found;
 }
 
+// Rust `use` roots that name something LOCAL (the current crate, a parent
+// module, or the standard library) rather than a third-party dependency —
+// never worth a map lookup, and `std`/`core`/`alloc` would otherwise pollute
+// every Rust repo's candidate list with the same three noise entries.
+const RUST_LOCAL_USE_ROOTS = new Set(["crate", "self", "super", "std", "core", "alloc"]);
+
+// Cargo.toml publishes crate names with hyphens (crates.io convention,
+// e.g. "actix-web"), but a Rust identifier can't contain one — `use`
+// statements reference the SAME crate as "actix_web". Normalizing both
+// extraction paths to the underscore form is what lets a Cargo.toml
+// addition and the `use` statement that consumes it resolve to the same
+// package-map key.
+function normalizeRustCrateName(name: string): string {
+  return name.replace(/-/g, "_");
+}
+
+function extractRustUse(text: string): string[] {
+  const found: string[] = [];
+  // Optional `pub`/`pub(crate)`/`pub(super)` before `use` (a re-export),
+  // then the first path segment — `use tokio::{net::TcpListener, sync::Mutex}`
+  // and `use tokio::main;` both only need that first segment; the group
+  // contents after `::` never change which crate this is.
+  const useRe = /^[ \t]*(?:pub(?:\([^)]*\))?\s+)?use\s+([A-Za-z_][A-Za-z0-9_]*)/gm;
+  for (const m of text.matchAll(useRe)) {
+    if (!isRealStatement(text, m.index!)) continue;
+    const name = normalizeRustCrateName(m[1]);
+    if (!RUST_LOCAL_USE_ROOTS.has(name)) found.push(name);
+  }
+  return found;
+}
+
+// Cargo.toml dependency sections come in two shapes:
+//   [dependencies]                    [dependencies.tokio]
+//   tokio = { version = "1", ... }    version = "1"
+//   serde = "1.0"                     features = ["full"]
+// The first shape needs every `key = ...` line under the plain header read
+// as a crate name; the second shape's crate name is IN the header itself
+// (`tokio`), and its body (`version`, `features`, ...) must NOT be
+// key-scanned — those are Cargo.toml keys, not crate names. Getting this
+// wrong is exactly the false-positive class a naive "every `key = value`
+// line in the file" scan would hit. `[package]` (name/version/edition/...)
+// and anything else are neither shape and are simply skipped — same
+// documented-miss tradeoff as composer.json's "only reliable on a diff
+// that contains enough context" limitation (docs/signatures.md).
+const TOML_PLAIN_DEPS_HEADER = /^\[(dependencies|dev-dependencies|build-dependencies)\]$/;
+const TOML_DOTTED_DEPS_HEADER = /^\[(?:dependencies|dev-dependencies|build-dependencies)\.([A-Za-z0-9_-]+)\]$/;
+const TOML_ANY_HEADER = /^\[.*\]$/;
+const TOML_KV_LINE = /^([A-Za-z0-9_-]+)\s*=\s*(?:"|'|\{)/;
+
+function extractCargoToml(text: string): string[] {
+  const found: string[] = [];
+  let scanningPlainDepsBody = false;
+  const lines = text.split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    const rawLine = lines[i];
+    if (isCommentLine(rawLine)) continue;
+    const line = rawLine.trim();
+
+    const dotted = TOML_DOTTED_DEPS_HEADER.exec(line);
+    if (dotted) {
+      found.push(normalizeRustCrateName(dotted[1]));
+      scanningPlainDepsBody = false;
+      continue;
+    }
+    if (TOML_PLAIN_DEPS_HEADER.test(line)) {
+      scanningPlainDepsBody = true;
+      continue;
+    }
+    if (TOML_ANY_HEADER.test(line)) {
+      scanningPlainDepsBody = false; // any other section (incl. [package]) ends it
+      continue;
+    }
+    if (scanningPlainDepsBody) {
+      const kv = TOML_KV_LINE.exec(line);
+      if (kv) found.push(normalizeRustCrateName(kv[1]));
+    }
+  }
+  return found;
+}
+
+function extractRust(text: string, filePath: string): string[] {
+  return /cargo\.toml$/i.test(filePath) ? extractCargoToml(text) : extractRustUse(text);
+}
+
+// Java/Kotlin package roots don't follow a fixed segment count: most
+// libraries want 2 segments to collapse every submodule under one entry
+// (`org.springframework.boot.SpringApplication` and
+// `org.springframework.web.bind.annotation.RestController` should both hit
+// `org.springframework`), but a handful of orgs publish many UNRELATED
+// libraries under the same 2-segment root (`com.google.gson` vs
+// `com.google.inject` vs a hypothetical future `com.google.common`/Guava
+// entry — collapsing all of them to `com.google` would make one import
+// credit whichever of those happened to be added to the map first, and
+// silently misattribute every other). Rather than hardcode which roots are
+// "generic" in code (ecosystem knowledge that keeps growing belongs in the
+// versioned data file, not the CLI — the same reason slugs are never
+// hardcoded), this emits candidate prefixes at every depth up to 3 and lets
+// map membership decide which one is real; `test/package-map.test.ts`
+// enforces that no dotted map key is ever a strict prefix of another, so
+// one import can never accidentally credit two slugs at once.
+function dottedPathPrefixes(dotted: string, maxDepth: number): string[] {
+  const parts = dotted.split(".").filter(Boolean);
+  const prefixes: string[] = [];
+  for (let depth = 1; depth <= Math.min(maxDepth, parts.length); depth++) {
+    prefixes.push(parts.slice(0, depth).join(".").toLowerCase());
+  }
+  return prefixes;
+}
+
+function extractJavaKotlin(text: string): string[] {
+  const found: string[] = [];
+  // import [static] a.b.C[.*][;] — Kotlin's `;` is optional, so it's not
+  // required in the pattern; `.*` (wildcard) and a trailing `as Alias`
+  // (Kotlin) are both consumed without being captured.
+  const importRe = /^[ \t]*import\s+(?:static\s+)?([\w.]+)(?:\.\*)?(?:\s+as\s+\w+)?/gm;
+  for (const m of text.matchAll(importRe)) {
+    if (!isRealStatement(text, m.index!)) continue;
+    found.push(...dottedPathPrefixes(m[1], 3));
+  }
+  return found;
+}
+
+// System.* is the one C# root broad enough to need the same multi-depth
+// treatment as Java's com.google/org.apache (`System.Text.Json` vs
+// `System.Linq` vs `System.Net.Http` are all unrelated) — Microsoft.* in
+// practice doesn't need it for the libraries this detector targets
+// (`Microsoft.AspNetCore.Mvc` and `Microsoft.AspNetCore.Http` are BOTH
+// meant to collapse to `Microsoft.AspNetCore`), so depth 3 candidates cost
+// nothing there: they simply never match anything in the map.
+function extractCSharpUsing(text: string): string[] {
+  const found: string[] = [];
+  // using [global ][static ][Alias = ]a.b.C;
+  const usingRe = /^[ \t]*(?:global\s+)?using\s+(?:static\s+)?(?:\w+\s*=\s*)?([\w.]+)\s*;/gm;
+  for (const m of text.matchAll(usingRe)) {
+    if (!isRealStatement(text, m.index!)) continue;
+    found.push(...dottedPathPrefixes(m[1], 3));
+  }
+  return found;
+}
+
+// `<!-- ... -->` is XML/.csproj-only syntax — stripped here, not inside the
+// shared stripNonCodeRegions, so it can never touch a JS/TS file where
+// `<!--` is (rare but legal) real token syntax.
+function stripXmlComments(text: string): string {
+  return text.replace(/<!--[\s\S]*?-->/g, (m) => m.replace(/[^\n]/g, " "));
+}
+
+function extractCsprojPackageReferences(text: string): string[] {
+  const found: string[] = [];
+  const stripped = stripXmlComments(text);
+  const re = /<PackageReference\s+[^>]*\bInclude\s*=\s*"([^"]+)"/g;
+  for (const m of stripped.matchAll(re)) {
+    if (isRealStatement(stripped, m.index!)) found.push(m[1].toLowerCase());
+  }
+  return found;
+}
+
+function extractCSharp(text: string, filePath: string): string[] {
+  return /\.csproj$/i.test(filePath) ? extractCsprojPackageReferences(text) : extractCSharpUsing(text);
+}
+
+function isPackageSwiftManifest(filePath: string): boolean {
+  const lower = filePath.toLowerCase();
+  return lower === "package.swift" || lower.endsWith("/package.swift");
+}
+
+function extractSwiftImport(text: string): string[] {
+  const found: string[] = [];
+  // import [ModuleKind ]ModuleName — `import struct Foundation.Date` names
+  // the MODULE as "Foundation", not the kind keyword "struct"; skipping it
+  // is what keeps that case (and `class`/`enum`/`protocol`/`func`/`var`/
+  // `let`/`typealias` submodule imports) from capturing the keyword itself.
+  const importRe =
+    /^[ \t]*(?:@testable\s+)?import\s+(?:(?:struct|class|enum|protocol|func|typealias|var|let)\s+)?([A-Za-z_][A-Za-z0-9_]*)/gm;
+  for (const m of text.matchAll(importRe)) {
+    if (isRealStatement(text, m.index!)) found.push(m[1].toLowerCase());
+  }
+  return found;
+}
+
+function packageNameFromSpmUrl(url: string): string | null {
+  const stripped = url.replace(/\.git$/i, "");
+  const segments = stripped.split("/").filter(Boolean);
+  let last = segments[segments.length - 1];
+  if (!last) return null;
+  // A few SPM repos put ".swift" IN the repo name itself (e.g. GRDB.swift,
+  // github.com/groue/GRDB.swift) — stripped so the URL-derived candidate
+  // matches the module's own `import GRDB` name instead of colliding as a
+  // second, dotted map key for the same package (see
+  // test/package-map.test.ts's "no dotted key is a strict prefix of
+  // another" invariant). Anchored to a literal ".swift" suffix, not just
+  // any name ending in "swift" — "RxSwift" has no dot before it and must
+  // stay untouched.
+  last = last.replace(/\.swift$/i, "");
+  return last.toLowerCase();
+}
+
+function extractPackageSwiftDependencies(text: string): string[] {
+  const found: string[] = [];
+  // .package(url: "...") or .package(name: "...", url: "...") — `name:`
+  // before `url:` is the older (pre-SwiftPM-5.4) explicit-name form.
+  const packageRe = /\.package\(\s*(?:name:\s*["'][^"']+["']\s*,\s*)?url:\s*["']([^"']+)["']/g;
+  for (const m of text.matchAll(packageRe)) {
+    if (!isRealStatement(text, m.index!)) continue;
+    const name = packageNameFromSpmUrl(m[1]);
+    if (name) found.push(name);
+  }
+  return found;
+}
+
+function extractSwift(text: string, filePath: string): string[] {
+  return isPackageSwiftManifest(filePath) ? extractPackageSwiftDependencies(text) : extractSwiftImport(text);
+}
+
 /**
  * Extracts normalized package names from one file's added diff lines.
  * `filePath` selects the language (and, for Ruby/PHP, distinguishes a
@@ -248,12 +481,17 @@ function extractPhp(text: string, filePath: string): string[] {
 export function extractImportedPackages(addedLines: string, filePath: string): string[] {
   const language = languageForPath(filePath);
   if (!language) return [];
-  // composer.json is parsed as structured JSON — stripping would only ever
-  // be a harmless no-op there, but skip it anyway rather than run a regex
-  // pass with zero possible benefit right before a JSON.parse. Every other
-  // path gets the stripped text.
+  // composer.json (structured JSON) and Cargo.toml/.csproj (each parsed by
+  // their own dedicated, format-aware scanner above, with their own
+  // comment handling — TOML's `#`, XML's `<!-- -->`) get the raw text:
+  // stripNonCodeRegions only knows `/* */`/backtick/triple-quote syntax,
+  // none of which apply, so running it would be a pass with zero possible
+  // benefit before a format-specific parser that doesn't need it.
   const isComposerJson = language === "php" && /composer\.json$/i.test(filePath);
-  const text = isComposerJson ? addedLines : stripNonCodeRegions(addedLines);
+  const isCargoToml = language === "rust" && /cargo\.toml$/i.test(filePath);
+  const isCsproj = language === "csharp" && /\.csproj$/i.test(filePath);
+  const text =
+    isComposerJson || isCargoToml || isCsproj ? addedLines : stripNonCodeRegions(addedLines);
   switch (language) {
     case "js":
       return extractJs(text);
@@ -265,5 +503,14 @@ export function extractImportedPackages(addedLines: string, filePath: string): s
       return extractRuby(text, filePath);
     case "php":
       return extractPhp(text, filePath);
+    case "rust":
+      return extractRust(text, filePath);
+    case "java":
+    case "kotlin":
+      return extractJavaKotlin(text);
+    case "csharp":
+      return extractCSharp(text, filePath);
+    case "swift":
+      return extractSwift(text, filePath);
   }
 }

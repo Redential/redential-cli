@@ -14,6 +14,34 @@ describe("signatures/package-map.json", () => {
     expect(map.size).toBeGreaterThanOrEqual(400);
   });
 
+  it("has at least 585 entries (400 baseline + 120 from the Rust/Java/Kotlin/C#/Swift milestone)", () => {
+    const map = loadPackageMap(PACKAGE_MAP_PATH);
+    expect(map.size).toBeGreaterThanOrEqual(585);
+  });
+
+  it("no dotted key is a strict prefix of another dotted key", () => {
+    // Java/Kotlin/C# imports emit candidate prefixes at every depth (1-3)
+    // and let map membership decide which one is real (import-detect.ts's
+    // dottedPathPrefixes) — if the map ever contained both a key and one
+    // of its own strict dot-prefixes (e.g. "org.apache" AND
+    // "org.apache.kafka"), a single import could credit two DIFFERENT
+    // slugs at once. This is the data-side half of that guarantee; the
+    // extractor's multi-depth emission is the other half.
+    const map = loadPackageMap(PACKAGE_MAP_PATH);
+    const dottedKeys = [...map.keys()].filter((k) => k.includes("."));
+    const violations: string[] = [];
+    for (const key of dottedKeys) {
+      const parts = key.split(".");
+      for (let depth = 1; depth < parts.length; depth++) {
+        const prefix = parts.slice(0, depth).join(".");
+        if (prefix !== key && map.has(prefix)) {
+          violations.push(`"${prefix}" is a strict prefix of "${key}"`);
+        }
+      }
+    }
+    expect(violations).toEqual([]);
+  });
+
   it("every value is a member of taxonomy.json (closed vocabulary)", () => {
     const map = loadPackageMap(PACKAGE_MAP_PATH);
     const taxonomySlugs = loadTaxonomySlugs(TAXONOMY_PATH);

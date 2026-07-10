@@ -14,14 +14,16 @@ in `taxonomy.json`.
 
 For most technology, "this commit imported package X" is already enough to
 say "this commit used X." `src/import-detect.ts` parses added lines for
-import statements across five language families (JS/TS `import`/`require`/
+import statements across ten language families (JS/TS `import`/`require`/
 dynamic `import()`, Python `import`/`from`, Go `import` including blocks,
 Ruby `require`/Gemfile `gem`, PHP `composer.json`'s `require` and, more
-loosely, `use` namespace statements — see "PHP scope" below), normalizes
-each to a package name (`stripe/webhooks` → `stripe`, `@org/pkg/sub` →
-`@org/pkg`, a Go path's trailing `/v9` stripped, …), and looks it up in
-`signatures/package-map.json` — a flat `{"package-name": "taxonomy-slug"}`
-map, 400+ entries.
+loosely, `use` namespace statements — see "PHP scope" below; Rust `use`/
+Cargo.toml, Java `import`, Kotlin `import`, C# `using`/.csproj, Swift
+`import`/Package.swift — see "Rust, JVM, and C# scope" and "Swift scope"
+below), normalizes each to a package name (`stripe/webhooks` → `stripe`,
+`@org/pkg/sub` → `@org/pkg`, a Go path's trailing `/v9` stripped, …), and
+looks it up in `signatures/package-map.json` — a flat
+`{"package-name": "taxonomy-slug"}` map, 580+ entries.
 
 Deliberately regex-based, not a real parser per language (a dependency per
 language is a supply-chain surface CLAUDE.md's policy doesn't allow without
@@ -53,6 +55,95 @@ namespace segment, lowercased (`Illuminate\Http\Request` → `illuminate`),
 which is enough for framework-level detection (Laravel app code routinely
 does `use Illuminate\...;`) but deliberately doesn't attempt
 vendor/package-accurate resolution for arbitrary third-party libraries.
+
+### Rust, JVM, and C# scope, honestly
+
+**Rust.** `.rs` files: the first path segment of a `use` statement
+(`use tokio::net::TcpListener;` → `tokio`), skipping `crate`/`self`/
+`super`/`std`/`core`/`alloc` (never third-party). `Cargo.toml`: two
+section shapes are recognized — a plain `[dependencies]` header, whose
+body's `key = ...` lines are read as crate names, and a dotted
+`[dependencies.tokio]` header, whose crate name is the header itself (its
+body is NOT key-scanned — `version`/`features`/... are Cargo.toml keys,
+not crate names, and scanning them would be a real false-positive class).
+Anything else — `[target.'cfg(...)'.dependencies]`, a dependency added
+under an already-existing header not itself re-shown in the diff — is a
+documented miss, same tradeoff class as composer.json's "only reliable
+when the diff has enough context." Crate names with a hyphen
+(`actix-web`, crates.io convention) are normalized to the underscore form
+Rust identifiers actually use (`actix_web`) at BOTH extraction sites, so a
+Cargo.toml addition and the `use` statement consuming it resolve to the
+same map key.
+
+**Java and Kotlin.** `import [static] a.b.C[.*]` (Kotlin's trailing `;` is
+optional). Package roots don't have a fixed useful segment count —
+`org.springframework.boot.X` and `org.springframework.web.Y` both want to
+collapse to `org.springframework`, one entry covering every Spring
+submodule, but `com.google.gson.Gson` and `com.google.inject.Injector`
+must NOT collapse to the same `com.google` (Google ships dozens of
+unrelated libraries under that root). Rather than hardcode which roots are
+"generic" in the CLI, the extractor emits candidate prefixes at every
+depth from 1 to 3 and lets map membership decide which one is real — the
+same reason slugs themselves are never hardcoded, ecosystem-specific
+knowledge belongs in the versioned data file. `test/package-map.test.ts`
+enforces the invariant this depends on: no dotted map key is ever a
+strict prefix of another dotted key, so one import can never accidentally
+credit two slugs at once.
+
+A related trap: the map key must be the library's real IMPORT root, never
+its Maven/Gradle groupId when the two differ — Lombok's groupId is
+`org.projectlombok` but it's imported as `import lombok.Data;` (key:
+`lombok`); Dagger 2's groupId is `com.google.dagger` but it's imported as
+`import dagger.Component;` (key: `dagger`). A groupId-shaped key that
+never appears in a real `import` statement is a dead key — the same
+class the map's own `$comment` already warns about for a PyPI
+distribution name that differs from its Python import name.
+
+**C#.** `using [global] [static] [Alias =] a.b.C;`, same multi-depth
+candidate emission as Java/Kotlin (`System.Text.Json` needs 3 segments to
+stay distinct from `System.Linq`/`System.Net`; `Microsoft.AspNetCore.Mvc`
+and `Microsoft.AspNetCore.Http` both correctly collapse to
+`Microsoft.AspNetCore` at 2). `.csproj`: `<PackageReference Include="X"/>`
+via a regex over the XML attribute — no real XML parser (a dependency
+CLAUDE.md's policy doesn't allow without written justification), same
+tradeoff as everywhere else in this file. `.csproj`'s own `<!-- ... -->`
+comments are stripped before that regex runs (XML-only; never applied to
+JS/TS, where `<!--` is rare-but-legal token syntax) — a multi-line
+commented-out `<PackageReference>` would otherwise false-positive.
+
+### Swift scope, honestly
+
+`.swift` files: `import ModuleName`, including `@testable import X` and a
+submodule import's kind keyword (`import struct Foundation.Date` names
+the module `Foundation`, not the keyword `struct`). `Package.swift` (SPM's
+manifest — itself a `.swift` file using the PackageDescription DSL,
+told apart from ordinary source by filename) reads
+`.package(url: "...")`/`.package(name: "...", url: "...")` declarations,
+extracting the URL's last path segment as the package name. A repo whose
+name literally ends in `.swift` (e.g. `groue/GRDB.swift`) has that suffix
+stripped so the URL-derived candidate matches the module's own import name
+(`grdb`) instead of becoming a second, needlessly distinct map key —
+anchored to a literal `.swift` suffix, not just any name ending in
+"swift" (`RxSwift` stays untouched). Some packages' SPM repo name
+genuinely doesn't match their module name (Realm's repo is
+`realm-swift`, its module is `RealmSwift`); those get two map entries,
+one per form, rather than trying to derive one from the other.
+
+### Where Rust's `axum` sits (and why it isn't in the map)
+
+`signatures/backend/axum.json` predates Rust Tier 1 entirely — it's a
+Tier 2 signature whose `importPatterns` already matches a bare
+`use axum::...;` (Tier 2 patterns are OR'd: any one of
+`importPatterns`/`apiPatterns`/`configFilePatterns` matching is enough,
+see `matches()` in `src/skill-detect.ts`), making it functionally
+equivalent to a Tier 1 map entry today. It's deliberately NOT ALSO added
+to `signatures/package-map.json` — `detectSkills` already dedupes a commit
+matching the same slug twice, so the overlap would buy nothing while
+adding a second place to keep in sync. Every other web-framework-shaped
+Rust crate added by this milestone (`actix_web`, `warp`, `rocket`,
+`hyper`) goes straight into the map instead, matching the EXISTING
+precedent that `express`/`fastify`/`hono`/`@nestjs/*` are already flat
+Tier 1 entries in the JS ecosystem, not Tier 2 signatures.
 
 ## Tier 2 — config-file and API-usage signatures
 

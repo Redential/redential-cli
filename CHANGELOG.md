@@ -8,6 +8,43 @@ always bump at least minor; breaking schema changes bump major.
 ## [Unreleased]
 
 ### Added
+- **Skill detection now covers Rust, Java, Kotlin, C#, and Swift.**
+  `src/import-detect.ts` gains five new Tier 1 extractors, same
+  architecture as the existing JS/Python/Go/Ruby/PHP ones (regex-based, no
+  new dependencies, gated against comments and string-literal near-misses):
+  Rust `use` statements and `Cargo.toml` dependencies (hyphen/underscore
+  crate-name normalization; a dotted `[dependencies.tokio]` section header
+  is read as the crate name without key-scanning its body); Java/Kotlin
+  `import` statements, normalized via a new multi-depth candidate scheme
+  (1-3 dotted segments, map membership decides which depth is real — lets
+  `org.springframework.*` collapse to one entry while `com.google.gson`/
+  `com.google.inject` stay distinct); C# `using` directives (same
+  multi-depth scheme) and `.csproj` `<PackageReference>` XML attributes;
+  Swift `import` statements and `Package.swift` SPM dependency URLs. See
+  [docs/signatures.md](docs/signatures.md#rust-jvm-and-c-scope-honestly)
+  for the exact rules and their documented approximations, matching the
+  existing PHP-namespace precedent.
+  - `signatures/package-map.json` grows by 129 entries (594 total,
+    `jq '.map | length' signatures/package-map.json`), `taxonomy.json` by
+    94 new slugs (207 total, version 1.3.0) across `backend/`, `db/`,
+    `data/`, `testing/`, `observability/`, `auth/`, `queues/`, `frontend/`,
+    `storage/`, and `infra/` — real, well-known packages per ecosystem
+    (Tokio, Serde, Actix, Warp, Clap; Spring, Hibernate, Jackson, JUnit,
+    Retrofit, Mockito; ASP.NET Core, EF Core, xUnit, Newtonsoft.Json,
+    Dapper; Alamofire, Vapor, SwiftUI, Combine, and more).
+  - `axum` deliberately stays a Tier 2 signature (unchanged) rather than
+    also becoming a Tier 1 map entry — its existing `importPatterns`
+    already matches a bare `use axum::...;`, so it's already functionally
+    equivalent to a Tier 1 entry; duplicating it would only add a second
+    place to keep in sync for zero behavior change.
+  - `test/package-map.test.ts` gains an invariant test (no dotted map key
+    is a strict prefix of another) that the new multi-depth candidate
+    scheme depends on for correctness.
+  - Verified end to end with a synthetic 5-language fixture repo in
+    `test/scan.test.ts` (Rust+Cargo.toml, Java, Kotlin, C#+.csproj,
+    Swift+Package.swift in one commit history), asserting the exact
+    `detected_skills` slugs a real multi-language contributor's history
+    would produce.
 - **`scan` handles huge repositories gracefully.** Three changes, all in
   service of the same goal: `scan` staying fast, bounded, and honest on a
   repo with tens of thousands of commits. See

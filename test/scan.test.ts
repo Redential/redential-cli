@@ -581,3 +581,161 @@ describe("runScan — --since window", () => {
     expect(bundle.commits.first_at).toBe("2025-01-01T00:00:00.000Z");
   });
 });
+
+describe("runScan — multi-language fixture (Rust, Java, Kotlin, C#, Swift)", () => {
+  it("detects skills end to end across all five newly added languages, from real import/manifest syntax", async () => {
+    const dir = repo();
+    const configDir = tempConfigDir();
+
+    commit(dir, {
+      message: "rust: axum server on tokio, serialized with serde",
+      authorName: "Poly",
+      authorEmail: "poly@example.com",
+      files: {
+        "Cargo.toml": [
+          "[package]",
+          'name = "myservice"',
+          'version = "0.1.0"',
+          'edition = "2021"',
+          "",
+          "[dependencies]",
+          'tokio = { version = "1", features = ["full"] }',
+          'serde = { version = "1", features = ["derive"] }',
+          'clap = "4"',
+        ].join("\n"),
+        "src/main.rs": [
+          "use tokio::net::TcpListener;",
+          "use serde::Serialize;",
+          "",
+          "#[tokio::main]",
+          "async fn main() {",
+          '    let _listener = TcpListener::bind("0.0.0.0:3000").await.unwrap();',
+          "}",
+        ].join("\n"),
+      },
+    });
+
+    commit(dir, {
+      message: "java: a Spring Boot service persisted with Hibernate",
+      authorName: "Poly",
+      authorEmail: "poly@example.com",
+      files: {
+        "src/main/java/com/example/App.java": [
+          "import org.springframework.boot.SpringApplication;",
+          "import org.springframework.boot.autoconfigure.SpringBootApplication;",
+          "import org.hibernate.Session;",
+          "",
+          "@SpringBootApplication",
+          "public class App {",
+          "    public static void main(String[] args) {",
+          "        SpringApplication.run(App.class, args);",
+          "    }",
+          "}",
+        ].join("\n"),
+      },
+    });
+
+    commit(dir, {
+      message: "kotlin: a JUnit5 test for the same service",
+      authorName: "Poly",
+      authorEmail: "poly@example.com",
+      files: {
+        "src/test/kotlin/AppTest.kt": [
+          "import org.junit.jupiter.api.Test",
+          "import org.junit.jupiter.api.Assertions.assertTrue",
+          "",
+          "class AppTest {",
+          "    @Test",
+          "    fun `starts up`() { assertTrue(true) }",
+          "}",
+        ].join("\n"),
+      },
+    });
+
+    commit(dir, {
+      message: "c#: an ASP.NET Core API backed by EF Core, tested with xUnit",
+      authorName: "Poly",
+      authorEmail: "poly@example.com",
+      files: {
+        "Api.csproj": [
+          '<Project Sdk="Microsoft.NET.Sdk.Web">',
+          "  <ItemGroup>",
+          '    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="8.0.0" />',
+          '    <PackageReference Include="xunit" Version="2.6.0" />',
+          "  </ItemGroup>",
+          "</Project>",
+        ].join("\n"),
+        "Program.cs": [
+          "using Microsoft.AspNetCore.Builder;",
+          "using Microsoft.EntityFrameworkCore;",
+          "",
+          "var builder = WebApplication.CreateBuilder(args);",
+        ].join("\n"),
+      },
+    });
+
+    commit(dir, {
+      message: "swift: an iOS client using Alamofire and SwiftUI",
+      authorName: "Poly",
+      authorEmail: "poly@example.com",
+      files: {
+        "Package.swift": [
+          "// swift-tools-version:5.9",
+          "import PackageDescription",
+          "",
+          "let package = Package(",
+          '    name: "MyApp",',
+          "    dependencies: [",
+          '        .package(url: "https://github.com/Alamofire/Alamofire.git", from: "5.0.0"),',
+          "    ]",
+          ")",
+        ].join("\n"),
+        "Sources/MyApp/ContentView.swift": [
+          "import SwiftUI",
+          "import Alamofire",
+          "",
+          "struct ContentView: View {",
+          "    var body: some View { Text(\"hi\") }",
+          "}",
+        ].join("\n"),
+      },
+    });
+
+    const bundle = await runScan({
+      repoPath: dir,
+      authors: ["poly@example.com"],
+      confirmed: true,
+      toolVersion: "0.1.0",
+      configDir,
+    });
+
+    const slugs = bundle.detected_skills.map((s) => s.slug).sort();
+    expect(slugs).toEqual(
+      [
+        "backend/tokio",
+        "data/serde",
+        "backend/clap",
+        "backend/spring",
+        "db/hibernate",
+        "testing/junit",
+        "backend/aspnetcore",
+        "db/entityframework",
+        "testing/xunit",
+        "frontend/swiftui",
+        "backend/alamofire",
+      ].sort()
+    );
+    expect(validateAgainstSchema(schema, bundle)).toEqual([]);
+
+    // Requirement: show detected_skills in closing output, for a human
+    // reviewing this test's own run to see the end-to-end result, not just
+    // an assertion pass/fail.
+    console.log(
+      "\nMulti-language fixture — detected_skills:\n" +
+        bundle.detected_skills
+          .map((s) => `  ${s.slug} (${s.commit_count} commit${s.commit_count === 1 ? "" : "s"})`)
+          .sort()
+          .join("\n")
+    );
+  });
+});
