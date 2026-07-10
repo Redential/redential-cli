@@ -111,3 +111,21 @@ bump, (3) an entry in docs/schema.md and CHANGELOG.md.
   that modifies WHAT data leaves the machine or WHERE it travels to,
   requires "VERDICT: APPROVED" before committing. Trivial changes outside
   those zones don't require it.
+- ORCHESTRATOR MODE (when the main session runs on Fable): the main
+  model does NOT write code directly. It plans, splits the work into
+  precise tasks, delegates them to `worker` subagents (in PARALLEL when
+  independent), verifies each report against the plan, integrates, and
+  submits the result to the reviewer at close as usual. The main
+  session makes commits/pushes after the gate.
+- The planner/advisor agents are for sessions with main on Sonnet
+  (cheap-executor mode) — both modes coexist; the session's model
+  decides which one applies.
+- Default chain in Sonnet-main sessions for NON-trivial work: (1) the
+  `planner` subagent (Fable) authors the plan from the owner's request
+  — the executor passes it verbatim with context and does NOT design on
+  its own; (2) the executor implements the plan as written; if reality
+  contradicts the plan, go back to the planner with evidence — never
+  improvise an alternative design; (3) the `reviewer` gate applies at
+  close per its existing rules. Trivial tasks (typos, copy, single-line
+  fixes without diagnosis) run direct, reviewer only if touching
+  sensitive zones.
