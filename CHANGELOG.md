@@ -7,6 +7,8 @@ always bump at least minor; breaking schema changes bump major.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-07-10
+
 ### Added
 - **Identity corroboration (`submit`-only, no schema change).** Between
   printing the bundle and asking "Upload this bundle?", `submit` now makes
