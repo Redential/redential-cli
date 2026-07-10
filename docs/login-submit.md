@@ -145,23 +145,29 @@ selection, same authorization-confirmation prompt, same `runScan`. It then:
    the gap `scan`-only builds left open (see
    [privacy-tests.md](privacy-tests.md)): the request body is the literal
    string that was printed, not a re-serialization of the parsed object.
-3. Asks "Upload this bundle?" — a **separate** confirmation from the
+3. Fetches identity corroboration (below) and, if it succeeds, prints one
+   informational line with the result before asking for upload consent —
+   see that section for exactly what is and isn't sent. Never blocks or
+   delays the next step: any failure here simply skips the line.
+4. Asks "Upload this bundle?" — a **separate** confirmation from the
    "I am authorized to analyze this repository" attestation `scan` already
    requires. `--yes` answers the authorization question (same meaning as
    `scan --yes`); `--confirm-upload` separately answers the upload
    question. Both are required flags for a fully non-interactive `submit`,
    on purpose — consenting to be scanned and consenting to upload are
    different decisions.
-4. Runs the remote-visibility gate (below). If it's confirmed public,
+5. Runs the remote-visibility gate (below). If it's confirmed public,
    `submit` refuses outright — this is `submit`-only behavior; `scan`
    still only ever warns, never blocks, since `scan` has no network access
    to make the real determination.
-5. `POST {SITE_URL}/api/cli/bundles` with `Authorization: Bearer
-   <access_token>` and the printed bundle JSON as the body. On success:
+6. `POST {SITE_URL}/api/cli/bundles` with `Authorization: Bearer
+   <access_token>` and the printed bundle JSON as the body — plus, if step
+   3's corroboration check succeeded, an
+   `X-Redential-Identity-Corroboration` header (below). On success:
    `{id}`. Only the `id` is ever printed back — never the full response
    body, so a change on the server side can't accidentally start echoing
    sensitive content into the terminal.
-6. Records the upload locally (`last-submission.json`, above) — not part
+7. Records the upload locally (`last-submission.json`, above) — not part
    of what's sent, just local bookkeeping for a later `scan`'s next-step
    hint. Unlike the version-check notice below, this is not best-effort:
    a failure here (e.g. an unwritable config dir) surfaces as a real
@@ -194,6 +200,78 @@ github.com.
   check must never be flakier than `scan`'s own warn-only heuristic: on an
   inconclusive result, `submit` falls back to printing the exact same
   `publicHostWarning` message `scan` would have shown, and proceeds.
+
+## Identity corroboration (submit-only)
+
+Between printing the bundle (step 2 above) and asking "Upload this
+bundle?" (step 4), `submit` makes one more authenticated request: `GET
+{SITE_URL}/api/cli/identity/emails` with `Authorization: Bearer
+<access_token>` and a 5s timeout. This is one of the few network calls the
+CLI ever makes, and — like the remote-visibility gate — it only ever runs
+inside `submit`, never `scan`, consistent with principle 1.
+
+The response, `{emails: [...]}`, is the account's verified emails: the
+Redential account email plus the verified GitHub primary email, typically
+one or two entries. This is deliberately a **short** list, not "all your
+verified GitHub emails" — a developer's git history legitimately contains
+`noreply`/old-work addresses that will never appear on it, which is
+exactly why the absence of a match is treated as neutral, never negative
+(see below).
+
+Each returned email is hashed locally with the same device salt used for
+the bundle's `identity.author_identity_hashes` (`saltedHash`, see
+[docs/scan.md](scan.md#design-notes)'s device-salt note) and compared
+against those hashes. The comparison only ever produces two integers:
+`corroborated_count` (how many bundle author-identity hashes matched) and
+`total_claimed` (how many the bundle claims in total). Nothing else about
+the match — which email, which hash — survives past this comparison.
+
+Because these two counts leave the machine but never appear inside the
+printed bundle itself, principle 4 ("no hidden fields, no enrichment
+after review") requires the user to see them before consenting to upload.
+`submit` prints exactly one calm, informational line, before the upload
+confirmation:
+
+- Full match: `N of N claimed identities match your account's verified
+  emails.`
+- Partial or zero match: `N of M claimed identities match your account's
+  verified emails — unmatched ones simply won't earn the corroborated
+  marker.`
+
+Neither phrasing is accusatory and neither blocks `submit` — an unmatched
+identity is exactly as valid as before, just without an extra
+corroboration marker server-side.
+
+On upload, the two counts travel as a single optional HTTP header on the
+`POST /api/cli/bundles` request (step 6 above):
+`X-Redential-Identity-Corroboration: {"corroborated_count": N,
+"total_claimed": M}` (compact JSON). This is the only place they go — they
+are never added to the bundle body, so the bundle stays byte-for-byte
+identical to what was printed in step 2 and there is no schema change.
+The header also plays no role in the server's duplicate-bundle detection:
+re-submitting an otherwise-unchanged bundle still dedups the same way
+regardless of what the header says.
+
+Fail-open, by design — corroboration can never fail or delay a submit:
+
+- If the `identity/emails` request is unreachable, times out, returns a
+  non-2xx status (including a `429` rate-limit), or returns a body that
+  doesn't match the expected shape, the CLI simply omits both the printed
+  line and the header and `submit` proceeds exactly as it would without
+  this feature.
+- The same omission happens in the degenerate case where `total_claimed`
+  would exceed the server's documented bound (1000) — sending a header the
+  server has already said it won't accept is worse than sending none.
+
+Privacy boundary: the fetched email addresses exist in process memory
+only for the duration of this comparison. They are never logged, never
+written to disk (not even to `--debug` output), and never placed in the
+bundle or in any request body — only the two integers above ever leave
+the machine, and only as part of the upload request, never on their own.
+This is pinned by a dedicated privacy test,
+`test/privacy/identity-corroboration.test.ts`. Server-side, only the two
+integers are ever stored — the flow is otherwise inbound (server tells
+the CLI which emails are verified) rather than outbound.
 
 ## Version check (login/submit only — never scan)
 

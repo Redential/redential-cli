@@ -3,10 +3,12 @@ import { AuthError, SubmitError } from "./errors.js";
 import { getSiteUrl } from "./config.js";
 import { readCredentials } from "./credentials.js";
 import { getRemoteUrl } from "./git.js";
-import { checkVisibilityGate, postBundle } from "./submit.js";
+import { checkVisibilityGate, fetchVerifiedEmails, postBundle } from "./submit.js";
 import { promptConfirmUpload } from "./prompt.js";
 import { checkForUpdate } from "./version-check.js";
 import { bundleContentHash, saveLastSubmission } from "./submission-record.js";
+import { computeCorroboration, corroborationNotice, type IdentityCorroboration } from "./identity-corroboration.js";
+import { getOrCreateSalt } from "./salt.js";
 
 export type SubmitCommandOptions = BuildBundleOptions & {
   /** Separate from `yes` (authorization-to-scan) on purpose — this is
@@ -46,6 +48,26 @@ export async function executeSubmitCommand(opts: SubmitCommandOptions): Promise<
   const bundleJson = JSON.stringify(bundle, null, 2);
   log(bundleJson);
 
+  // Identity corroboration (optional X-Redential-Identity-Corroboration
+  // header on postBundle below) must be fetched and its counts printed
+  // HERE — before the upload confirmation prompt, not after. Principle 4
+  // ("no hidden fields, no enrichment after review"): the header is data
+  // that leaves the machine but isn't part of the printed bundle above, so
+  // the dev must see exactly what it says before consenting to upload. A
+  // failed/unreachable emails lookup prints nothing and sends nothing —
+  // fetchVerifiedEmails and computeCorroboration are both fail-open by
+  // contract, never throwing and never blocking the submit.
+  const verifiedEmails = await fetchVerifiedEmails(siteUrl, credentials.access_token);
+  let corroboration: IdentityCorroboration | null = null;
+  if (verifiedEmails) {
+    corroboration = computeCorroboration(
+      bundle.identity.author_identity_hashes,
+      verifiedEmails,
+      getOrCreateSalt(opts.configDir)
+    );
+    if (corroboration) log(corroborationNotice(corroboration));
+  }
+
   const confirmedUpload = opts.confirmUpload || (await (opts.promptConfirmUploadFn ?? promptConfirmUpload)());
   if (!confirmedUpload) {
     log("Aborted — nothing was uploaded.");
@@ -60,7 +82,7 @@ export async function executeSubmitCommand(opts: SubmitCommandOptions): Promise<
     throw new SubmitError("Submit refused: see the message above.");
   }
 
-  const result = await postBundle(siteUrl, credentials.access_token, bundleJson);
+  const result = await postBundle(siteUrl, credentials.access_token, bundleJson, corroboration);
   log(`Uploaded. Bundle id: ${result.id}`);
 
   // Local-only bookkeeping so a future `scan`'s wrapped summary can tell

@@ -1,8 +1,10 @@
 import { NetworkError } from "./errors.js";
 import { isKnownPublicHost, publicHostWarning } from "./public-remote.js";
-import { headRequest, postRawJson } from "./http-client.js";
+import { getJson, headRequest, postRawJson } from "./http-client.js";
+import { IDENTITY_CORROBORATION_HEADER, type IdentityCorroboration } from "./identity-corroboration.js";
 
 const HEAD_TIMEOUT_MS = 5000;
+const EMAILS_TIMEOUT_MS = 5000;
 
 /**
  * Converts a git remote URL (https, scp-like `git@host:org/repo.git`, or
@@ -72,15 +74,49 @@ interface SubmitResponse {
   id: string;
 }
 
+interface VerifiedEmailsResponse {
+  emails: string[];
+}
+
+/**
+ * Best-effort lookup of the signed-in account's verified emails, used to
+ * compute the identity-corroboration header below. Fail-open per the server
+ * contract (docs: `GET /api/cli/identity/emails`) — a down/slow/malformed
+ * endpoint must never block a submit, so this returns null (not a throw) on
+ * anything but a clean `{ emails: string[] }` 200. The returned emails are
+ * memory-only: callers must never log or persist them (they never appear in
+ * the bundle, the printed output, or on disk — only their salted hashes,
+ * compared in identity-corroboration.ts, ever leave this function's caller).
+ */
+export async function fetchVerifiedEmails(siteUrl: string, accessToken: string): Promise<string[] | null> {
+  const result = await getJson<VerifiedEmailsResponse>(`${siteUrl}/api/cli/identity/emails`, EMAILS_TIMEOUT_MS, {
+    authorization: `Bearer ${accessToken}`,
+  });
+  if (!result || !Array.isArray(result.emails) || !result.emails.every((e) => typeof e === "string")) {
+    return null;
+  }
+  return result.emails;
+}
+
 /**
  * `bundleJson` must be the exact string already shown to the user (see
  * submit-command.ts) — sent verbatim via postRawJson, never re-derived from
  * the parsed object, so what was reviewed is byte-for-byte what is sent.
+ * `corroboration`, when present, is sent as a compact-JSON header — never
+ * folded into `bundleJson` itself, since it isn't part of the bundle schema
+ * or the server's dedup hash (see identity-corroboration.ts).
  */
-export async function postBundle(siteUrl: string, accessToken: string, bundleJson: string): Promise<SubmitResponse> {
-  const response = await postRawJson<SubmitResponse>(`${siteUrl}/api/cli/bundles`, bundleJson, {
-    authorization: `Bearer ${accessToken}`,
-  });
+export async function postBundle(
+  siteUrl: string,
+  accessToken: string,
+  bundleJson: string,
+  corroboration?: IdentityCorroboration | null
+): Promise<SubmitResponse> {
+  const headers: Record<string, string> = { authorization: `Bearer ${accessToken}` };
+  if (corroboration) {
+    headers[IDENTITY_CORROBORATION_HEADER] = JSON.stringify(corroboration);
+  }
+  const response = await postRawJson<SubmitResponse>(`${siteUrl}/api/cli/bundles`, bundleJson, headers);
   if (typeof response.id !== "string") {
     throw new NetworkError("Unexpected response from the submit server.");
   }

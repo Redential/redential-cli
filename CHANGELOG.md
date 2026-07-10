@@ -8,6 +8,36 @@ always bump at least minor; breaking schema changes bump major.
 ## [Unreleased]
 
 ### Added
+- **Identity corroboration (`submit`-only, no schema change).** Between
+  printing the bundle and asking "Upload this bundle?", `submit` now makes
+  one more authenticated request, `GET {SITE_URL}/api/cli/identity/emails`
+  (Bearer token, 5s timeout, fail-open) — the account's verified emails
+  (Redential account email plus verified GitHub primary email, typically
+  1-2 entries; deliberately short, since a real git history legitimately
+  contains `noreply`/old-work addresses that won't be on it). Each is
+  hashed locally with the same device salt used for
+  `identity.author_identity_hashes` and compared, producing only two
+  integers (`corroborated_count`/`total_claimed`), never anything more
+  granular. Per principle 4 ("no hidden fields, no enrichment after
+  review"), since these counts leave the machine but aren't inside the
+  printed bundle, `submit` prints one calm line with the result *before*
+  the upload confirmation (never accusatory, never blocking — an
+  unmatched identity just doesn't earn a corroborated marker). On upload,
+  the counts ride as an optional `X-Redential-Identity-Corroboration:
+  {"corroborated_count": N, "total_claimed": M}` header on `POST
+  /api/cli/bundles` — never inside the bundle body, so the bundle stays
+  byte-identical to what was printed and the header plays no part in the
+  server's duplicate-bundle dedup. Fail-open end to end: an unreachable
+  endpoint, a timeout, any non-2xx (including `429`), an unexpected
+  response shape, or `total_claimed` exceeding the server's bound simply
+  omits both the printed line and the header, and `submit` proceeds
+  normally — corroboration can never fail or delay a submit. The fetched
+  emails live in process memory only for the comparison — never logged,
+  never written to disk, never placed in the bundle or any request body —
+  pinned by a new privacy test,
+  `test/privacy/identity-corroboration.test.ts`. See
+  [docs/login-submit.md](docs/login-submit.md#identity-corroboration-submit-only)
+  for the full contract.
 - **Rewrite-forensics signal: `integrity.date_forensics` (schema `1.0.0` →
   `1.1.0`, minor/additive).** `getAllCommits` now also reads each commit's
   committer date (`%cI`, alongside the existing author date `%aI`) —

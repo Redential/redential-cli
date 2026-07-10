@@ -126,7 +126,12 @@ describe("what submit prints is byte-for-byte what it uploads", () => {
 
     const printedBundle = logs.find((l) => l.trim().startsWith("{"));
     expect(printedBundle).toBeDefined();
-    expect(server.requests[0].body).toBe(printedBundle);
+    // The identity-corroboration GET (see submit-command.ts) now also hits
+    // this server before the bundle POST, so filter down to the bundle
+    // request specifically rather than assuming it's requests[0].
+    const bundleRequest = server.requests.find((r) => r.url === "/api/cli/bundles");
+    expect(bundleRequest).toBeDefined();
+    expect(bundleRequest!.body).toBe(printedBundle);
     // Sanity: it really did print before uploading, not after.
     expect(logs.indexOf(printedBundle!)).toBeLessThan(logs.findIndex((l) => l.includes("Uploaded")));
   });
