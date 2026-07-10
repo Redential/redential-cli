@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { cleanup, commit, createRepo } from "./support/fixtures.js";
+import { cleanup, createRepoWithDualDateHistory, type DualDateCommit } from "./support/fixtures.js";
 import { runScan } from "../src/scan.js";
 
 const dirs: string[] = [];
@@ -24,12 +24,18 @@ const AUTHOR_EMAIL = "you@example.com";
  * docs/schema.md's `date_forensics` section) actually separates the two
  * shapes it was designed to separate: a scripted full-history replay vs. an
  * ordinary history that happens to include a real, partial rebase.
+ *
+ * Built via `createRepoWithDualDateHistory` (a single `git fast-import`
+ * stream), not one `git commit` process per commit — see that helper's doc
+ * comment for why: the per-commit-spawn version of this fixture was
+ * expensive enough on a resource-constrained CI runner
+ * (`windows-latest`/Node 22) to push an *unrelated* test file's temp-dir
+ * cleanup past its retry budget, surfacing as an `EBUSY` failure with no
+ * connection to date parsing itself (both cases here passed on that same
+ * run).
  */
 describe("integrity.date_forensics", () => {
   it("flags the incriminating signature of a scripted full-history replay", async () => {
-    const dir = createRepo();
-    dirs.push(dir);
-
     // 20 commits, author dates fabricated 60 days apart across ~3 years —
     // but every commit object is actually written (committer date) within
     // one 19-minute sitting, as a naive replay script would produce.
@@ -39,16 +45,18 @@ describe("integrity.date_forensics", () => {
     const COMMITTER_START_MS = new Date("2026-07-10T00:00:00Z").getTime();
     const COMMITTER_STEP_MS = 60_000;
 
+    const commits: DualDateCommit[] = [];
     for (let i = 0; i < COMMIT_COUNT; i++) {
-      commit(dir, {
-        message: `replayed ${i}`,
-        authorName: "You",
-        authorEmail: AUTHOR_EMAIL,
-        files: { [`f${i}.ts`]: `${i}\n` },
+      commits.push({
+        path: `f${i}.ts`,
+        content: `${i}\n`,
         authorDate: new Date(AUTHOR_START_MS + i * AUTHOR_STEP_MS).toISOString(),
         committerDate: new Date(COMMITTER_START_MS + i * COMMITTER_STEP_MS).toISOString(),
       });
     }
+
+    const dir = createRepoWithDualDateHistory("You", AUTHOR_EMAIL, commits);
+    dirs.push(dir);
 
     const bundle = await runScan({
       repoPath: dir,
@@ -71,9 +79,6 @@ describe("integrity.date_forensics", () => {
   });
 
   it("stays moderate for an ordinary history with a small, real partial rebase", async () => {
-    const dir = createRepo();
-    dirs.push(dir);
-
     // 20 commits, author dates spread naturally 45 days apart across ~2.3
     // years. 15 of them were never touched again (committer date == author
     // date). 5 (a real partial rebase) were rewritten together in one
@@ -86,6 +91,7 @@ describe("integrity.date_forensics", () => {
     const AUTHOR_STEP_MS = 45 * MS_PER_DAY;
     const REBASE_COMMITTER_START_MS = new Date("2026-07-10T09:00:00Z").getTime();
 
+    const commits: DualDateCommit[] = [];
     let minCommitterMs = Infinity;
     let maxCommitterMs = -Infinity;
     let rebaseIndex = 0;
@@ -97,15 +103,16 @@ describe("integrity.date_forensics", () => {
       minCommitterMs = Math.min(minCommitterMs, committerMs);
       maxCommitterMs = Math.max(maxCommitterMs, committerMs);
 
-      commit(dir, {
-        message: `c${i}`,
-        authorName: "You",
-        authorEmail: AUTHOR_EMAIL,
-        files: { [`f${i}.ts`]: `${i}\n` },
+      commits.push({
+        path: `f${i}.ts`,
+        content: `${i}\n`,
         authorDate: new Date(authorMs).toISOString(),
         committerDate: new Date(committerMs).toISOString(),
       });
     }
+
+    const dir = createRepoWithDualDateHistory("You", AUTHOR_EMAIL, commits);
+    dirs.push(dir);
 
     const bundle = await runScan({
       repoPath: dir,

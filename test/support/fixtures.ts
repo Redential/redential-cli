@@ -168,6 +168,60 @@ export function createRepoWithGeneratedHistory(commitCount: number): string {
   return dir;
 }
 
+export interface DualDateCommit {
+  path: string;
+  content: string;
+  /** ISO 8601 — independent of committerDate, unlike `commit()`'s single `authorDate`. */
+  authorDate: string;
+  committerDate: string;
+}
+
+/**
+ * Same `git fast-import` approach as `createRepoWithGeneratedHistory`
+ * (single stream, no per-commit `git commit` process), but for fixtures
+ * that need author date and committer date to genuinely diverge per commit
+ * — date-forensics fixtures (a replayed or partially-rebased history).
+ * `commit()`'s per-commit `execFileSync` spawn is fine for the handful of
+ * commits most tests need, but a fixture with a few dozen commits built
+ * that way measurably adds to the whole suite's wall-clock and process
+ * count — on a resource-constrained CI runner (observed on
+ * `windows-latest`), that extra load was enough to push an unrelated
+ * fixture's temp-dir cleanup past its retry budget (`cleanup()`'s
+ * `maxRetries`/`retryDelay`), surfacing as an `EBUSY` in a completely
+ * different test file running concurrently in the same vitest worker pool.
+ * One `git fast-import` process building the whole history at once avoids
+ * that regardless of commit count.
+ */
+export function createRepoWithDualDateHistory(
+  authorName: string,
+  authorEmail: string,
+  commits: DualDateCommit[]
+): string {
+  const dir = mkdtempSync(join(tmpdir(), "redential-dualdate-"));
+  run(dir, ["init", "-q", "-b", "main"]);
+  run(dir, ["config", "core.autocrlf", "false"]);
+
+  let stream = "";
+  commits.forEach((c, i) => {
+    const authorTs = Math.floor(new Date(c.authorDate).getTime() / 1000);
+    const committerTs = Math.floor(new Date(c.committerDate).getTime() / 1000);
+    const message = `commit ${i}\n`;
+
+    stream += `commit refs/heads/main\n`;
+    stream += `mark :${i + 1}\n`;
+    stream += `author ${authorName} <${authorEmail}> ${authorTs} +0000\n`;
+    stream += `committer ${authorName} <${authorEmail}> ${committerTs} +0000\n`;
+    stream += `data ${Buffer.byteLength(message, "utf8")}\n${message}`;
+    if (i > 0) stream += `from :${i}\n`;
+    stream += `M 100644 inline ${c.path}\n`;
+    stream += `data ${Buffer.byteLength(c.content, "utf8")}\n${c.content}`;
+  });
+
+  execFileSync("git", ["fast-import", "--quiet"], { cwd: dir, input: stream });
+  run(dir, ["checkout", "-q", "main"]);
+  return dir;
+}
+
 /**
  * A shallow clone (`--depth 1`) of `sourceDir` — for shallow-clone
  * detection tests. Clones over a `file://` URL rather than a plain path so
