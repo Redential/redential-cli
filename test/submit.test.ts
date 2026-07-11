@@ -330,6 +330,74 @@ describe("executeSubmitCommand", () => {
   });
 });
 
+describe("executeSubmitCommand — consent summary", () => {
+  it("with isTTY: true, logs contain the consent block, then exactly the payload header, then the bundle JSON, in that order — and the uploaded body still matches the JSON log entry byte-for-byte", async () => {
+    const server = await startMockServer((req) => {
+      if (req.url === "/api/cli/bundles") return { status: 200, body: { id: "bundle-tty" } };
+      return { status: 404, body: {} };
+    });
+    servers.push(server);
+    process.env.REDENTIAL_SITE_URL = server.url;
+
+    const dir = repoWithOneCommit();
+    const configDir = tempConfigDir();
+    saveCredentials({ access_token: "secret-tok", site_url: server.url, obtained_at: "now" }, configDir);
+
+    const logs: string[] = [];
+    await executeSubmitCommand({
+      repoPath: dir,
+      author: ["you@example.com"],
+      yes: true,
+      confirmUpload: true,
+      toolVersion: "0.1.0",
+      configDir,
+      log: (m) => logs.push(m),
+      warn: () => {},
+      checkForUpdateFn: noCheckForUpdate,
+      isTTY: true,
+    });
+
+    expect(logs[0]).toContain("WHAT GETS UPLOADED");
+    expect(logs[1]).toBe("Exact payload (byte-for-byte what gets sent):");
+    expect(() => JSON.parse(logs[2])).not.toThrow();
+
+    const requests = bundleRequests(server);
+    expect(requests).toHaveLength(1);
+    expect(requests[0].body).toBe(logs[2]);
+  });
+
+  it("without isTTY, logs are unchanged from before this feature (no consent block, no payload header)", async () => {
+    const server = await startMockServer((req) => {
+      if (req.url === "/api/cli/bundles") return { status: 200, body: { id: "bundle-no-tty" } };
+      return { status: 404, body: {} };
+    });
+    servers.push(server);
+    process.env.REDENTIAL_SITE_URL = server.url;
+
+    const dir = repoWithOneCommit();
+    const configDir = tempConfigDir();
+    saveCredentials({ access_token: "secret-tok", site_url: server.url, obtained_at: "now" }, configDir);
+
+    const logs: string[] = [];
+    await executeSubmitCommand({
+      repoPath: dir,
+      author: ["you@example.com"],
+      yes: true,
+      confirmUpload: true,
+      toolVersion: "0.1.0",
+      configDir,
+      log: (m) => logs.push(m),
+      warn: () => {},
+      checkForUpdateFn: noCheckForUpdate,
+    });
+
+    expect(logs.some((l) => l.includes("WHAT GETS UPLOADED"))).toBe(false);
+    expect(logs.some((l) => l.includes("Exact payload"))).toBe(false);
+    // First log entry is still the raw bundle JSON, as before this feature.
+    expect(() => JSON.parse(logs[0])).not.toThrow();
+  });
+});
+
 describe("identity corroboration", () => {
   it("full match: header carries {corroborated_count, total_claimed} equal, and the notice is printed", async () => {
     const server = await startMockServer((req) => {

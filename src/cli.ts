@@ -143,6 +143,8 @@ program
         yes: options.yes,
         confirmUpload: options.confirmUpload,
         toolVersion: getToolVersion(),
+        isTTY: process.stdout.isTTY === true,
+        plain: shouldUsePlainOutput(process.platform, process.env),
       })
     );
   });

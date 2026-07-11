@@ -1,5 +1,6 @@
 import { buildBundleInteractively, type BuildBundleOptions } from "./build-bundle.js";
 import { AuthError, SubmitError } from "./errors.js";
+import { formatConsentSummary } from "./summary.js";
 import { getSiteUrl } from "./config.js";
 import { readCredentials } from "./credentials.js";
 import { getRemoteUrl } from "./git.js";
@@ -22,6 +23,18 @@ export type SubmitCommandOptions = BuildBundleOptions & {
   // Injectable so tests don't make a real request to the npm registry;
   // defaults to the real checkForUpdate (src/version-check.ts).
   checkForUpdateFn?: () => Promise<void>;
+  // True when stdout is an interactive terminal — cli.ts passes
+  // `process.stdout.isTTY`. Determines whether the human-readable consent
+  // summary is printed before the JSON payload; tests set this explicitly
+  // instead of relying on a real TTY. Undefined behaves like `false`
+  // (no consent block), matching a piped stdout so the printed bundle JSON
+  // stays byte-identical to before this feature existed.
+  isTTY?: boolean;
+  // True to render the consent summary with the ASCII/no-color fallback
+  // theme (see summary.ts's shouldUsePlainOutput) instead of ANSI + Unicode
+  // box-drawing. cli.ts computes this from process.platform/process.env;
+  // tests set it explicitly, same pattern as isTTY.
+  plain?: boolean;
 };
 
 /**
@@ -46,6 +59,10 @@ export async function executeSubmitCommand(opts: SubmitCommandOptions): Promise<
 
   const bundle = await buildBundleInteractively(opts);
   const bundleJson = JSON.stringify(bundle, null, 2);
+  if (opts.isTTY) {
+    log(formatConsentSummary(bundle, { plain: opts.plain, command: "submit" }));
+    log("Exact payload (byte-for-byte what gets sent):");
+  }
   log(bundleJson);
 
   // Identity corroboration (optional X-Redential-Identity-Corroboration

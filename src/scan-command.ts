@@ -1,5 +1,5 @@
 import { buildBundleInteractively, type BuildBundleOptions } from "./build-bundle.js";
-import { formatSummary } from "./summary.js";
+import { formatConsentSummary, formatSummary } from "./summary.js";
 import { describeSince } from "./since.js";
 import { getSiteUrl } from "./config.js";
 import { readCredentials } from "./credentials.js";
@@ -90,17 +90,23 @@ function nextStepsState(bundle: Bundle, configDir: string | undefined): {
  *
  * Output contract: piped/redirected stdout (or `--json`) always gets ONLY
  * the raw bundle JSON, byte-identical to before the summary existed, so
- * `scan | jq` keeps working. A real TTY (and no `--json`) gets the same
- * JSON printed first, then the human-readable "wrapped" summary below it
- * — JSON first so the summary is what's left on screen once the JSON has
- * scrolled up. The summary is pure formatting over the bundle `runScan`
- * already computed, not a second data source.
+ * `scan | jq` keeps working. A real TTY (and no `--json`) gets a
+ * human-readable consent summary FIRST (the actual surface a user reads
+ * before deciding whether to run `submit`), then the same JSON, then the
+ * human-readable "wrapped" summary below it — JSON first among those two so
+ * the wrapped summary is what's left on screen once the JSON has scrolled
+ * up. Both summaries are pure formatting over the bundle `runScan` already
+ * computed, not a second data source.
  */
 export async function executeScanCommand(opts: ScanCommandOptions): Promise<void> {
   const log = opts.log ?? console.log;
   const bundle = await buildBundleInteractively({ ...opts, onProgress: buildProgressReporter(opts) });
   const bundleJson = JSON.stringify(bundle, null, 2);
 
+  if (opts.isTTY && !opts.json) {
+    log(formatConsentSummary(bundle, { plain: opts.plain, command: "scan" }));
+    log("Exact payload (byte-for-byte what `redential submit` would send):");
+  }
   log(bundleJson);
   if (opts.isTTY && !opts.json) {
     log(

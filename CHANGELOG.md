@@ -7,6 +7,37 @@ always bump at least minor; breaking schema changes bump major.
 
 ## [Unreleased]
 
+### Added
+- **Consent summary before the exact payload (`scan`/`submit`, TTY-only, no
+  schema change).** Both commands now print a short human-readable
+  **consent summary** immediately before the exact JSON bundle — a boxed
+  block using the same visual language as the "wrapped" summary (Unicode
+  box-drawing characters + ANSI on rich terminals, the same ASCII fallback
+  on plain Windows `conhost` via the existing `shouldUsePlainOutput`
+  logic), listing what IS uploaded (commit count and span, detected-skill
+  count with the top 3 skill names, "time patterns, languages and
+  categories as aggregates", salted fingerprints) and what is NEVER
+  uploaded (source code, file names, commit messages, the repo's name,
+  other contributors' identities). Every number in the block is read off
+  the actual bundle being printed, never hardcoded (`formatConsentSummary`,
+  `src/summary.ts` — pure formatting over the bundle already computed: no
+  new data collection, no network). Right after the block, a header line
+  makes explicit what follows is the literal payload: `Exact payload
+  (byte-for-byte what gets sent):` on `submit`, `Exact payload
+  (byte-for-byte what \`redential submit\` would send):` on `scan` (which
+  uploads nothing itself, hence "would"). On `scan`'s TTY output the order
+  is now consent summary → header → JSON → wrapped summary (wrapped stays
+  last, unchanged); on `submit`'s TTY output it's consent summary → header
+  → JSON → identity-corroboration line (if any) → upload confirmation
+  prompt, so the user reads the plain-language summary and the exact
+  payload before consenting. Piped stdout and `--json` are completely
+  unchanged — `scan | jq` and a scripted `submit` see no new output,
+  byte-identical to prior releases. No schema change: schema stays
+  `1.1.0`, since nothing about WHAT data leaves the machine changed, only
+  how it's explained on screen before upload. See
+  [docs/scan.md](docs/scan.md#the-consent-summary) and
+  [docs/login-submit.md](docs/login-submit.md#submit-review-then-upload).
+
 ## [0.2.0] - 2026-07-10
 
 ### Added

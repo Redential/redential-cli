@@ -49,10 +49,53 @@ redential scan --debug --repo <path>      # verbose diagnostics on stderr
 5. **Print it.** The JSON printed IS the bundle — byte for byte what
    `submit` would send later.
 
+## The consent summary
+
+When stdout is an interactive terminal, `scan` prints a short human-readable
+**consent summary** BEFORE the exact JSON bundle — a boxed block, same
+visual language as the "wrapped" summary below (Unicode box-drawing
+characters + ANSI on rich terminals, the same ASCII fallback on plain
+Windows `conhost` via `shouldUsePlainOutput`), listing:
+
+- **What IS uploaded** — the commit count and span, the number of detected
+  skills with the top 3 skill names, "time patterns, languages and
+  categories as aggregates", and "salted fingerprints". Every number in
+  this block is read off the actual bundle being printed right below it —
+  nothing here is hardcoded or computed separately.
+- **What is NEVER uploaded** — source code, file names, commit messages,
+  the repo's name, and other contributors' identities.
+
+It's built by `formatConsentSummary` (`src/summary.ts`), pure formatting
+over the bundle `scan` already computed: no new data collection, no
+network, no schema change — it only restates, in plain language, what's
+already in the JSON that follows it.
+
+Right after the block, a header line makes explicit that what follows is
+the literal payload:
+
+```
+Exact payload (byte-for-byte what `redential submit` would send):
+```
+
+("would", since `scan` itself never uploads anything — see
+[login-submit.md](login-submit.md#submit-review-then-upload) for the
+equivalent header `submit` prints before its own confirmation prompt.)
+
+**Piped stdout and `--json` are unaffected.** `scan | jq` (or any
+redirected/piped stdout) still prints **only** the raw JSON, byte-identical
+to every prior release; `--json` forces that same JSON-only output even on
+a terminal. The consent summary — like the wrapped summary below it — is
+strictly a TTY-only addition on top of an unchanged stdout contract.
+
+On a real TTY, the full output order is now: consent summary → "Exact
+payload…" header → JSON → wrapped summary (the wrapped summary described
+next stays last, unchanged).
+
 ## The "wrapped" summary
 
 When stdout is an interactive terminal, `scan` prints the full JSON bundle
-first (exactly as always), then a human-readable summary **after** it —
+(exactly as always, now preceded by the consent summary above), then a
+human-readable summary **after** it —
 total commits and span, an hour-of-day and weekday cadence, top languages
 and categories, detected skills, ownership and signed-commit ratios —
 under a divider. It's printed last on purpose: the JSON scrolls up, and

@@ -370,3 +370,103 @@ export function formatSummary(bundle: Bundle, opts: FormatSummaryOptions = {}): 
   // threading a themed "dash" token through every string above.
   return opts.plain ? text.replace(/[—–]/g, "-") : text;
 }
+
+export interface FormatConsentSummaryOptions {
+  /** True to render the ASCII/no-color fallback (see `shouldUsePlainOutput`). */
+  plain?: boolean;
+  /** Which command is rendering the block — only changes upload phrasing
+   * ("gets" vs. "would get", since `scan` never actually uploads). */
+  command: "scan" | "submit";
+}
+
+/**
+ * Builds the "N detected skills (top: a, b, c)" line, fit to `maxWidth`
+ * without ever cutting a slug short. Real taxonomy slugs vary a lot in
+ * length (`ai/anthropic-api` vs. `observability/opentelemetry`), so a fixed
+ * "show top 3" can overflow the box — this greedily drops from 3 top slugs
+ * down to 0 until the WHOLE clause (parenthesis included) fits, and if any
+ * of the `skillCount` detected skills end up unlisted (either because more
+ * than 3 exist, or because even fewer than 3 fit at this width), that's
+ * said honestly as "+N more" at a slug boundary, never mid-slug. Dropping
+ * to 0 shown slugs (bare "N detected skills", no parenthesis at all) is the
+ * deliberate worst case for a single slug too long to fit at `maxWidth` —
+ * still never truncates it, and never leaves an unclosed paren.
+ */
+function buildSkillsLine(bullet: string, skillCount: number, topSlugs: string[], maxWidth: number): string {
+  const base = `${bullet} ${skillCount} detected skills`;
+  if (skillCount === 0) return base;
+  for (let shownCount = topSlugs.length; shownCount > 0; shownCount--) {
+    const shown = topSlugs.slice(0, shownCount);
+    const omitted = skillCount - shown.length;
+    const suffix = omitted > 0 ? `, +${omitted} more` : "";
+    const candidate = `${base} (top: ${shown.join(", ")}${suffix})`;
+    if (candidate.length <= maxWidth) return candidate;
+  }
+  return base;
+}
+
+/**
+ * Renders a boxed, human-readable "consent summary" of exactly what a
+ * `submit` would upload — printed BEFORE the exact JSON payload (in both
+ * `scan --json`-free TTY output and `submit`'s TTY output) so this is the
+ * actual surface a user reads before authorizing an upload, not the raw
+ * JSON itself. Pure function of the already-computed `bundle`: no new data
+ * collection, no network, no re-reading git — every number below is
+ * derived straight from `bundle`, so it can never drift from the JSON
+ * printed right after it. See `docs/login-submit.md` / `docs/scan.md`.
+ */
+export function formatConsentSummary(bundle: Bundle, opts: FormatConsentSummaryOptions): string {
+  const theme = opts.plain ? PLAIN_THEME : RICH_THEME;
+  const { colors, chars } = theme;
+  const bullet = opts.plain ? "-" : "•";
+
+  // Interior box rows must carry no ANSI escapes of their own (color codes
+  // would throw off the padding math) — raw text is padded to WIDTH first,
+  // then wrapped in the (optionally colored) border chars. The title row is
+  // the one exception (explicitly allowed to carry theme colors), built
+  // separately below the same way formatSummary's title row is.
+  function boxRow(raw: string): string {
+    const clipped = raw.length > WIDTH ? raw.slice(0, WIDTH) : raw;
+    const padded = clipped + " ".repeat(WIDTH - clipped.length);
+    return `  ${colors.CYAN}${chars.boxV}${colors.RESET}${padded}${colors.CYAN}${chars.boxV}${colors.RESET}`;
+  }
+
+  const title = opts.command === "submit" ? "WHAT GETS UPLOADED" : "WHAT WOULD GET UPLOADED";
+  const titlePad = Math.max(0, Math.floor((WIDTH - title.length) / 2));
+
+  const commitCount = bundle.commits.user_total.toLocaleString("en-US");
+  const span = humanizeSpan(bundle.commits.span_days);
+
+  const skillCount = bundle.detected_skills.length;
+  const topSlugs = [...bundle.detected_skills]
+    .sort((a, b) => b.commit_count - a.commit_count)
+    .slice(0, 3)
+    .map((s) => s.slug);
+  // Every bullet row is wrapped as `boxRow(" " + text)` (a single leading
+  // margin space before the bullet char) — so the available width for the
+  // row's own text is WIDTH minus that one margin column.
+  const rowTextWidth = WIDTH - 1;
+  const skillsLine = buildSkillsLine(bullet, skillCount, topSlugs, rowTextWidth);
+
+  const lines: string[] = [];
+  lines.push(`  ${colors.CYAN}${chars.boxTL}${chars.boxH.repeat(WIDTH)}${chars.boxTR}${colors.RESET}`);
+  lines.push(
+    `  ${colors.CYAN}${chars.boxV}${colors.RESET}${" ".repeat(titlePad)}${colors.BOLD}${colors.CYAN}${title}${
+      colors.RESET
+    }${" ".repeat(WIDTH - titlePad - title.length)}${colors.CYAN}${chars.boxV}${colors.RESET}`
+  );
+  lines.push(boxRow(""));
+  lines.push(boxRow(` ${bullet} ${commitCount} commits spanning ${span}`));
+  lines.push(boxRow(` ${skillsLine}`));
+  lines.push(boxRow(` ${bullet} time patterns, languages and categories as aggregates`));
+  lines.push(boxRow(` ${bullet} salted fingerprints (repo + identity, not reversible)`));
+  lines.push(boxRow(""));
+  lines.push(boxRow(` NEVER uploaded:`));
+  lines.push(boxRow(`   source code, file names, commit messages`));
+  lines.push(boxRow(`   the repo's name, other contributors' identities`));
+  lines.push(`  ${colors.CYAN}${chars.boxBL}${chars.boxH.repeat(WIDTH)}${chars.boxBR}${colors.RESET}`);
+
+  const text = lines.join("\n");
+  // Same em-dash normalization as formatSummary — see its comment above.
+  return opts.plain ? text.replace(/[—–]/g, "-") : text;
+}

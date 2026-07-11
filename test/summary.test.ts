@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatSummary, shouldUsePlainOutput } from "../src/summary.js";
+import { formatConsentSummary, formatSummary, shouldUsePlainOutput } from "../src/summary.js";
 import type { Bundle } from "../src/types.js";
 
 // eslint-disable-next-line no-control-regex
@@ -213,6 +213,172 @@ describe("formatSummary", () => {
       expect(text).toContain("-> redential submit");
       // eslint-disable-next-line no-control-regex
       expect(text).toMatch(/^[\x20-\x7e\n]*$/);
+    });
+  });
+});
+
+describe("formatConsentSummary", () => {
+  it("derives commit count and humanized span from the bundle", () => {
+    const text = stripAnsi(formatConsentSummary(baseBundle(), { command: "submit" }));
+    expect(text).toContain("1,847 commits spanning 2 years");
+  });
+
+  it("derives detected-skill count and top-3 slugs (sorted by commit_count desc) from the bundle", () => {
+    const bundle = baseBundle({
+      detected_skills: [
+        { slug: "low", commit_count: 1, first_seen: "2024-01-01", last_seen: "2024-01-01" },
+        { slug: "high", commit_count: 100, first_seen: "2024-01-01", last_seen: "2024-01-01" },
+        { slug: "mid", commit_count: 50, first_seen: "2024-01-01", last_seen: "2024-01-01" },
+        { slug: "fourth", commit_count: 10, first_seen: "2024-01-01", last_seen: "2024-01-01" },
+      ],
+    });
+    const text = stripAnsi(formatConsentSummary(bundle, { command: "submit" }));
+    // These slugs are short enough that all 3 top slugs fit — the 4th
+    // detected skill (not in the top 3) is still honestly indicated via
+    // "+1 more" rather than silently disappearing (see the width-safety
+    // tests below for the case where even fewer than 3 top slugs fit).
+    expect(text).toContain("4 detected skills (top: high, mid, fourth, +1 more)");
+    expect(text).not.toContain("low");
+  });
+
+  it("drops the \"top:\" clause and shows 0 when there are no detected skills", () => {
+    const text = stripAnsi(formatConsentSummary(baseBundle({ detected_skills: [] }), { command: "submit" }));
+    expect(text).toContain("0 detected skills");
+    expect(text).not.toContain("top:");
+  });
+
+  it("lists all items that are NEVER uploaded", () => {
+    const text = stripAnsi(formatConsentSummary(baseBundle(), { command: "submit" }));
+    expect(text).toContain("NEVER uploaded");
+    expect(text).toContain("source code");
+    expect(text).toContain("file names");
+    expect(text).toContain("commit messages");
+    expect(text).toContain("repo's name");
+    expect(text).toContain("other contributors' identities");
+  });
+
+  it("mentions aggregated time patterns/languages/categories and salted fingerprints", () => {
+    const text = stripAnsi(formatConsentSummary(baseBundle(), { command: "submit" }));
+    expect(text).toContain("time patterns, languages and categories as aggregates");
+    expect(text).toContain("salted fingerprints");
+    expect(text).not.toContain("your identity");
+  });
+
+  it("scan phrasing says the upload WOULD happen; submit phrasing says it DOES", () => {
+    const scanText = stripAnsi(formatConsentSummary(baseBundle(), { command: "scan" }));
+    const submitText = stripAnsi(formatConsentSummary(baseBundle(), { command: "submit" }));
+    expect(scanText).toContain("WHAT WOULD GET UPLOADED");
+    expect(submitText).toContain("WHAT GETS UPLOADED");
+    expect(submitText).not.toContain("WOULD");
+  });
+
+  it("plain mode is pure printable ASCII — no ANSI escapes, no Unicode box-drawing or bullet", () => {
+    const text = formatConsentSummary(baseBundle(), { command: "submit", plain: true });
+    // eslint-disable-next-line no-control-regex
+    expect(text).toMatch(/^[\x20-\x7e\n]*$/);
+    expect(text).not.toContain("╔");
+    expect(text).not.toContain("•");
+  });
+
+  it("rich mode (default) contains ANSI escapes and Unicode box-drawing", () => {
+    const text = formatConsentSummary(baseBundle(), { command: "submit" });
+    // eslint-disable-next-line no-control-regex
+    expect(text).toMatch(/\x1b\[[0-9;]*m/);
+    expect(text).toContain("╔");
+    expect(text).toContain("•");
+  });
+
+  it("never contains raw JSON braces from the bundle itself", () => {
+    const text = formatConsentSummary(baseBundle(), { command: "submit" });
+    expect(text).not.toContain("{");
+    expect(text).not.toContain("}");
+  });
+
+  describe("top-skills line width safety (realistic long taxonomy slugs)", () => {
+    const LONG_SLUGS = ["observability/opentelemetry", "infra/cloudflare-workers", "data/elasticsearch-dsl"];
+    const BOX_WIDTH = 60;
+
+    /**
+     * Strips the box's 2-space left margin and the border char on both
+     * ends (any of ╔/╚/║ rich or +/| plain), then trims trailing padding
+     * spaces — leaving just the row's actual visible content, whatever its
+     * length, so it can be checked against BOX_WIDTH directly.
+     */
+    function boxRowContent(line: string): string {
+      return line.replace(/^ {2}[╔╚║+|]/, "").replace(/[╗╝║+|]$/, "").trimEnd();
+    }
+
+    it("keeps every rendered line's own content within the 60-char box width, never truncates a slug mid-word, and always closes the paren", () => {
+      const bundle = baseBundle({
+        detected_skills: LONG_SLUGS.map((slug, i) => ({
+          slug,
+          commit_count: 10 - i,
+          first_seen: "2024-01-01",
+          last_seen: "2024-01-01",
+        })),
+      });
+      const text = stripAnsi(formatConsentSummary(bundle, { command: "submit" }));
+      const lines = text.split("\n");
+
+      // (a) no row's own content — border chars/margin stripped, trailing
+      // padding stripped — exceeds the 60-char box width.
+      for (const line of lines) {
+        expect(boxRowContent(line).length).toBeLessThanOrEqual(BOX_WIDTH);
+      }
+
+      const skillsLine = boxRowContent(lines.find((l) => l.includes("detected skills"))!);
+      expect(skillsLine).toContain("3 detected skills");
+
+      // (b) never an opened "(top: ..." left unclosed — and no slug appears
+      // as a truncated fragment: for each candidate slug, if any half of it
+      // shows up in the line, the WHOLE slug must be present verbatim.
+      expect((skillsLine.match(/\(/g) ?? []).length).toBe((skillsLine.match(/\)/g) ?? []).length);
+      for (const slug of LONG_SLUGS) {
+        const halfway = slug.slice(0, Math.floor(slug.length / 2));
+        if (skillsLine.includes(halfway)) {
+          expect(skillsLine).toContain(slug);
+        }
+      }
+    });
+
+    it("indicates omitted top skills honestly (\"+N more\") rather than silently dropping them, when only some fit", () => {
+      const bundle = baseBundle({
+        detected_skills: [
+          { slug: "ai/anthropic-api", commit_count: 14, first_seen: "2024-01-01", last_seen: "2024-01-01" },
+          ...LONG_SLUGS.slice(0, 2).map((slug, i) => ({
+            slug,
+            commit_count: 9 - i,
+            first_seen: "2024-01-01",
+            last_seen: "2024-01-01",
+          })),
+        ],
+      });
+      const text = stripAnsi(formatConsentSummary(bundle, { command: "submit" }));
+      const skillsLine = boxRowContent(text.split("\n").find((l) => l.includes("detected skills"))!);
+
+      // (c) the omitted skills are indicated honestly, at a slug boundary
+      // (never mid-slug), and the shown slug that DOES fit is shown in full.
+      expect(skillsLine).toContain("ai/anthropic-api");
+      expect(skillsLine).toMatch(/, \+\d+ more\)$/);
+      expect((skillsLine.match(/\(/g) ?? []).length).toBe((skillsLine.match(/\)/g) ?? []).length);
+      expect(skillsLine.length).toBeLessThanOrEqual(BOX_WIDTH);
+    });
+
+    it("plain mode with long slugs stays pure printable ASCII and still respects the same width/closed-paren rules", () => {
+      const bundle = baseBundle({
+        detected_skills: LONG_SLUGS.map((slug, i) => ({
+          slug,
+          commit_count: 10 - i,
+          first_seen: "2024-01-01",
+          last_seen: "2024-01-01",
+        })),
+      });
+      const text = formatConsentSummary(bundle, { command: "submit", plain: true });
+      // eslint-disable-next-line no-control-regex
+      expect(text).toMatch(/^[\x20-\x7e\n]*$/);
+      const skillsLine = boxRowContent(text.split("\n").find((l) => l.includes("detected skills"))!);
+      expect((skillsLine.match(/\(/g) ?? []).length).toBe((skillsLine.match(/\)/g) ?? []).length);
+      expect(skillsLine.length).toBeLessThanOrEqual(BOX_WIDTH);
     });
   });
 });

@@ -71,7 +71,7 @@ describe("executeScanCommand", () => {
     expect(() => JSON.parse(logs[0])).not.toThrow();
   });
 
-  it("prints the JSON first, then appends the human-readable summary when isTTY is true", async () => {
+  it("prints the consent block, the payload header, the JSON, then appends the human-readable summary when isTTY is true", async () => {
     const dir = repoWithOneCommit();
     const configDir = tempConfigDir();
 
@@ -107,15 +107,113 @@ describe("executeScanCommand", () => {
       isTTY: true,
     });
 
-    expect(logs).toHaveLength(2);
-    const bundle = JSON.parse(logs[0]);
+    // TTY order: consent block, payload header, bundle JSON, wrapped summary.
+    expect(logs).toHaveLength(4);
+    expect(logs[0]).toContain("WHAT WOULD GET UPLOADED");
+    expect(logs[1]).toBe("Exact payload (byte-for-byte what `redential submit` would send):");
+    const bundle = JSON.parse(logs[2]);
     expect(validateAgainstSchema(schema, bundle)).toEqual([]);
-    expect(logs[1]).toContain("YOUR PRIVATE REPO, WRAPPED");
-    expect(logs[1]).toContain("Nothing left your machine. Verify: github.com/Jppblue/redential-cli");
+    expect(logs[3]).toContain("YOUR PRIVATE REPO, WRAPPED");
+    expect(logs[3]).toContain("Nothing left your machine. Verify: github.com/Jppblue/redential-cli");
     // The summary is the LAST thing logged — it's what's left on screen
     // once the JSON above it has scrolled up.
-    const lastLineOfLastLog = logs[1].split("\n").filter(Boolean).at(-1);
+    const lastLineOfLastLog = logs[3].split("\n").filter(Boolean).at(-1);
     expect(lastLineOfLastLog).toContain("Nothing left your machine");
+  });
+
+  describe("consent summary block", () => {
+    it("prints BEFORE the JSON in TTY mode", async () => {
+      const dir = repoWithOneCommit();
+      const logs: string[] = [];
+      await executeScanCommand({
+        repoPath: dir,
+        author: ["you@example.com"],
+        yes: true,
+        toolVersion: "test",
+        configDir: tempConfigDir(),
+        log: (m) => logs.push(m),
+        isTTY: true,
+      });
+
+      const consentIndex = logs.findIndex((l) => l.includes("WHAT WOULD GET UPLOADED"));
+      const jsonIndex = logs.findIndex((l) => l.trim().startsWith("{"));
+      expect(consentIndex).toBeGreaterThanOrEqual(0);
+      expect(jsonIndex).toBeGreaterThan(consentIndex);
+    });
+
+    it("is absent when stdout is not a TTY", async () => {
+      const dir = repoWithOneCommit();
+      const logs: string[] = [];
+      await executeScanCommand({
+        repoPath: dir,
+        author: ["you@example.com"],
+        yes: true,
+        toolVersion: "test",
+        configDir: tempConfigDir(),
+        log: (m) => logs.push(m),
+        isTTY: false,
+      });
+
+      expect(logs.some((l) => l.includes("WHAT WOULD GET UPLOADED"))).toBe(false);
+      expect(logs).toHaveLength(1);
+    });
+
+    it("is absent when --json is passed, even with isTTY true", async () => {
+      const dir = repoWithOneCommit();
+      const logs: string[] = [];
+      await executeScanCommand({
+        repoPath: dir,
+        author: ["you@example.com"],
+        yes: true,
+        toolVersion: "test",
+        configDir: tempConfigDir(),
+        log: (m) => logs.push(m),
+        isTTY: true,
+        json: true,
+      });
+
+      expect(logs.some((l) => l.includes("WHAT WOULD GET UPLOADED"))).toBe(false);
+      expect(logs).toHaveLength(1);
+    });
+
+    it("numbers in the consent block match the parsed bundle JSON printed below it", async () => {
+      const dir = repoWithOneCommit();
+      const logs: string[] = [];
+      await executeScanCommand({
+        repoPath: dir,
+        author: ["you@example.com"],
+        yes: true,
+        toolVersion: "test",
+        configDir: tempConfigDir(),
+        log: (m) => logs.push(m),
+        isTTY: true,
+      });
+
+      const consentBlock = logs.find((l) => l.includes("WHAT WOULD GET UPLOADED"))!;
+      const bundle = JSON.parse(logs.find((l) => l.trim().startsWith("{"))!);
+      expect(consentBlock).toContain(`${bundle.commits.user_total.toLocaleString("en-US")} commits`);
+      expect(consentBlock).toContain(`${bundle.detected_skills.length} detected skill`);
+    });
+
+    it("plain: true renders the consent block ASCII-only", async () => {
+      const dir = repoWithOneCommit();
+      const logs: string[] = [];
+      await executeScanCommand({
+        repoPath: dir,
+        author: ["you@example.com"],
+        yes: true,
+        toolVersion: "test",
+        configDir: tempConfigDir(),
+        log: (m) => logs.push(m),
+        isTTY: true,
+        plain: true,
+      });
+
+      const consentBlock = logs.find((l) => l.includes("WHAT WOULD GET UPLOADED"))!;
+      // eslint-disable-next-line no-control-regex
+      expect(consentBlock).toMatch(/^[\x20-\x7e\n]*$/);
+      expect(consentBlock).not.toContain("╔");
+    });
   });
 
   describe("closing next-step hint — three states, end to end", () => {
@@ -132,8 +230,8 @@ describe("executeScanCommand", () => {
         isTTY: true,
       });
 
-      expect(logs[1]).toContain("Want this on a public, verifiable profile?");
-      expect(logs[1]).toContain("redential login && redential submit");
+      expect(logs[3]).toContain("Want this on a public, verifiable profile?");
+      expect(logs[3]).toContain("redential login && redential submit");
     });
 
     it("stored session, nothing submitted yet: shows the submit-only CTA", async () => {
@@ -152,9 +250,9 @@ describe("executeScanCommand", () => {
         isTTY: true,
       });
 
-      expect(logs[1]).toContain("Want this on a public, verifiable profile?");
-      expect(logs[1]).toContain("redential submit");
-      expect(logs[1]).not.toContain("redential login");
+      expect(logs[3]).toContain("Want this on a public, verifiable profile?");
+      expect(logs[3]).toContain("redential submit");
+      expect(logs[3]).not.toContain("redential login");
     });
 
     it("stored session, but the last submission was for a DIFFERENT site: treated as not-yet-submitted (submit-only CTA)", async () => {
@@ -193,8 +291,8 @@ describe("executeScanCommand", () => {
         isTTY: true,
       });
 
-      expect(logs[1]).toContain("redential submit");
-      expect(logs[1]).not.toContain("redential login");
+      expect(logs[3]).toContain("redential submit");
+      expect(logs[3]).not.toContain("redential login");
     });
 
     it("stored session, this exact bundle already submitted: shows no next-step hint at all", async () => {
@@ -229,9 +327,9 @@ describe("executeScanCommand", () => {
         isTTY: true,
       });
 
-      expect(logs[1]).not.toContain("Want this on a public, verifiable profile?");
-      expect(logs[1]).not.toContain("redential submit");
-      expect(logs[1]).not.toContain("redential login");
+      expect(logs[3]).not.toContain("Want this on a public, verifiable profile?");
+      expect(logs[3]).not.toContain("redential submit");
+      expect(logs[3]).not.toContain("redential login");
     });
 
     it("a new commit after submitting changes the bundle content: the CTA comes back", async () => {
@@ -273,8 +371,8 @@ describe("executeScanCommand", () => {
         isTTY: true,
       });
 
-      expect(logs[1]).toContain("redential submit");
-      expect(logs[1]).not.toContain("redential login");
+      expect(logs[3]).toContain("redential submit");
+      expect(logs[3]).not.toContain("redential login");
     });
   });
 
@@ -291,7 +389,7 @@ describe("executeScanCommand", () => {
       isTTY: true,
     });
 
-    expect(logs[1]).toContain(
+    expect(logs[3]).toContain(
       "Tip: sign your commits (git config commit.gpgsign true) — signed history is the strongest anchor for your credential."
     );
   });
@@ -319,7 +417,7 @@ describe("executeScanCommand", () => {
       isTTY: true,
     });
 
-    expect(logs[1]).not.toContain("Tip: sign your commits");
+    expect(logs[3]).not.toContain("Tip: sign your commits");
   });
 
   it("--json forces JSON-only output even when isTTY is true", async () => {
@@ -354,10 +452,10 @@ describe("executeScanCommand", () => {
       plain: true,
     });
 
-    expect(logs).toHaveLength(2);
+    expect(logs).toHaveLength(4);
     // eslint-disable-next-line no-control-regex
-    expect(logs[1]).toMatch(/^[\x20-\x7e\n]*$/);
-    expect(logs[1]).not.toContain("╔");
+    expect(logs.join("\n")).toMatch(/^[\x20-\x7e\n]*$/);
+    expect(logs.join("\n")).not.toContain("╔");
   });
 
   it("the JSON printed in TTY mode is byte-identical to what non-TTY mode prints", async () => {
@@ -388,14 +486,17 @@ describe("executeScanCommand", () => {
 
     // Both scans read the same fixture repo/config dir; only `created_at`/
     // `attestation.confirmed_at` (wall-clock `now`) can legitimately differ
-    // between the two calls, so compare with those stripped.
+    // between the two calls, so compare with those stripped. Non-TTY output
+    // is JSON-only (logs[0]); TTY output has the consent block/header ahead
+    // of the JSON, so locate it explicitly rather than assuming an index.
     const stripVolatile = (raw: string) => {
       const b = JSON.parse(raw);
       delete b.created_at;
       delete b.attestation.confirmed_at;
       return b;
     };
-    expect(stripVolatile(ttyLogs[0])).toEqual(stripVolatile(nonTtyLogs[0]));
+    const ttyJson = ttyLogs.find((l) => l.trim().startsWith("{"))!;
+    expect(stripVolatile(ttyJson)).toEqual(stripVolatile(nonTtyLogs[0]));
   });
 
   describe("huge-repo progress", () => {
@@ -419,11 +520,11 @@ describe("executeScanCommand", () => {
       // The one-commit fixture means scanned === total immediately — the
       // reporter must still reach the final line and terminate it with \n.
       expect(progressWrites.join("")).toContain("scanning commits... 1/1\n");
-      // Never leaked into stdout: JSON first, then the wrapped summary —
-      // nothing else, and neither contains the progress line's text.
-      expect(logs).toHaveLength(2);
-      expect(logs[0]).not.toContain("scanning commits");
-      expect(logs[1]).not.toContain("scanning commits");
+      // Never leaked into stdout: consent block, payload header, JSON, then
+      // the wrapped summary — nothing else, and none contain the progress
+      // line's text.
+      expect(logs).toHaveLength(4);
+      for (const line of logs) expect(line).not.toContain("scanning commits");
     });
 
     it("never writes progress when stdout is not a TTY — piped JSON output is untouched", async () => {
@@ -503,7 +604,7 @@ describe("executeScanCommand", () => {
         since: "2years",
       });
 
-      expect(logs[1]).toContain("last 2 years");
+      expect(logs[3]).toContain("last 2 years");
     });
 
     it("omits the window label when --since is not passed", async () => {
@@ -519,7 +620,7 @@ describe("executeScanCommand", () => {
         isTTY: true,
       });
 
-      expect(logs[1]).not.toContain("last ");
+      expect(logs[3]).not.toContain("last ");
     });
   });
 });
