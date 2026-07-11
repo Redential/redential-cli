@@ -7,6 +7,8 @@ always bump at least minor; breaking schema changes bump major.
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-07-11
+
 ### Added
 - **Consent summary before the exact payload (`scan`/`submit`, TTY-only, no
   schema change).** Both commands now print a short human-readable
@@ -15,7 +17,8 @@ always bump at least minor; breaking schema changes bump major.
   box-drawing characters + ANSI on rich terminals, the same ASCII fallback
   on plain Windows `conhost` via the existing `shouldUsePlainOutput`
   logic), listing what IS uploaded (commit count and span, detected-skill
-  count with the top 3 skill names, "time patterns, languages and
+  count with up to the top 3 skill names (as many as fit the box, the
+  rest marked "+N more"), "time patterns, languages and
   categories as aggregates", salted fingerprints) and what is NEVER
   uploaded (source code, file names, commit messages, the repo's name,
   other contributors' identities). Every number in the block is read off
