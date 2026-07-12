@@ -7,6 +7,8 @@ always bump at least minor; breaking schema changes bump major.
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-07-12
+
 ### Changed
 - **`submit`'s TTY output reordered: consent box now prints right before the
   upload prompt, not before the JSON.** The exact payload header and JSON
