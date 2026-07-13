@@ -146,11 +146,44 @@ crosses the boundary.
 
 ## Dependency note
 
-Placeholder for H1: moving `typescript` from `devDependencies` to
-`dependencies` is a role change, not a new dependency — `typescript` is
-already present in this repo's dependency tree today as a dev-only tool.
-H1 will need a written justification for that move (what it now needs to
-do at runtime, why the compiler API specifically, why not a lighter
-alternative) before the change lands, per CLAUDE.md's "ZERO new
-dependencies without written justification" policy applied to this
-narrower case.
+H1 moves `typescript` from `devDependencies` to `dependencies` (same
+`^5.6.0` range). This is a **role change, not a new dependency**:
+`typescript` is already present in this repo's tree today, as the dev-only
+compiler used by `npm run build`/`typecheck`. Nothing new enters the
+supply chain; what changes is that it now also runs at CLI runtime, so it
+needs the written justification CLAUDE.md's "ZERO new dependencies without
+written justification" policy requires, applied to this narrower case:
+
+- **Why it's needed at runtime**: the spike parses TypeScript sources (see
+  `src/proof-graph/parser-adapter.ts`) with the TypeScript compiler API —
+  that's the whole point of the `ParserAdapter` decision above. A
+  dev-only `typescript` wouldn't be present when a published CLI actually
+  runs `scan`, so the package has to ship as a real dependency for the
+  parser to work outside this repo's own dev environment.
+- **Usage stays parse-only**: only `ts.createSourceFile` plus a plain AST
+  walk over its output. No `ts.createProgram`, no type-checker, no
+  `ts.sys` filesystem or network access — `TscParserAdapter` never touches
+  disk itself, only the source text it's handed. That keeps the runtime
+  dependency's surface to "turn source text into a syntax tree," not the
+  full compiler.
+- **Why not a lighter alternative**: a hand-rolled or regex-based
+  TypeScript parser is exactly the false-positive surface this spike
+  exists to eliminate — `docs/signatures.md`'s import tier already
+  accepts that tradeoff deliberately for import matching, but the whole
+  premise of the structural tier is that regex-based "parsing" of
+  arbitrary code shapes is unreliable in ways a real parser isn't (see
+  the "headline advantage" comments in
+  `test/proof-graph/parser-adapter.test.ts` — import-shaped text inside
+  comments/template literals produces nothing, for free, precisely
+  because a real parser understands what a comment or a string is).
+  tree-sitter was considered and explicitly rejected for this spike — see
+  "Approved decisions" above — because it would be a genuinely new
+  dependency (a native/wasm parser generator) for the same job the
+  TypeScript compiler API already does with a role change, not an
+  addition.
+- **Supply-chain profile**: zero install scripts, pure JS (no native
+  binary blobs to audit), no network access of its own, and it was already
+  being pulled into every contributor's `node_modules` as a dev
+  dependency before this change — the audit surface for a PR reviewer is
+  "does this file only call `createSourceFile` and read its output,"
+  not "should this package be trusted at all."

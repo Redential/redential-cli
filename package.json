@@ -40,10 +40,10 @@
     "prepublishOnly": "npm test && npm run build"
   },
   "dependencies": {
-    "commander": "^12.1.0"
+    "commander": "^12.1.0",
+    "typescript": "^5.6.0"
   },
   "devDependencies": {
-    "typescript": "^5.6.0",
     "vitest": "^2.1.0"
   }
 }

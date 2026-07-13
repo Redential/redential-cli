@@ -429,3 +429,194 @@ export function getCommitsAddedLines(repoPath: string, shas: string[]): Promise<
     });
   });
 }
+
+export interface HeadTreeEntry {
+  path: string;
+  size: number;
+}
+
+// Distinct from EMPTY_REPO_PATTERN above: ls-tree/cat-file on an unborn
+// HEAD (no commits yet) fails with "Not a valid object name HEAD" rather
+// than git log's "does not have any commits yet" — same degenerate-repo
+// case, different command family, different stderr text. Kept as its own
+// pattern rather than folded into EMPTY_REPO_PATTERN so a future change to
+// one doesn't silently affect the other's matching.
+const EMPTY_REPO_TREE_PATTERN = /Not a valid object name HEAD|does not have any commits yet|bad default revision/;
+
+// "<mode> SP <type> SP <sha40> SP<padding><size> TAB <path>" (NUL-terminated
+// record, no trailing content) — ls-tree -l right-pads the size field to a
+// fixed width, so splitting the metadata portion on runs of whitespace (not
+// a single space) is required to isolate it.
+function parseLsTreeRecord(record: string): HeadTreeEntry | null {
+  const tab = record.indexOf("\t");
+  if (tab === -1) return null;
+  const meta = record.slice(0, tab).trim().split(/\s+/);
+  if (meta.length < 4) return null;
+  const [, type, , sizeRaw] = meta;
+  if (type !== "blob") return null; // skip submodule gitlinks etc. — never file content
+  const size = parseInt(sizeRaw, 10);
+  if (Number.isNaN(size)) return null;
+  return { path: record.slice(tab + 1), size };
+}
+
+/**
+ * Every blob (file) reachable from HEAD's tree, recursively, with its size
+ * in bytes — a single `git ls-tree -r -l -z HEAD` call rather than one
+ * `git cat-file -s`/`git show` per file, so enumerating a repo with
+ * thousands of files costs one process spawn, not thousands. `-l` puts the
+ * blob size on the same line (no second round trip needed to decide which
+ * files are even worth fetching); `-z` NUL-terminates records and disables
+ * filename quoting, so paths with spaces/non-ASCII bytes come back verbatim
+ * with no C-style escaping to undo (same class of problem
+ * getCommitAddedLines' core.quotepath=off solves for diff output, solved
+ * here by picking the flag that avoids quoting entirely instead).
+ *
+ * Streams stdout for the same reason as getAllCommits: a huge repo's
+ * ls-tree output can exceed execFileSync's default maxBuffer, so this uses
+ * `spawn` and parses records incrementally rather than buffering the whole
+ * process output.
+ *
+ * Returns [] for a repo with no commits yet (unborn HEAD), matching
+ * getAllCommits' empty-repo handling; any other failure rejects rather than
+ * being silently treated as "no files".
+ */
+export function listHeadTreeBlobs(repoPath: string): Promise<HeadTreeEntry[]> {
+  debugLog("git ls-tree -r -l -z HEAD (streaming)");
+  return new Promise((resolve, reject) => {
+    const child = spawn("git", ["ls-tree", "-r", "-l", "-z", "HEAD"], {
+      cwd: repoPath,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    const entries: HeadTreeEntry[] = [];
+    let buffer = "";
+    let stderr = "";
+
+    const consumeCompleteRecords = (final: boolean) => {
+      for (;;) {
+        const idx = buffer.indexOf("\0");
+        if (idx === -1) {
+          if (final && buffer.length > 0) {
+            const entry = parseLsTreeRecord(buffer);
+            if (entry) entries.push(entry);
+            buffer = "";
+          }
+          return;
+        }
+        const record = buffer.slice(0, idx);
+        buffer = buffer.slice(idx + 1);
+        const entry = parseLsTreeRecord(record);
+        if (entry) entries.push(entry);
+      }
+    };
+
+    child.stdout!.setEncoding("utf8");
+    child.stdout!.on("data", (chunk: string) => {
+      buffer += chunk;
+      consumeCompleteRecords(false);
+    });
+    child.stderr!.setEncoding("utf8");
+    child.stderr!.on("data", (chunk: string) => {
+      stderr += chunk;
+    });
+    child.on("error", (err) => reject(err));
+    child.on("close", (code) => {
+      if (code !== 0) {
+        if (EMPTY_REPO_TREE_PATTERN.test(stderr)) {
+          resolve([]);
+        } else {
+          reject(new Error(`git ls-tree failed (exit ${code}): ${stderr.trim() || "unknown error"}`));
+        }
+        return;
+      }
+      consumeCompleteRecords(true);
+      resolve(entries);
+    });
+  });
+}
+
+/**
+ * Batched form of HEAD blob content retrieval: fetches the content of MANY
+ * paths, as they exist at HEAD, in a single `git cat-file --batch` process
+ * instead of one process per file — same "subprocess spawn count is the
+ * dominant cost at scale" rationale as getCommitsAddedLines. Callers
+ * (proof-graph/snapshot.ts) chunk their path list themselves, mirroring
+ * getCommitsAddedLines/skill-detect.ts's DIFF_BATCH_SIZE split, so at most
+ * one batch's worth of file content is ever held in memory at once.
+ *
+ * `--batch` was chosen over N calls to `git show HEAD:path` (one process
+ * per file — exactly the cost this exists to avoid) or one `git show`
+ * given many `HEAD:path` args back to back (which does concatenate blob
+ * contents with no separator, but relying on that to re-split the stream
+ * would depend on undocumented `git show` behavior for a case it isn't
+ * documented to support). `--batch`'s protocol instead self-describes each
+ * object's exact byte length up front (`<sha> <type> <size>\n` followed by
+ * exactly `<size>` content bytes), which is the documented, binary-safe way
+ * to split a concatenated multi-file stream apart correctly. Paths are
+ * written to the child's STDIN (one `HEAD:<path>` per line) rather than
+ * passed as argv, which also sidesteps argv length limits for a large
+ * batch and keeps individual paths out of this process's argv (and so out
+ * of the `git argv` debug line the way `debugLog` here logs only a count —
+ * see src/debug.ts's paste-safety note on why per-file paths never appear
+ * in `--debug` output).
+ *
+ * Never throws: a git failure resolves with whatever was already parsed,
+ * matching getCommitsAddedLines' fail-quiet-to-partial-data behavior — a
+ * missing snapshot file is not a privacy problem, only a completeness one.
+ */
+export function readHeadBlobContents(repoPath: string, paths: string[]): Promise<Map<string, string>> {
+  const result = new Map<string, string>();
+  if (paths.length === 0) return Promise.resolve(result);
+
+  debugLog(`git cat-file --batch <${paths.length} paths> (batched content fetch)`);
+
+  return new Promise((resolve) => {
+    const child = spawn("git", ["cat-file", "--batch"], {
+      cwd: repoPath,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+
+    let buffer = Buffer.alloc(0);
+    let index = 0; // position in `paths` — cat-file --batch answers strictly in request order
+
+    const tryParse = () => {
+      for (;;) {
+        const headerEnd = buffer.indexOf("\n");
+        if (headerEnd === -1) return; // header not fully buffered yet
+        const header = buffer.slice(0, headerEnd).toString("utf8");
+        if (header.endsWith(" missing")) {
+          // Shouldn't happen (paths come from a just-read HEAD tree), but
+          // fail quiet rather than misalign the rest of the batch.
+          buffer = buffer.slice(headerEnd + 1);
+          index++;
+          continue;
+        }
+        const parts = header.split(" ");
+        if (parts.length < 3) return; // malformed/incomplete header, wait for more data
+        const size = parseInt(parts[2], 10);
+        if (Number.isNaN(size)) return;
+        const contentStart = headerEnd + 1;
+        const contentEnd = contentStart + size;
+        if (buffer.length < contentEnd + 1) return; // content + trailing \n not fully buffered yet
+        const path = paths[index];
+        if (path !== undefined) {
+          result.set(path, buffer.slice(contentStart, contentEnd).toString("utf8"));
+        }
+        buffer = buffer.slice(contentEnd + 1);
+        index++;
+      }
+    };
+
+    child.stdout!.on("data", (chunk: Buffer) => {
+      buffer = Buffer.concat([buffer, chunk]);
+      tryParse();
+    });
+    child.stderr!.on("data", () => {
+      // Intentionally discarded — same rationale as getCommitsAddedLines.
+    });
+    child.on("error", () => resolve(result));
+    child.on("close", () => resolve(result));
+
+    child.stdin!.write(paths.map((p) => `HEAD:${p}\n`).join(""));
+    child.stdin!.end();
+  });
+}
