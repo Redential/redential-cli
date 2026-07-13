@@ -5,7 +5,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: strict [semver](https://semver.org/) — bundle schema changes
 always bump at least minor; breaking schema changes bump major.
 
-## [Unreleased]
+## [0.3.0] - 2026-07-13
 
 ### Added
 - **Structural skill detection (the "proof graph") and `redential
@@ -19,13 +19,16 @@ always bump at least minor; breaking schema changes bump major.
   behind a `ParserAdapter` seam) and one taxonomy slug,
   `payments/payment-webhook-flow`, now recognized across five real payment
   providers (Stripe, PayPal, MercadoPago, Lemon Squeezy, Paddle) plus a
-  call-shape-only IAP/RevenueCat pattern. Detection stays entirely local
-  and zero-network, matching `signatures/*.json`-style determinism — no
-  LLMs, no remote inference. `redential explain <skill>` is a new,
-  read-only, local-only command that shows why a given taxonomy slug did
-  or didn't classify for the current repo (including the `AMBIGUOUS` case,
-  which never reaches a bundle — see below); it writes nothing to disk and
-  makes no network call. See [docs/proof-graph-spike.md](docs/proof-graph-spike.md).
+  call-shape-only IAP/RevenueCat pattern — six providers in total. Detection
+  stays entirely local and zero-network, matching `signatures/*.json`-style
+  determinism — no LLMs, no remote inference. `redential explain <skill>`
+  is a new, read-only, local-only command that shows why a given taxonomy
+  slug did or didn't classify for the current repo (including the
+  `AMBIGUOUS` case, which never reaches a bundle — see below); it accepts
+  the same `--author`/`--since` flags as `scan` (same attribution/window
+  semantics — see [docs/scan.md](docs/scan.md#huge-repositories-and---since))
+  and writes nothing to disk and makes no network call. See
+  [docs/proof-graph-spike.md](docs/proof-graph-spike.md).
 - **Two new optional `detected_skills[]` fields, `evidence` and
   `confidence` — bundle schema `1.1.0` → `1.2.0` (minor, additive).**
   `evidence: "import" | "structural"` records which detection tier
