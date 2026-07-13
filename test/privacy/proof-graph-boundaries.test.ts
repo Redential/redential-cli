@@ -1,13 +1,16 @@
 // H3 of the proof-graph spike (see docs/proof-graph-spike.md): the privacy
 // boundary test proving the spike's central "in-memory only" invariant —
 // the proof graph is built and walked entirely in memory for the duration
-// of the process and NEVER reaches `scan`'s output, the bundle, or disk.
-// Every principle here has the same status as the rest of test/privacy/
+// of the process, and the ONLY thing that ever crosses out of it into the
+// bundle is the small, closed-vocabulary surface H7 (docs/schema-change-h7.md)
+// deliberately opened: a claimed finding's slug plus its evidence/confidence
+// pair. Every principle here has the same status as the rest of test/privacy/
 // (docs/principles.md: "If a change breaks one of these tests, the change
-// is wrong — not the test") even though the spike itself ships nothing on
-// `main` yet — the whole point of writing this now, before any go decision,
-// is that the boundary is provably true from H1 onward, not asserted after
-// the fact once the signal is tempting to wire in.
+// is wrong — not the test"). Originally written pre-H7, before any go
+// decision, precisely so the boundary was provably true from H1 onward
+// rather than asserted after the fact once the signal became tempting to
+// wire in; H7 is that go decision landing for real, and this file moved with
+// it — see each assertion below for exactly what changed and why.
 //
 // Two techniques, both borrowed from existing privacy tests:
 //   - Run the REAL scan pipeline against a REAL fixture repo and assert on
@@ -22,7 +25,7 @@ import { mkdtempSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { cleanup } from "../support/fixtures.js";
-import { fixtureDirectPattern, fixturePaypalDirect, USER } from "../proof-graph/fixtures.js";
+import { fixtureDirectPattern, fixtureOtherAuthor, fixtureStripeUnused, USER } from "../proof-graph/fixtures.js";
 import { runScan } from "../../src/scan.js";
 import type { Bundle } from "../../src/types.js";
 
@@ -96,22 +99,21 @@ let fixtureFiles: string[];
 let fixtureBasenames: string[];
 let fixtureFunctionNames: string[];
 
-// H6 phase 2c — ADDITIVE second fixture/bundle, ONE extra scan run (runtime
-// budget: this milestone's task caps it at that), so the "structural slug
-// never enters the bundle" assertion is non-vacuous for the 5 NEW (H6)
-// structural patterns too, not just the original Stripe one: fixtureDirectPattern
-// above only ever contains the Stripe pattern, so a negative assertion
-// against IT alone would trivially pass for the other 5 slugs even if the
-// boundary were broken for one of them (nothing in that fixture could ever
-// have produced them in the first place). fixturePaypalDirect contains a
-// full, connected, non-Stripe structural pattern (PayPal's own
-// webhook-verification -> db-write -> idempotency-guard shape — see
-// test/proof-graph/fixtures.ts's own comment on that builder), giving this
-// second scan real graph-shaped content to leak for the new tier, the same
-// "positive control proves the scan actually looked" rationale the original
-// bundle/Stripe pair already uses.
-let paypalBundle: Bundle;
-let paypalBundleJson: string;
+// H7 (docs/schema-change-h7.md) — the two ADDITIVE scans below replace the
+// old paypalBundle scan this file used to run. Pre-H7, that second scan
+// existed purely to extend a NEGATIVE assertion ("no structural slug ever
+// enters") to a second, non-Stripe fixture. H7 deliberately moved that
+// boundary — a CLAIMED structural finding's slug now DOES enter the bundle
+// — so what's left worth proving with a second and third scan is the two
+// cases the contract still says must never travel: an AMBIGUOUS finding
+// (fixtureStripeUnused: stripe imported but never wired in) and an
+// UNATTRIBUTED one (fixtureOtherAuthor: the full pattern present, but only
+// in someone else's commit). Two extra scans, same "runtime budget" posture
+// the old comment already established for this file.
+let ambiguousBundle: Bundle;
+let ambiguousBundleJson: string;
+let unattributedBundle: Bundle;
+let unattributedBundleJson: string;
 
 beforeAll(async () => {
   const dir = fixtureDirectPattern();
@@ -130,11 +132,12 @@ beforeAll(async () => {
 
   // The REAL scan entry point (src/scan.ts's runScan) — same call shape
   // test/privacy/bundle-boundaries.test.ts and test/privacy/zero-network.test.ts
-  // drive it with. The proof-graph modules are never invoked by runScan
-  // today (that's exactly what assertion 3 below proves mechanically) —
-  // this call exists so assertion 1/2 prove the CURRENT bundle contract,
-  // over a repo that structurally contains the full webhook pattern, is
-  // already clean of graph vocabulary.
+  // drive it with. As of H7, runScan DOES invoke the proof-graph pipeline
+  // (scan.ts's computeStructuralSkills) — that's exactly why this fixture
+  // (the full, connected, CLAIMED webhook pattern) is the right one to prove
+  // assertion 1 below on: even with the structural tier wired in and
+  // legitimately claiming a finding here, nothing beyond the closed
+  // evidence/confidence vocabulary leaks out.
   bundle = await runScan({
     repoPath: dir,
     authors: [USER.email],
@@ -144,18 +147,29 @@ beforeAll(async () => {
   });
   bundleJson = JSON.stringify(bundle);
 
-  // The one extra scan run — see this variable's own comment above.
-  const paypalDir = fixturePaypalDirect();
-  dirs.push(paypalDir);
-  const paypalConfigDir = tempConfigDir();
-  paypalBundle = await runScan({
-    repoPath: paypalDir,
+  // AMBIGUOUS case — see this block's own comment above.
+  const ambiguousDir = fixtureStripeUnused();
+  dirs.push(ambiguousDir);
+  ambiguousBundle = await runScan({
+    repoPath: ambiguousDir,
     authors: [USER.email],
     confirmed: true,
     toolVersion: "0.1.0",
-    configDir: paypalConfigDir,
+    configDir: tempConfigDir(),
   });
-  paypalBundleJson = JSON.stringify(paypalBundle);
+  ambiguousBundleJson = JSON.stringify(ambiguousBundle);
+
+  // UNATTRIBUTED case — see this block's own comment above.
+  const unattributedDir = fixtureOtherAuthor();
+  dirs.push(unattributedDir);
+  unattributedBundle = await runScan({
+    repoPath: unattributedDir,
+    authors: [USER.email],
+    confirmed: true,
+    toolVersion: "0.1.0",
+    configDir: tempConfigDir(),
+  });
+  unattributedBundleJson = JSON.stringify(unattributedBundle);
 });
 
 describe("proof-graph privacy boundary (H3, docs/proof-graph-spike.md's Invariants)", () => {
@@ -181,21 +195,35 @@ describe("proof-graph privacy boundary (H3, docs/proof-graph-spike.md's Invarian
     }
 
     // Graph-internal vocabulary: src/proof-graph/infer.ts's StructuralFinding
-    // fields (confidence/attributed/claimed/edgeDistance/anchors),
-    // src/proof-graph/anchors.ts's Stripe signature-verification call shape
+    // fields (attributed/claimed/edgeDistance/anchors/connection/
+    // searchBounded), src/proof-graph/anchors.ts's provider-matching field
+    // (providerSlug) and its Stripe signature-verification call shape
     // (constructEvent/stripe-signature), and the module's own name
     // (proof-graph). Hardcoded rather than derived from the fixture because
     // these are the GRAPH MODULE's own terms, not fixture file content —
-    // they wouldn't be caught by the file/function-name extraction above,
-    // and they are exactly the field names docs/proof-graph-spike.md's
-    // "Draft bundle signal" section proposes for a FUTURE bundle version
-    // that does not exist today.
+    // they wouldn't be caught by the file/function-name extraction above.
+    //
+    // H7 (docs/schema-change-h7.md): "confidence" was on this list pre-H7,
+    // when the whole structural tier was unwired and NOTHING graph-derived
+    // was allowed to leave the machine under any name. H7 deliberately moved
+    // that boundary — `confidence` (alongside `evidence`) is now the exact,
+    // closed-enum, contract-defined surface the proof graph is allowed to
+    // expose (docs/schema-change-h7.md's "Nothing else graph-derived may
+    // ever enter the bundle" — `evidence`/`confidence` are the whole
+    // exception, not a crack in the ceiling). Removing it here is not a
+    // weakening of what this test checks: the assertion below still proves
+    // the module's own internal field NAMES (anchors, edgeDistance,
+    // attributed, claimed, connection, searchBounded, providerSlug) and its
+    // Stripe-specific call-shape vocabulary never leak, which is the part of
+    // the pre-H7 boundary the contract did NOT move.
     const graphVocabulary = [
       "anchors",
       "edgeDistance",
-      "confidence",
       "attributed",
       "claimed",
+      "searchBounded",
+      "connection",
+      "providerSlug",
       "constructEvent",
       "stripe-signature",
       "proof-graph",
@@ -205,55 +233,82 @@ describe("proof-graph privacy boundary (H3, docs/proof-graph-spike.md's Invarian
     }
   });
 
-  // Principle: "The structural signal stays OUT of the bundle for the whole
-  // spike" (docs/proof-graph-spike.md's Approved decisions #2) — the
-  // structural slug must never appear in a real bundle at any point during
-  // the spike, full stop, regardless of what the (never-wired-in) graph
-  // pipeline would classify. The positive control (payments/stripe DOES
-  // appear) is what makes the negative assertion meaningful: it proves this
-  // scan actually looked at, and detected skills in, this exact fixture
-  // repo — a negative assertion against an empty/no-op scan would prove
-  // nothing.
-  it("the structural slug never enters the bundle; the plain import-tier slug (positive control) does", () => {
-    expect(bundleJson).not.toContain("payments/payment-webhook-flow");
-    expect(bundle.detected_skills.map((s) => s.slug)).toContain("payments/stripe");
-  });
+  // H7 (docs/schema-change-h7.md) — REPLACES the pre-H7 invariant that used
+  // to live here ("the structural signal stays OUT of the bundle for the
+  // whole spike", docs/proof-graph-spike.md's Approved decisions #2). H7 is
+  // exactly the milestone that deliberately moved that boundary: a CLAIMED
+  // structural finding's slug now DOES enter the bundle, carrying exactly
+  // the contract's evidence/confidence pair. The positive control
+  // (payments/stripe, Tier 1 import matching) is unchanged in spirit from
+  // before — it still proves the scan actually looked, and it still shows
+  // that an import-tier entry never picks up the new fields it doesn't earn.
+  it("a CLAIMED structural finding's slug enters with evidence/confidence per the contract; the plain import-tier slug (positive control) carries neither field", () => {
+    const structuralEntry = bundle.detected_skills.find((s) => s.slug === "payments/payment-webhook-flow");
+    expect(structuralEntry, "a claimed structural finding must produce a bundle entry (H7)").toBeDefined();
+    expect(structuralEntry?.evidence).toBe("structural");
+    expect(structuralEntry?.confidence).toBe("direct");
 
-  // H6 phase 2c — extends the assertion above from ONE structural slug to
-  // ALL SIX (the original payments/payment-webhook-flow plus the 5 H6
-  // additions: PayPal, Mercado Pago, Lemon Squeezy, Paddle, IAP), over BOTH
-  // scanned bundles. The Stripe-only bundle keeps its existing positive
-  // control (payments/stripe); the PayPal bundle gets its own positive
-  // control (payments/paypal, Tier 1 import matching) so the negative
-  // assertion is non-vacuous for the new tier too, not just inherited from
-  // the original Stripe-only fixture that could never have produced any of
-  // the other 5 slugs in the first place.
-  it("none of the 6 structural slugs ever enter either scanned bundle, across both fixtures", () => {
+    const importEntry = bundle.detected_skills.find((s) => s.slug === "payments/stripe");
+    expect(importEntry, "Tier 1 import-tier positive control").toBeDefined();
+    expect(importEntry?.evidence).toBeUndefined();
+    expect(importEntry?.confidence).toBeUndefined();
+
+    // Narrower than a blanket "no structural data at all" (the pre-H7
+    // assertion this replaces): fixtureDirectPattern only ever contains the
+    // Stripe pattern, so none of the OTHER 5 structural slugs the pipeline
+    // can ever produce should show up in this particular bundle.
     for (const slug of ALL_STRUCTURAL_SLUGS) {
-      expect(bundleJson, `Stripe-fixture bundle must not contain structural slug "${slug}"`).not.toContain(slug);
-      expect(paypalBundleJson, `PayPal-fixture bundle must not contain structural slug "${slug}"`).not.toContain(slug);
+      if (slug === "payments/payment-webhook-flow") continue;
+      expect(bundleJson, `bundle must not contain unrelated structural slug "${slug}"`).not.toContain(slug);
     }
-    expect(paypalBundle.detected_skills.map((s) => s.slug)).toContain("payments/paypal");
   });
 
-  // Principle: the boundary is structural, not incidental — the modules
-  // that build and emit the bundle (scan.ts, build-bundle.ts,
-  // scan-command.ts) and the modules that ship it over the network
-  // (submit.ts, submit-command.ts) must not even IMPORT or REFERENCE the
-  // proof-graph module, so a future refactor can't accidentally start
-  // threading graph output into the bundle without this test catching the
-  // very first `import ... from "./proof-graph/...")` line that would make
-  // it possible. Source inspection (readFileSync of the real files), same
-  // technique test/privacy/zero-network.test.ts already uses for its
-  // network-API allowlist checks — this repo has no source-inspection
-  // privacy test for proof-graph specifically, so this is the first one.
-  it("bundle-producing/submitting modules never reference proof-graph (no import, no mention)", () => {
+  // H7 (docs/schema-change-h7.md's "AMBIGUOUS findings are never emitted"
+  // and "Unattributed findings are never emitted") — the two cases the
+  // contract still guarantees never travel, now that a CLAIMED finding does.
+  // This REPLACES the old "none of the 6 structural slugs ever enter either
+  // scanned bundle" test, which asserted a blanket negative that H7
+  // deliberately made false for the claimed case above; what's left of that
+  // invariant is exactly these two carve-outs.
+  it("an AMBIGUOUS structural finding's slug never enters the bundle, and neither does an UNATTRIBUTED one", () => {
+    // AMBIGUOUS: stripe imported but never wired into a verified flow.
+    // Positive control (payments/stripe, Tier 1) proves this scan looked.
+    expect(ambiguousBundleJson).not.toContain("payments/payment-webhook-flow");
+    expect(ambiguousBundle.detected_skills.map((s) => s.slug)).toContain("payments/stripe");
+
+    // UNATTRIBUTED: the full pattern is present in the repo, but only in
+    // OTHER's commit — USER's own commits never touch it, so this scan's
+    // userCommits population (author-filtered, same as every other tier)
+    // never even surfaces the plain Tier 1 import match either.
+    expect(unattributedBundleJson).not.toContain("payments/payment-webhook-flow");
+    expect(unattributedBundle.detected_skills.map((s) => s.slug)).not.toContain("payments/payment-webhook-flow");
+  });
+
+  // H7 (docs/schema-change-h7.md) — NARROWS the pre-H7 mechanical boundary.
+  // Before H7, NONE of the bundle-producing/submitting modules (including
+  // scan.ts) were allowed to reference proof-graph at all, because the
+  // structural tier was entirely unwired. H7 deliberately wires it in, with
+  // scan.ts as its single, documented integration point (see src/scan.ts's
+  // own computeStructuralSkills comment) — so the boundary this test now
+  // enforces is "everything EXCEPT scan.ts still never references
+  // proof-graph", plus an explicit assertion that scan.ts's reference IS
+  // there, so a future accidental removal (silently killing the structural
+  // tier) or a future accidental SECOND integration point elsewhere (e.g.
+  // build-bundle.ts also starting to read the graph directly) both get
+  // caught by this same test. Source inspection (readFileSync of the real
+  // files), same technique test/privacy/zero-network.test.ts already uses
+  // for its network-API allowlist checks.
+  it("only scan.ts, of the bundle-producing/submitting modules, references proof-graph — build-bundle/scan-command/submit/submit-command still never do", () => {
     const srcUrl = new URL("../../src/", import.meta.url);
-    const boundaryFiles = ["scan.ts", "build-bundle.ts", "scan-command.ts", "submit.ts", "submit-command.ts"];
-    for (const file of boundaryFiles) {
+    const neverReferences = ["build-bundle.ts", "scan-command.ts", "submit.ts", "submit-command.ts"];
+    for (const file of neverReferences) {
       const contents = readFileSync(new URL(file, srcUrl), "utf8");
       expect(contents, `src/${file} must not reference "proof-graph"`).not.toContain("proof-graph");
     }
+    const scanContents = readFileSync(new URL("scan.ts", srcUrl), "utf8");
+    expect(scanContents, "src/scan.ts is the single documented proof-graph integration point (H7)").toContain(
+      "proof-graph"
+    );
   });
 
   /**

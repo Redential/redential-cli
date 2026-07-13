@@ -7,6 +7,54 @@ always bump at least minor; breaking schema changes bump major.
 
 ## [Unreleased]
 
+### Added
+- **Structural skill detection (the "proof graph") and `redential
+  explain`.** Alongside the existing import-based detection tier (a
+  package name matched in an added line), skill detection can now also
+  follow connected relations across a diff's code — a function that
+  verifies a Stripe webhook signature, feeding a database write, guarded
+  by an idempotency check — and only claim a skill when that whole shape
+  is actually present and reachable, not merely imported somewhere. This
+  ships for one language (TypeScript, via the TypeScript compiler API
+  behind a `ParserAdapter` seam) and one taxonomy slug,
+  `payments/payment-webhook-flow`, now recognized across five real payment
+  providers (Stripe, PayPal, MercadoPago, Lemon Squeezy, Paddle) plus a
+  call-shape-only IAP/RevenueCat pattern. Detection stays entirely local
+  and zero-network, matching `signatures/*.json`-style determinism — no
+  LLMs, no remote inference. `redential explain <skill>` is a new,
+  read-only, local-only command that shows why a given taxonomy slug did
+  or didn't classify for the current repo (including the `AMBIGUOUS` case,
+  which never reaches a bundle — see below); it writes nothing to disk and
+  makes no network call. See [docs/proof-graph-spike.md](docs/proof-graph-spike.md).
+- **Two new optional `detected_skills[]` fields, `evidence` and
+  `confidence` — bundle schema `1.1.0` → `1.2.0` (minor, additive).**
+  `evidence: "import" | "structural"` records which detection tier
+  produced an entry; `confidence: "direct" | "inferred"` records how
+  directly a structural finding was attributed. Both are closed enums, no
+  free text. `AMBIGUOUS` classifications and unattributed findings are
+  never emitted under any field — ambiguous means the skill is not
+  claimed in the bundle at all. Nothing else graph-derived (paths,
+  function names, node/edge counts) ever enters the bundle. A `1.2.0`
+  bundle that omits both fields (every import-tier entry) is fully valid;
+  the change is purely additive to the shape a `1.1.0`-era consumer
+  already understood. Full contract and rationale:
+  [docs/schema-change-h7.md](docs/schema-change-h7.md); field docs:
+  [docs/schema.md](docs/schema.md#evidence--confidence-since-schema-120).
+
+### Changed
+- **Performance and progress reporting for `redential explain`/structural
+  detection.** The cross-file structural search now runs over distinct
+  files with cached, depth-capped BFS and a deterministic work budget
+  (instead of the earlier O(anchor-instance) search, which could hang for
+  minutes on dense real-world repos) — search that exceeds the budget
+  degrades to `AMBIGUOUS`, never a false claim. `getAllCommits` now
+  filters by author at the git level (`--author`) instead of walking and
+  diffing every author's commits in JS. `explain` prints a live,
+  TTY-gated progress line on stderr (closed set of phase labels + counts
+  only, never paths/names/emails, same paste-safety invariant as
+  `--debug`); piped output is unaffected. No change to bundle contents or
+  to what `scan`/`submit` output.
+
 ## [0.2.2] - 2026-07-12
 
 ### Changed

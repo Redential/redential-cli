@@ -9,10 +9,24 @@ false` everywhere — unknown fields are invalid by design).
 
 | Field | What | Why |
 |---|---|---|
-| `schema_version` | `"1.1.0"` | The schema is the trust contract; the version pins it |
+| `schema_version` | `"1.2.0"` | The schema is the trust contract; the version pins it |
 | `runner` | `local` \| `ci` | Local scans are user-controlled (weakest tier). CI scans (future) run in employer infrastructure and can carry an OIDC anchor |
 | `tool_version` | CLI version | Reproducibility of the analysis |
 | `created_at` | Scan timestamp | Freshness |
+
+### Version note (1.1.0 → 1.2.0)
+
+`1.2.0` adds two optional fields to `detected_skills[]` entries
+(`evidence`, `confidence` — see that section below). Precisely what
+"backward compatible" means for this bump: a 1.2.0 bundle that omits both
+fields (every import-tier entry, and every bundle from before this change)
+is fully valid against the 1.2.0 schema, and no consumer that only
+understood the 1.1.0 shape breaks on their absence — the fields are purely
+additive. What does NOT carry over is validating a 1.2.0 bundle against a
+validator pinned to the literal 1.1.0 schema: `schema_version` is a JSON
+Schema `const`, so that mismatch is rejected on the version string alone,
+by design. Full rationale and the exact field contract:
+[docs/schema-change-h7.md](schema-change-h7.md).
 
 ## `repo`
 
@@ -140,10 +154,59 @@ How detection works, and why it is safe to have in the bundle:
   [`taxonomy.json`](../taxonomy.json) (public, versioned in this repo). Any
   slug outside that list makes the bundle invalid. The taxonomy is the
   complete, enumerable universe of what detection can ever report.
-- **No evidence payload.** Per skill, only `commit_count`, `first_seen` and
-  `last_seen` — never the matched lines, file names, or any excerpt.
+- **No evidence payload.** Per skill, only `commit_count`, `first_seen`,
+  `last_seen`, and — since 1.2.0 — the two optional fields below. Never
+  the matched lines, file names, or any excerpt.
 - May be an empty array (no signatures matched); the field is always
   present.
+
+### `evidence` / `confidence` (since schema 1.2.0)
+
+Two optional fields, added alongside the structural detection tier (see
+[docs/proof-graph-spike.md](proof-graph-spike.md) for how that tier
+works and [docs/schema-change-h7.md](schema-change-h7.md) for the full
+discussion record and exact contract):
+
+```json
+{ "slug": "payments/payment-webhook-flow", "commit_count": 4,
+  "first_seen": "2025-01-10T09:00:00Z", "last_seen": "2025-06-02T14:20:00Z",
+  "evidence": "structural", "confidence": "direct" }
+```
+
+- `evidence`: `"import"` | `"structural"` — which detection tier produced
+  the entry. `"structural"` means the slug was verified by following
+  connected relations in the code (anchors + call-graph reachability),
+  not a single matched import line. In this version, only `"structural"`
+  entries carry the field at all; an absent field means an ordinary
+  import-tier match, exactly like every 1.1.0 bundle. `"import"` is a
+  valid enum value, reserved for a future change that would tag
+  import-tier entries explicitly.
+- `confidence`: `"direct"` | `"inferred"` — present only alongside
+  `evidence: "structural"`. `"direct"` means the connected shape was
+  found in the same function or file; `"inferred"` means it was found
+  across files, within a bounded search.
+- Both are **closed enums** — no free text is ever valid for either
+  field, enforced by the schema (`enum`, plus `additionalProperties:
+  false` on the item object).
+- **`AMBIGUOUS` findings are never emitted.** The proof graph's internal
+  classification is `DIRECT` / `INFERRED` / `AMBIGUOUS`; only the first
+  two ever produce a bundle entry. `AMBIGUOUS` means the skill is not
+  claimed in the bundle at all — there is no bundle representation of
+  "maybe." The only place an `AMBIGUOUS` classification is ever visible
+  is local, on-screen feedback from `redential explain <skill>`, which
+  writes nothing to disk and makes no network call.
+- **Unattributed findings are never emitted.** A structural finding only
+  becomes a bundle entry when it attributes to the user's own commits,
+  the same rule every other skill entry already follows.
+- **Nothing else graph-derived can ever appear.** No paths, no function
+  names, no node/edge counts, no adjacency data. `evidence` and
+  `confidence` are the entire surface the proof graph exposes outward.
+- A structural entry's `commit_count`/`first_seen`/`last_seen` are
+  computed the same deterministic way as any other skill entry: from the
+  user's commits whose added lines touched the finding's anchor-bearing
+  files (the files carrying the connected shape the proof graph found),
+  mirroring import-tier semantics — these three fields have always meant
+  "commits that added the evidence."
 
 ## `ownership`
 

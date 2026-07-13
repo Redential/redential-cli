@@ -54,6 +54,17 @@ export interface DetectedSkill {
   commit_count: number;
   first_seen: string;
   last_seen: string;
+  // Optional (schema 1.2.0+, see docs/schema.md). Absent means an ordinary
+  // import-tier match (Tier 1/2, src/skill-detect.ts) — same as every
+  // 1.1.0 bundle. Present ONLY for a claimed structural finding
+  // (src/proof-graph/infer.ts's StructuralFinding.claimed), never for an
+  // ambiguous one: an ambiguous classification is never claimed and never
+  // reaches the bundle under any field, full stop.
+  evidence?: "structural" | "import";
+  // Optional, only ever present alongside evidence:"structural" — mirrors
+  // StructuralFinding.confidence, minus "ambiguous" (an ambiguous finding
+  // is never claimed, so it can never produce a bundle entry at all).
+  confidence?: "direct" | "inferred";
 }
 
 export interface OwnershipInfo {
@@ -79,7 +90,7 @@ export interface AttestationInfo {
 }
 
 export interface Bundle {
-  schema_version: "1.1.0";
+  schema_version: "1.2.0";
   runner: "local" | "ci";
   tool_version: string;
   created_at: string;

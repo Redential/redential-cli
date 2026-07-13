@@ -16,7 +16,16 @@ import { detectSkills, type DetectSkillsOptions } from "./skill-detect.js";
 import { assertNoSecrets } from "./secret-scan.js";
 import { parseSince } from "./since.js";
 import { debugLog } from "./debug.js";
-import type { Bundle, CategoryName, LanguageShare, CategoryShare, DateForensicsInfo } from "./types.js";
+import { readHeadSnapshot } from "./proof-graph/snapshot.js";
+import { TscParserAdapter } from "./proof-graph/parser-adapter.js";
+import { buildGraph } from "./proof-graph/graph.js";
+import { findAnchors } from "./proof-graph/anchors.js";
+import {
+  collectUserTouchedFileDetails,
+  inferStructuralSkills,
+  summarizeTouchedCommits,
+} from "./proof-graph/infer.js";
+import type { Bundle, CategoryName, DetectedSkill, LanguageShare, CategoryShare, DateForensicsInfo } from "./types.js";
 
 export { ScanError } from "./errors.js";
 import { ScanError } from "./errors.js";
@@ -136,13 +145,34 @@ export async function runScan(opts: ScanOptions): Promise<Bundle> {
 
   const { languages, categories } = computeChurnBreakdown(userCommits);
   const skillsStart = Date.now();
-  const detectedSkills = await detectSkills(userCommits, opts.repoPath, opts.skillDetectOptions);
-  debugLog(`skill detection: ${detectedSkills.length} skills matched in ${Date.now() - skillsStart}ms`);
+  const importSkills = await detectSkills(userCommits, opts.repoPath, opts.skillDetectOptions);
+  debugLog(`skill detection: ${importSkills.length} skills matched in ${Date.now() - skillsStart}ms`);
+
+  // H7 of the proof-graph spike (docs/proof-graph-spike.md's "Draft bundle
+  // signal"): the structural tier's own detection, run over the SAME
+  // userCommits population already selected above. Zero network — every
+  // step is a local HEAD-snapshot read/parse or a local git diff walk (see
+  // computeStructuralSkills' own comment). Structural slugs are disjoint
+  // from every import-tier slug (signatures/package-map.json's payments/*
+  // entries and every Tier 2 signature's slug are all plain "payments/
+  // <provider>" names, never a "-webhook-flow"/"-flow" structural slug —
+  // verified by inspection, see docs/proof-graph-spike.md's H6 "Slug-per-
+  // provider decision"), so the two arrays below can never collide on slug.
+  const structuralStart = Date.now();
+  const structuralSkills = await computeStructuralSkills(opts.repoPath, userCommits, opts.skillDetectOptions?.taxonomyPath);
+  debugLog(`structural detection: ${structuralSkills.length} claimed finding(s) in ${Date.now() - structuralStart}ms`);
+
+  // Deterministic merge (principle 4, "User-reviewed": byte-identical output
+  // across runs over the same history) — same sort convention detectSkills
+  // itself already applies to its own array.
+  const detectedSkills = [...importSkills, ...structuralSkills].sort((a, b) =>
+    a.slug < b.slug ? -1 : a.slug > b.slug ? 1 : 0
+  );
 
   const dateForensics = computeDateForensics(userCommits);
 
   const bundle: Bundle = {
-    schema_version: "1.1.0",
+    schema_version: "1.2.0",
     runner: "local",
     tool_version: opts.toolVersion,
     created_at: now.toISOString(),
@@ -179,6 +209,83 @@ export async function runScan(opts: ScanOptions): Promise<Bundle> {
   assertNoSecrets(JSON.stringify(bundle));
 
   return bundle;
+}
+
+/**
+ * H7 of the proof-graph spike (docs/proof-graph-spike.md's "Draft bundle
+ * signal") — the structural tier's contribution to `detected_skills`. Runs
+ * the real proof-graph pipeline (HEAD snapshot -> parse -> graph -> anchors
+ * -> classification), the same sequence test/proof-graph/detection.test.ts's
+ * `runPipeline` exercises end to end, and maps ONLY claimed findings to
+ * bundle entries.
+ *
+ * Fixed rules (see this milestone's task in GOALS-proof-graph-spike.md):
+ *   - Only `claimed === true` findings ever produce an entry. `claimed` is
+ *     already the correct gate on the StructuralFinding side (confidence
+ *     "direct"/"inferred" AND attributed) — AMBIGUOUS and unattributed
+ *     findings never claim (see StructuralFinding.claimed's own comment in
+ *     infer.ts), and a `searchBounded` finding always degrades to
+ *     "ambiguous" first, so it's excluded the same way.
+ *   - An entry carries ONLY { slug, commit_count, first_seen, last_seen,
+ *     evidence: "structural", confidence } — no paths, names, counts of
+ *     anchors, or connection info. `finding.anchors`/`finding.connection`
+ *     are read here ONLY to compute the anchor-file path set passed into
+ *     summarizeTouchedCommits, never copied into the returned entry.
+ *   - commit_count/first_seen/last_seen derive from the user's own commits
+ *     whose added lines touched one of the finding's anchor-bearing files
+ *     (summarizeTouchedCommits, infer.ts) — never from the graph itself.
+ *
+ * Zero network: readHeadSnapshot/collectUserTouchedFileDetails are both
+ * local-only (a HEAD tree read and a batched `git show`, respectively);
+ * TscParserAdapter/buildGraph/findAnchors/inferStructuralSkills never touch
+ * the filesystem or network at all. The graph itself is never returned or
+ * held past this function's own scope — only the small, bounded
+ * DetectedSkill[] this function returns crosses back into runScan.
+ */
+async function computeStructuralSkills(
+  repoPath: string,
+  userCommits: RawCommit[],
+  taxonomyPath?: string
+): Promise<DetectedSkill[]> {
+  const snapshot = await readHeadSnapshot(repoPath);
+  const adapter = new TscParserAdapter();
+  const parsed = snapshot.map((f) => adapter.parse(f.path, f.content));
+  const graph = buildGraph(parsed);
+  const anchors = findAnchors(graph);
+
+  const touchedDetails = await collectUserTouchedFileDetails(repoPath, userCommits);
+  const userTouchedFiles = new Set(touchedDetails.keys());
+
+  const findings = inferStructuralSkills(graph, anchors, userTouchedFiles, { taxonomyPath });
+
+  const entries: DetectedSkill[] = [];
+  for (const finding of findings) {
+    if (!finding.claimed) continue;
+    // claimed guarantees confidence is "direct" or "inferred" (never
+    // "ambiguous" — see StructuralFinding.claimed's own comment) and
+    // attributed is true, so at least one of this finding's own anchor
+    // paths is present in touchedDetails; summarize over exactly those
+    // paths, never the whole repo's touched-file population.
+    const summary = summarizeTouchedCommits(
+      touchedDetails,
+      finding.anchors.map((a) => a.path)
+    );
+    if (!summary) {
+      // Defensive only — see summarizeTouchedCommits' own comment on why
+      // this shouldn't be reachable for a claimed finding.
+      throw new ScanError(`Internal error: claimed structural finding "${finding.slug}" has no touched-commit summary.`);
+    }
+    entries.push({
+      slug: finding.slug,
+      commit_count: summary.count,
+      first_seen: summary.first.toISOString(),
+      last_seen: summary.last.toISOString(),
+      evidence: "structural",
+      confidence: finding.confidence as "direct" | "inferred",
+    });
+  }
+
+  return entries;
 }
 
 const MISMATCH_THRESHOLD_MS = 48 * 60 * 60 * 1000;

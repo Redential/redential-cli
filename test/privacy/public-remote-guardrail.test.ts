@@ -102,7 +102,10 @@ describe("scan continues after a known-public-host warning (never blocks)", () =
     const bundleLine = logs.find((line) => line.trim().startsWith("{"));
     expect(bundleLine).toBeDefined();
     const bundle = JSON.parse(bundleLine!);
-    expect(bundle.schema_version).toBe("1.1.0");
+    // H7 (docs/schema-change-h7.md): schema_version bumped 1.1.0 -> 1.2.0
+    // (additive fields on detected_skills[] entries; unrelated to this
+    // guardrail's own behavior, which this test otherwise leaves untouched).
+    expect(bundle.schema_version).toBe("1.2.0");
     expect(bundle.commits.user_total).toBe(1);
   });
 

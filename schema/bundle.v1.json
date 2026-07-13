@@ -11,7 +11,7 @@
     "categories", "detected_skills", "ownership", "integrity", "attestation"
   ],
   "properties": {
-    "schema_version": { "const": "1.1.0" },
+    "schema_version": { "const": "1.2.0" },
     "runner": { "enum": ["local", "ci"] },
     "tool_version": { "type": "string" },
     "created_at": { "type": "string", "format": "date-time" },
@@ -118,7 +118,15 @@
           },
           "commit_count": { "type": "integer", "minimum": 1 },
           "first_seen": { "type": "string", "format": "date-time" },
-          "last_seen": { "type": "string", "format": "date-time" }
+          "last_seen": { "type": "string", "format": "date-time" },
+          "evidence": {
+            "enum": ["import", "structural"],
+            "description": "Optional. Detection tier for this entry: \"structural\" means the slug was verified by following connected code relations (anchors + call-graph reachability), not just a single matched import line. \"import\" is reserved for a future explicit-tagging change; in schema 1.2.0 the field is only ever emitted for \"structural\" entries — an absent field means an ordinary import-tier match, same as every 1.1.0 bundle. See docs/schema.md."
+          },
+          "confidence": {
+            "enum": ["direct", "inferred"],
+            "description": "Optional, only present alongside evidence:\"structural\". \"direct\" means the connected shape was found in the same function or file; \"inferred\" means it was found across files within a bounded search. AMBIGUOUS classifications are never emitted under this or any other field — ambiguous means the skill is not claimed in the bundle at all, full stop. See docs/schema.md."
+          }
         }
       }
     },

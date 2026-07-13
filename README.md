@@ -47,7 +47,7 @@ human-readable summary underneath it:
 
 ```
 {
-  "schema_version": "1.1.0",
+  "schema_version": "1.2.0",
   "runner": "local",
   "tool_version": "0.1.0",
   "created_at": "2026-07-09T14:32:01.000Z",
@@ -57,7 +57,7 @@ human-readable summary underneath it:
   "signed": { "count": 831, "ratio": 0.45, "key_types": ["ssh"] },
   "languages": [ { "extension": ".ts", "share": 0.62 }, { "extension": ".sql", "share": 0.14 } ],
   "categories": [ { "name": "backend", "commit_count": 902, "churn_share": 0.51 }, { "name": "testing", "commit_count": 340, "churn_share": 0.18 } ],
-  "detected_skills": [ { "slug": "payments/stripe", "commit_count": 12, "first_seen": "2024-09-01T10:00:00Z", "last_seen": "2025-11-20T18:30:00Z" } ],
+  "detected_skills": [ { "slug": "payments/stripe", "commit_count": 12, "first_seen": "2024-09-01T10:00:00Z", "last_seen": "2025-11-20T18:30:00Z" }, { "slug": "payments/payment-webhook-flow", "commit_count": 4, "first_seen": "2024-09-03T08:00:00Z", "last_seen": "2024-09-03T08:00:00Z", "evidence": "structural", "confidence": "direct" } ],
   "ownership": { "user_commit_ratio": 0.78 },
   "integrity": { "merkle_root": "7be2…", "algorithm": "sha256", "date_forensics": { "author_span_days": 767, "committer_span_days": 763, "mismatch_ratio": 0.06, "committer_burst_ratio": 0.02 } },
   "attestation": { "confirmed": true, "confirmed_at": "2026-07-09T14:32:01.000Z" }

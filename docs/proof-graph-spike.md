@@ -219,15 +219,20 @@ Explicitly out of scope for this spike:
   there is nothing to log yet. The entry lands with the go decision, if
   and when it happens.
 
-## Draft bundle signal (not implemented)
+## Draft bundle signal (implemented in H7)
 
-This section is a draft only — none of it is wired into
-`schema/bundle.v1.json`, `src/build-bundle.ts`, or any code path that runs
-today. It exists so H5's report can evaluate a concrete proposal rather
-than a vague one.
+This section was originally written as a draft only — at the time it was
+drafted, none of it was wired into `schema/bundle.v1.json`,
+`src/build-bundle.ts`, or any code path that ran. It existed so H5's
+report could evaluate a concrete proposal rather than a vague one. That
+proposal was approved (H5's GO recommendation, section "f" below) and
+landed for real in the H7 milestone — see
+[docs/schema-change-h7.md](schema-change-h7.md) for the discussion record,
+the exact field contract, and the schema `1.1.0` → `1.2.0` bump. The text
+below is kept as-is for history; it describes what was proposed, not a
+still-open proposal.
 
-If a future go decision approves this direction, `detected_skills[]`
-entries could gain two optional fields:
+As implemented, `detected_skills[]` entries can gain two optional fields:
 
 - `evidence`: `"import"` | `"structural"`
 - `confidence`: `"direct"` | `"inferred"`
@@ -340,11 +345,15 @@ expression, not just an identifier), a bounded parser-adapter extension
 
 ### c. Draft bundle signal
 
-The "Draft bundle signal (not implemented)" section above stays the
-source of truth for the proposed shape (`evidence`/`confidence` closed
-enums on `detected_skills[]`). On a GO decision, the following ceremony
-is **pending and entirely deferred** — none of it happens as part of
-closing this spike:
+**Update: this checklist is complete as of H7** — see
+[docs/schema-change-h7.md](schema-change-h7.md). The rest of this
+subsection is kept as the historical record of what was pending at the
+time H5 closed.
+
+The "Draft bundle signal" section above stays the source of truth for the
+field shape (`evidence`/`confidence` closed enums on `detected_skills[]`).
+At H5 close, on a GO decision, the following ceremony was **pending and
+entirely deferred** — none of it happened as part of closing the spike:
 
 - A prior discussion issue (per CLAUDE.md's "any change to WHAT data
   leaves the machine requires a prior discussion issue").

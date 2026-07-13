@@ -1035,3 +1035,115 @@ export async function collectUserTouchedFiles(
 
   return touched;
 }
+
+// -----------------------------------------------------------------------
+// collectUserTouchedFileDetails / summarizeTouchedCommits — H7
+// (docs/proof-graph-spike.md's "Draft bundle signal"): ADDITIVE helpers
+// only, in support of scan.ts wiring a CLAIMED structural finding's
+// commit_count/first_seen/last_seen into the bundle. collectUserTouchedFiles
+// above is left byte-for-byte unchanged and keeps serving every existing
+// caller (explain-command.ts, test/proof-graph/detection.test.ts) exactly as
+// before — this is a separate, richer sibling, not a modification.
+// -----------------------------------------------------------------------
+
+/** One user commit that added lines to a given path — just enough to derive
+ * commit_count/first_seen/last_seen later, never more (no message, no other
+ * per-commit field). */
+export interface FileTouchEntry {
+  sha: string;
+  authorDate: Date;
+}
+
+/**
+ * Richer sibling of collectUserTouchedFiles: the EXACT same walk (batched
+ * getCommitsAddedLines, same isMerge/isExcludedPath/empty-addedLines
+ * filtering — any change to one of these two functions' filtering rules
+ * must be mirrored in the other, since they're expected to agree on "which
+ * paths did the user touch"), but instead of collapsing straight to a flat
+ * Set<string>, keeps each touched path's own list of touching commits (sha +
+ * author date).
+ *
+ * Why a new function rather than extending collectUserTouchedFiles's return
+ * type: collectUserTouchedFiles is used today by explain-command.ts (H4) and
+ * a range of existing tests, all of which only ever want the plain Set —
+ * changing its signature or return shape would touch code and tests this
+ * milestone (H7) doesn't own. Keeping it untouched and adding this sibling
+ * is the least invasive option that still lets scan.ts get everything it
+ * needs (the plain touched-files Set for attribution, via
+ * `new Set(details.keys())`, AND, per claimed finding, that finding's own
+ * commit_count/first_seen/last_seen via summarizeTouchedCommits below) from
+ * a SINGLE diff walk over userCommits, instead of one walk per concern.
+ */
+export async function collectUserTouchedFileDetails(
+  repoPath: string,
+  userCommits: RawCommit[],
+  // Same content/rationale as collectUserTouchedFiles' own onProgress —
+  // counts only, never a sha/path.
+  onProgress?: (done: number, total: number) => void
+): Promise<Map<string, FileTouchEntry[]>> {
+  const touched = new Map<string, FileTouchEntry[]>();
+  const nonMergeCommits = userCommits.filter((c) => !c.isMerge);
+
+  for (let i = 0; i < nonMergeCommits.length; i += DIFF_BATCH_SIZE) {
+    const batch = nonMergeCommits.slice(i, i + DIFF_BATCH_SIZE);
+    const addedLinesBySha = await getCommitsAddedLines(
+      repoPath,
+      batch.map((c) => c.sha)
+    );
+    for (const commit of batch) {
+      const files = addedLinesBySha.get(commit.sha) ?? [];
+      for (const file of files) {
+        if (isExcludedPath(file.path)) continue;
+        if (file.addedLines.length === 0) continue;
+        let entries = touched.get(file.path);
+        if (!entries) {
+          entries = [];
+          touched.set(file.path, entries);
+        }
+        entries.push({ sha: commit.sha, authorDate: commit.authorDate });
+      }
+    }
+    onProgress?.(Math.min(i + DIFF_BATCH_SIZE, nonMergeCommits.length), nonMergeCommits.length);
+  }
+
+  return touched;
+}
+
+/**
+ * Reduces collectUserTouchedFileDetails' per-path output to the
+ * {count, first, last} shape one structural finding's own
+ * commit_count/first_seen/last_seen bundle entry needs (see H7's task in
+ * GOALS-proof-graph-spike.md and docs/proof-graph-spike.md's "Draft bundle
+ * signal"), over the caller-supplied set of anchor-bearing paths that
+ * SUPPORT that one finding — never the whole repo's touched-file map.
+ *
+ * Deduplicates by commit sha (a single commit can add lines to more than one
+ * of a finding's anchor-bearing files; it must only be counted once toward
+ * commit_count, exactly the same dedup skill-detect.ts's detectSkills
+ * applies per slug via its own `matchedCommits` Set-per-slug). Dates sorted
+ * ascending before taking first/last — deterministic across runs, mirroring
+ * detectSkills' own `sorted[0]`/`sorted[sorted.length - 1]` convention, so a
+ * structural entry's dates are computed exactly the same way an import-tier
+ * entry's are.
+ *
+ * Returns null if none of `paths` has any touching commit at all — the
+ * caller (scan.ts) only ever calls this for a CLAIMED finding, where
+ * `attributed: true` already guarantees at least one supporting anchor path
+ * is in the same touched-file population this reduces, so null is not
+ * expected to be reachable there; it exists as an honest signature rather
+ * than an unchecked non-null assertion.
+ */
+export function summarizeTouchedCommits(
+  details: Map<string, FileTouchEntry[]>,
+  paths: Iterable<string>
+): { count: number; first: Date; last: Date } | null {
+  const dateBySha = new Map<string, Date>();
+  for (const path of paths) {
+    for (const entry of details.get(path) ?? []) {
+      dateBySha.set(entry.sha, entry.authorDate);
+    }
+  }
+  if (dateBySha.size === 0) return null;
+  const dates = [...dateBySha.values()].sort((a, b) => a.getTime() - b.getTime());
+  return { count: dateBySha.size, first: dates[0], last: dates[dates.length - 1] };
+}
