@@ -49,7 +49,7 @@ human-readable summary underneath it:
 {
   "schema_version": "1.2.0",
   "runner": "local",
-  "tool_version": "0.1.0",
+  "tool_version": "0.3.0",
   "created_at": "2026-07-09T14:32:01.000Z",
   "repo": { "host_type": "github", "age_days": 742, "repo_fingerprint": "a3f9…" },
   "identity": { "author_identity_hashes": ["9c1e…"], "other_contributors_count": 3 },
@@ -60,7 +60,7 @@ human-readable summary underneath it:
   "detected_skills": [ { "slug": "payments/stripe", "commit_count": 12, "first_seen": "2024-09-01T10:00:00Z", "last_seen": "2025-11-20T18:30:00Z" }, { "slug": "payments/payment-webhook-flow", "commit_count": 4, "first_seen": "2024-09-03T08:00:00Z", "last_seen": "2024-09-03T08:00:00Z", "evidence": "structural", "confidence": "direct" } ],
   "ownership": { "user_commit_ratio": 0.78 },
   "integrity": { "merkle_root": "7be2…", "algorithm": "sha256", "date_forensics": { "author_span_days": 767, "committer_span_days": 763, "mismatch_ratio": 0.06, "committer_burst_ratio": 0.02 } },
-  "attestation": { "confirmed": true, "confirmed_at": "2026-07-09T14:32:01.000Z" }
+  "attestation": { "authorized_confirmation": true, "confirmed_at": "2026-07-09T14:32:01.000Z" }
 }
 
   ────────────────────────────────────────────────────────────
