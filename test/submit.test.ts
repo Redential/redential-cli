@@ -5,9 +5,85 @@ import { join } from "node:path";
 import { cleanup, commit, createRepo, setRemote } from "./support/fixtures.js";
 import { startMockServer, type MockServer, type RecordedRequest } from "./support/mock-server.js";
 import { saveCredentials } from "../src/credentials.js";
-import { executeSubmitCommand } from "../src/submit-command.js";
+import { executeSubmitCommand, formatShortUploadSummary } from "../src/submit-command.js";
 import { AuthError, SubmitError } from "../src/errors.js";
 import { bundleContentHash, readLastSubmission } from "../src/submission-record.js";
+import type { Bundle } from "../src/types.js";
+
+// Minimal, hand-built Bundle for formatShortUploadSummary's own unit
+// coverage — same pattern as summary.test.ts's baseBundle helper. Only the
+// fields formatShortUploadSummary actually reads are meaningfully set.
+function baseBundle(overrides: Partial<Bundle> = {}): Bundle {
+  return {
+    schema_version: "1.2.0",
+    runner: "local",
+    tool_version: "0.1.0",
+    created_at: "2026-07-09T00:00:00.000Z",
+    repo: { host_type: "github", age_days: 900, repo_fingerprint: "deadbeef" },
+    identity: { author_identity_hashes: ["abc123"], other_contributors_count: 0 },
+    commits: {
+      user_total: 1378,
+      first_at: "2024-01-01T00:00:00.000Z",
+      last_at: "2026-07-01T00:00:00.000Z",
+      span_days: 912,
+      hour_histogram: new Array(24).fill(0),
+      weekday_histogram: new Array(7).fill(0),
+    },
+    signed: { count: 0, ratio: 0 },
+    languages: [],
+    categories: [],
+    detected_skills: [],
+    ownership: { user_commit_ratio: 1 },
+    integrity: {
+      merkle_root: "0".repeat(64),
+      algorithm: "sha256",
+      date_forensics: { author_span_days: 900, committer_span_days: 895, mismatch_ratio: 0, committer_burst_ratio: 0 },
+    },
+    attestation: { authorized_confirmation: true, confirmed_at: "2026-07-09T00:00:00.000Z" },
+    ...overrides,
+  };
+}
+
+describe("formatShortUploadSummary", () => {
+  it("shows span, thousands-formatted commit count, and detected-skill count, with no structural suffix when none are structural", () => {
+    const bundle = baseBundle({
+      detected_skills: [
+        { slug: "ai/anthropic-api", commit_count: 14, first_seen: "2024-02-01", last_seen: "2026-06-01" },
+      ],
+    });
+    const text = formatShortUploadSummary(bundle, false);
+    expect(text).toContain("2 years of private work");
+    expect(text).toContain("1,378 commits");
+    expect(text).toContain("1 capabilities detected");
+    expect(text).not.toContain("structural");
+  });
+
+  it("appends the structural count when at least one detected skill has evidence: \"structural\"", () => {
+    const bundle = baseBundle({
+      detected_skills: [
+        { slug: "ai/anthropic-api", commit_count: 14, first_seen: "2024-02-01", last_seen: "2026-06-01" },
+        {
+          slug: "payments/stripe-webhook-flow",
+          commit_count: 3,
+          first_seen: "2024-02-01",
+          last_seen: "2026-06-01",
+          evidence: "structural",
+          confidence: "direct",
+        },
+      ],
+    });
+    const text = formatShortUploadSummary(bundle, false);
+    expect(text).toContain("2 capabilities detected (1 structural)");
+  });
+
+  it("uses an ASCII fallback separator in plain mode", () => {
+    const bundle = baseBundle();
+    const text = formatShortUploadSummary(bundle, true);
+    // eslint-disable-next-line no-control-regex
+    expect(text).toMatch(/^[\x20-\x7e\n]*$/);
+    expect(text).not.toContain("·");
+  });
+});
 
 /**
  * The identity-corroboration lookup (GET /api/cli/identity/emails) now
@@ -331,7 +407,15 @@ describe("executeSubmitCommand", () => {
 });
 
 describe("executeSubmitCommand — consent summary", () => {
-  it("with isTTY: true, logs contain the payload header, then the bundle JSON, then the consent block, in that order — and the uploaded body still matches the JSON log entry byte-for-byte", async () => {
+  // Console-UX milestone (2026-07): TTY order is now short summary line,
+  // identity-corroboration line (absent here — no verified-emails endpoint
+  // configured on this mock server, so fetchVerifiedEmails fails open and
+  // prints nothing), consent box, payload header, then the JSON — and the
+  // upload prompt right after. See submit-command.ts's "Output order"
+  // comment. The inviolable guarantee (JSON always printed before the
+  // upload prompt, byte-for-byte what gets sent) still holds — only its
+  // position within the TTY sequence moved from first to last.
+  it("with isTTY: true, logs contain the short summary, then the consent block, then the payload header, then the bundle JSON last — and the uploaded body still matches the JSON log entry byte-for-byte", async () => {
     const server = await startMockServer((req) => {
       if (req.url === "/api/cli/bundles") return { status: 200, body: { id: "bundle-tty" } };
       return { status: 404, body: {} };
@@ -357,13 +441,63 @@ describe("executeSubmitCommand — consent summary", () => {
       isTTY: true,
     });
 
-    expect(logs[0]).toBe("Exact payload (byte-for-byte what gets sent):");
-    expect(() => JSON.parse(logs[1])).not.toThrow();
-    expect(logs[2]).toContain("WHAT GETS UPLOADED");
+    // 5 lines: short summary, consent box, payload header, JSON, then the
+    // post-upload "Uploaded. Bundle id: ..." confirmation (unrelated to
+    // this milestone's ordering — logged only after a successful upload).
+    expect(logs).toHaveLength(5);
+    expect(logs[0]).toContain("of private work");
+    expect(logs[0]).toContain("1 commits");
+    expect(logs[0]).toContain("0 capabilities detected");
+    expect(logs[1]).toContain("WHAT GETS UPLOADED");
+    expect(logs[2]).toBe("Exact payload (byte-for-byte what gets sent):");
+    expect(() => JSON.parse(logs[3])).not.toThrow();
+    // The JSON is the last thing logged BEFORE the upload prompt — the
+    // inviolable "printed before upload" guarantee, now positioned last
+    // among the pre-prompt output (logs[4] is the post-upload result line).
+    const bundleLine = logs[3];
 
     const requests = bundleRequests(server);
     expect(requests).toHaveLength(1);
-    expect(requests[0].body).toBe(logs[1]);
+    expect(requests[0].body).toBe(bundleLine);
+  });
+
+  it("end to end: the short summary line omits the structural suffix for a plain fixture with no structural-evidence skills", async () => {
+    // The presence case ("(N structural)" appearing) is covered directly
+    // above by formatShortUploadSummary's own unit tests, which construct a
+    // hand-built Bundle with a structural-evidence skill — real end-to-end
+    // structural detection needs a proof-graph fixture repo (see
+    // test/proof-graph/detection.test.ts), out of scope to duplicate here.
+    // This test instead proves the real executeSubmitCommand path wires
+    // formatShortUploadSummary correctly for the (much more common) case
+    // where no detected skill carries `evidence: "structural"`.
+    const server = await startMockServer((req) => {
+      if (req.url === "/api/cli/bundles") return { status: 200, body: { id: "bundle-structural" } };
+      return { status: 404, body: {} };
+    });
+    servers.push(server);
+    process.env.REDENTIAL_SITE_URL = server.url;
+
+    const dir = repoWithOneCommit();
+    const configDir = tempConfigDir();
+    saveCredentials({ access_token: "secret-tok", site_url: server.url, obtained_at: "now" }, configDir);
+
+    const logs: string[] = [];
+    await executeSubmitCommand({
+      repoPath: dir,
+      author: ["you@example.com"],
+      yes: true,
+      confirmUpload: true,
+      toolVersion: "0.1.0",
+      configDir,
+      log: (m) => logs.push(m),
+      warn: () => {},
+      checkForUpdateFn: noCheckForUpdate,
+      isTTY: true,
+    });
+
+    // No structural-evidence skills in this plain one-commit fixture — the
+    // "(N structural)" suffix must be entirely absent, not "(0 structural)".
+    expect(logs[0]).not.toContain("structural");
   });
 
   it("without isTTY, logs are unchanged from before this feature (no consent block, no payload header)", async () => {

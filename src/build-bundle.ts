@@ -1,6 +1,6 @@
 import { runScan, listAuthors, type AuthorCandidate } from "./scan.js";
 import { ScanError } from "./errors.js";
-import { promptAuthors, promptConfirmAttestation, promptUseGitIdentity } from "./prompt.js";
+import { promptAuthors, promptConfirmAttestation, promptContinueLocally, promptUseGitIdentity } from "./prompt.js";
 import { getConfiguredUserEmail, getRemoteUrl, isShallowRepository } from "./git.js";
 import { publicHostWarning } from "./public-remote.js";
 import { shallowRepoWarning } from "./shallow-repo.js";
@@ -20,6 +20,18 @@ export interface BuildBundleOptions {
   // — see the "author pre-selection" comment below.
   promptUseGitIdentityFn?: (candidate: AuthorCandidate) => Promise<boolean>;
   warn?: (message: string) => void;
+  // True when stdout is an interactive terminal (cli.ts passes
+  // `process.stdout.isTTY`; scan-command.ts/submit-command.ts forward their
+  // own `isTTY` option straight through). Only used to decide whether the
+  // connectable-repo notice gets an actual interactive "Continue locally?"
+  // follow-up question — see promptContinueLocallyFn below. Undefined
+  // behaves like `false` (no prompt), matching a piped stdout.
+  isTTY?: boolean;
+  // Injectable for tests; defaults to the real interactive prompt. Only
+  // ever called when `isTTY` is true AND the remote looks connectable (see
+  // public-remote.ts's publicHostWarning) — never in piped/non-TTY mode,
+  // which keeps today's non-blocking "warn and continue" behavior exactly.
+  promptContinueLocallyFn?: () => Promise<boolean>;
   // Raw --since spec, forwarded to runScan (src/since.ts parses it). See
   // scan-command.ts / docs/scan.md for the CLI-facing behavior.
   since?: string;
@@ -33,12 +45,32 @@ export interface BuildBundleOptions {
  * of re-deriving the bundle another way, so the bundle it uploads is
  * produced by the exact same code path `scan` prints (principle 4,
  * "User-reviewed").
+ *
+ * Returns `null` — instead of a `Bundle` — only when a real TTY user
+ * answered "n" to the connectable-repo "Continue locally?" follow-up (see
+ * below): nothing was scanned, and the caller must exit cleanly (exit code
+ * 0) without printing anything further. Every other path (including the
+ * non-TTY/piped one, which never asks that question at all) still always
+ * returns a `Bundle`.
  */
-export async function buildBundleInteractively(opts: BuildBundleOptions): Promise<Bundle> {
+export async function buildBundleInteractively(opts: BuildBundleOptions): Promise<Bundle | null> {
   const warn = opts.warn ?? console.error;
 
   const publicHostNote = publicHostWarning(getRemoteUrl(opts.repoPath));
-  if (publicHostNote) warn(publicHostNote);
+  if (publicHostNote) {
+    warn(publicHostNote);
+    // TTY-interactive only — see BuildBundleOptions.isTTY's comment and
+    // public-remote.ts's own comment on why this question lives outside
+    // publicHostWarning's returned string. Piped/non-TTY stdout keeps
+    // today's exact behavior: warn and continue, never blocking.
+    if (opts.isTTY) {
+      const proceed = await (opts.promptContinueLocallyFn ?? promptContinueLocally)();
+      if (!proceed) {
+        warn("Nothing scanned. Connect the GitHub App instead for a stronger tier.");
+        return null;
+      }
+    }
+  }
   if (isShallowRepository(opts.repoPath)) warn(shallowRepoWarning());
 
   let authors = opts.author;

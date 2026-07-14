@@ -31,6 +31,16 @@ function formatCandidate(c: AuthorCandidate): string {
   return `${c.email} (${c.count} commit${c.count === 1 ? "" : "s"})`;
 }
 
+// Console-UX milestone (2026-07): both single-identity confirmations
+// (promptAuthors' one-candidate case and promptUseGitIdentity below) share
+// this exact "Found <n> commits authored by <email>. Use this identity?"
+// phrasing — they're the same interaction (confirm a single candidate
+// identity), just reached from two different code paths. Thousands
+// separator matches scan-command.ts's own commit-count formatting.
+function formatIdentityConfirmationPrompt(c: AuthorCandidate): string {
+  return `Found ${c.count.toLocaleString("en-US")} commits authored by ${c.email}. Use this identity? (Y/n) `;
+}
+
 export async function promptAuthors(
   candidates: AuthorCandidate[],
   streams: PromptStreams = DEFAULT_STREAMS
@@ -45,7 +55,7 @@ export async function promptAuthors(
       const [only] = candidates;
       const answer = await questionOrThrowOnClose(
         rl,
-        `Found 1 identity: ${formatCandidate(only)}. Is this you? (Y/n) `,
+        formatIdentityConfirmationPrompt(only),
         "Input closed before an author identity was selected."
       );
       const trimmed = answer.trim().toLowerCase();
@@ -85,7 +95,7 @@ export async function promptUseGitIdentity(
   try {
     const answer = await questionOrThrowOnClose(
       rl,
-      `Found your git identity: ${formatCandidate(candidate)}. Use it? (Y/n) `,
+      formatIdentityConfirmationPrompt(candidate),
       "Input closed before an author identity was selected."
     );
     const trimmed = answer.trim().toLowerCase();
@@ -95,7 +105,15 @@ export async function promptUseGitIdentity(
   }
 }
 
-const ATTESTATION_TEXT = "I am authorized to analyze this repository.";
+// Console-UX milestone (2026-07): default flipped from a neutral "(y/n)" to
+// an explicit "(y/N)" — pressing Enter now DECLINES, the user must type
+// "y". This is a copy/default change only: the check below already only
+// ever accepted an explicit answer starting with "y" (an empty answer never
+// matched), so the recorded attestation's *content* (build-bundle.ts passes
+// this boolean straight through to runScan as `confirmed`) is unchanged —
+// only what the prompt now visibly promises about the default matches what
+// the code already did.
+const ATTESTATION_TEXT = "Confirm you are authorized to analyze this repository.";
 
 export async function promptConfirmAttestation(
   streams: PromptStreams = DEFAULT_STREAMS
@@ -104,10 +122,34 @@ export async function promptConfirmAttestation(
   try {
     const answer = await questionOrThrowOnClose(
       rl,
-      `${ATTESTATION_TEXT} Confirm? (y/n) `,
+      `${ATTESTATION_TEXT} (y/N) `,
       "Input closed before authorization was confirmed."
     );
     return answer.trim().toLowerCase().startsWith("y");
+  } finally {
+    rl.close();
+  }
+}
+
+/**
+ * Asked ONLY in a real interactive terminal, right after
+ * public-remote.ts's `publicHostWarning` notice has been printed
+ * (non-blocking, via `warn()`) — see build-bundle.ts. Y-default: Enter
+ * continues with the local scan, matching the other single-candidate Y/n
+ * confirmations in this file. Answering "n" is the one path that aborts
+ * before anything is scanned; the caller is responsible for exiting
+ * cleanly (exit code 0) and pointing at the GitHub App as the alternative.
+ */
+export async function promptContinueLocally(streams: PromptStreams = DEFAULT_STREAMS): Promise<boolean> {
+  const rl = createInterface(streams);
+  try {
+    const answer = await questionOrThrowOnClose(
+      rl,
+      "Continue locally? (Y/n) ",
+      "Input closed before the connectable-repo prompt was answered."
+    );
+    const trimmed = answer.trim().toLowerCase();
+    return trimmed === "" || trimmed.startsWith("y");
   } finally {
     rl.close();
   }

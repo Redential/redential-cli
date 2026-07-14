@@ -10,6 +10,7 @@ import { checkForUpdate } from "./version-check.js";
 import { bundleContentHash, saveLastSubmission } from "./submission-record.js";
 import { computeCorroboration, corroborationNotice, type IdentityCorroboration } from "./identity-corroboration.js";
 import { getOrCreateSalt } from "./salt.js";
+import type { Bundle } from "./types.js";
 
 export type SubmitCommandOptions = BuildBundleOptions & {
   /** Separate from `yes` (authorization-to-scan) on purpose — this is
@@ -24,11 +25,12 @@ export type SubmitCommandOptions = BuildBundleOptions & {
   // defaults to the real checkForUpdate (src/version-check.ts).
   checkForUpdateFn?: () => Promise<void>;
   // True when stdout is an interactive terminal — cli.ts passes
-  // `process.stdout.isTTY`. Determines whether the human-readable consent
-  // summary (and its header) is printed at all; when it is, it comes after
-  // the JSON payload, right before the upload prompt. Tests set this
+  // `process.stdout.isTTY`. Determines whether the human-readable
+  // short-summary line, identity-corroboration line, consent box, and
+  // payload header are printed at all (see executeSubmitCommand's own
+  // "Output order" comment for the full TTY sequence). Tests set this
   // explicitly instead of relying on a real TTY. Undefined behaves like
-  // `false` (no header, no consent block), matching a piped stdout so the
+  // `false` (JSON only, no other output), matching a piped stdout so the
   // printed bundle JSON stays byte-identical to before this feature existed.
   isTTY?: boolean;
   // True to render the consent summary with the ASCII/no-color fallback
@@ -37,6 +39,44 @@ export type SubmitCommandOptions = BuildBundleOptions & {
   // tests set it explicitly, same pattern as isTTY.
   plain?: boolean;
 };
+
+// Mirrors summary.ts's private `humanizeSpan` (kept in sync by hand).
+// Duplicated here — rather than exported from summary.ts and imported —
+// because summary.ts is out of scope for this console-UX milestone (owned
+// by its own follow-up phase that rebuilds `scan`'s wrapped summary);
+// extracting a single shared helper is a good small follow-up once that
+// phase lands, but isn't worth touching that file for on its own.
+function humanizeSpanDays(days: number): string {
+  if (days <= 0) return "a single day";
+  const years = Math.floor(days / 365);
+  if (years >= 1) return `${years} year${years === 1 ? "" : "s"}`;
+  const months = Math.floor(days / 30);
+  if (months >= 1) return `${months} month${months === 1 ? "" : "s"}`;
+  return `${days} day${days === 1 ? "" : "s"}`;
+}
+
+/**
+ * The one-line short summary printed first in TTY mode, right before the
+ * identity-corroboration line and the consent box — owner-mandated so the
+ * structural-evidence count (schema 1.2.0+'s `evidence: "structural"`) is
+ * visible at the upload edge, not buried inside the box or the JSON. Pure
+ * function of the bundle already built above: no new data collection.
+ */
+// Exported for direct unit coverage (test/submit.test.ts) — a pure
+// formatting function of an already-built `Bundle`, same pattern as
+// summary.ts's own exported formatters.
+export function formatShortUploadSummary(bundle: Bundle, plain: boolean | undefined): string {
+  const span = humanizeSpanDays(bundle.commits.span_days);
+  const commitCount = bundle.commits.user_total.toLocaleString("en-US");
+  const capabilityCount = bundle.detected_skills.length;
+  const structuralCount = bundle.detected_skills.filter((s) => s.evidence === "structural").length;
+  const structuralSuffix = structuralCount > 0 ? ` (${structuralCount} structural)` : "";
+  const dot = plain ? "-" : "·"; // middle dot; ASCII fallback for PLAIN_THEME parity
+  return (
+    `${span} of private work ${dot} ${commitCount} commits ${dot} ` +
+    `${capabilityCount} capabilities detected${structuralSuffix}`
+  );
+}
 
 /**
  * `submit`'s actual behavior, independent of commander wiring. Builds the
@@ -59,19 +99,31 @@ export async function executeSubmitCommand(opts: SubmitCommandOptions): Promise<
   }
 
   const bundle = await buildBundleInteractively(opts);
+  // `null` only happens when a real TTY user declined the connectable-repo
+  // "Continue locally?" follow-up (see build-bundle.ts) — it already
+  // printed the "nothing scanned" notice; nothing was uploaded either.
+  if (bundle === null) return;
   const bundleJson = JSON.stringify(bundle, null, 2);
-  // TTY order: header, then the exact JSON (byte-for-byte what gets sent —
-  // this print IS the guarantee, so nothing may come between the header and
-  // it), then the human-readable consent box, then (below) the identity
-  // corroboration line if any, then the upload prompt. The consent box goes
-  // right before the prompt on purpose: the last thing the dev reads before
-  // typing y/n should be the readable summary, not the tail of a JSON blob.
-  if (opts.isTTY) {
-    log("Exact payload (byte-for-byte what gets sent):");
-  }
-  log(bundleJson);
-  if (opts.isTTY) {
-    log(formatConsentSummary(bundle, { plain: opts.plain, command: "submit" }));
+
+  // Output order (console-UX milestone, 2026-07):
+  //   1. one-line short summary (TTY only)
+  //   2. identity-corroboration line, when present (both TTY and non-TTY —
+  //      see the comment above its computation below; unchanged from
+  //      before this milestone)
+  //   3. the consent box, "WHAT GETS UPLOADED" (TTY only)
+  //   4. the payload header + the exact JSON (byte-for-byte what gets sent
+  //      — this print IS the guarantee, so nothing may come between the
+  //      header and it; ALWAYS printed before the upload prompt, TTY or
+  //      not — see the non-TTY branch below for the piped-output case)
+  //   5. the upload prompt, immediately after the JSON
+  // Non-TTY/piped stdout keeps its exact pre-existing contract: the raw
+  // bundle JSON is the very first thing logged, nothing else surrounding
+  // it — `scan`/`submit | jq`-style consumers are unaffected by this
+  // reordering, which only touches the TTY-interactive presentation.
+  if (!opts.isTTY) {
+    log(bundleJson);
+  } else {
+    log(formatShortUploadSummary(bundle, opts.plain));
   }
 
   // Identity corroboration (optional X-Redential-Identity-Corroboration
@@ -82,7 +134,9 @@ export async function executeSubmitCommand(opts: SubmitCommandOptions): Promise<
   // the dev must see exactly what it says before consenting to upload. A
   // failed/unreachable emails lookup prints nothing and sends nothing —
   // fetchVerifiedEmails and computeCorroboration are both fail-open by
-  // contract, never throwing and never blocking the submit.
+  // contract, never throwing and never blocking the submit. Printed in
+  // BOTH TTY and non-TTY modes, same as before this milestone — only its
+  // position relative to the TTY-only elements around it has moved.
   const verifiedEmails = await fetchVerifiedEmails(siteUrl, credentials.access_token);
   let corroboration: IdentityCorroboration | null = null;
   if (verifiedEmails) {
@@ -92,6 +146,12 @@ export async function executeSubmitCommand(opts: SubmitCommandOptions): Promise<
       getOrCreateSalt(opts.configDir)
     );
     if (corroboration) log(corroborationNotice(corroboration));
+  }
+
+  if (opts.isTTY) {
+    log(formatConsentSummary(bundle, { plain: opts.plain, command: "submit" }));
+    log("Exact payload (byte-for-byte what gets sent):");
+    log(bundleJson);
   }
 
   const confirmedUpload = opts.confirmUpload || (await (opts.promptConfirmUploadFn ?? promptConfirmUpload)());

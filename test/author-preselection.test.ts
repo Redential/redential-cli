@@ -52,7 +52,10 @@ describe("author pre-selection from git config user.email", () => {
 
     expect(gitIdentityPrompted).toBe("alice@example.com");
     expect(listPrompted).toBe(false);
-    expect(bundle.commits.user_total).toBe(2);
+    // buildBundleInteractively now returns Bundle | null (console-UX milestone:
+    // null only on a declined connectable-repo TTY prompt, never hit here
+    // since isTTY isn't set) — non-null assert to keep this test unchanged.
+    expect(bundle!.commits.user_total).toBe(2);
   });
 
   it("2+ candidates, git identity matches one, DECLINED: falls through to the full unmodified list", async () => {
@@ -76,7 +79,7 @@ describe("author pre-selection from git config user.email", () => {
 
     // The matched entry is NOT removed from the list shown on decline.
     expect(listPromptedWith.sort()).toEqual(["alice@example.com", "bob@example.com"]);
-    expect(bundle.commits.user_total).toBe(3);
+    expect(bundle!.commits.user_total).toBe(3);
   });
 
   it("no git identity configured: falls through to the full list, never prompting for git-identity use", async () => {
@@ -181,6 +184,6 @@ describe("author pre-selection from git config user.email", () => {
     });
 
     expect(gitIdentityPromptCalled).toBe(false);
-    expect(bundle.commits.user_total).toBe(1);
+    expect(bundle!.commits.user_total).toBe(1);
   });
 });

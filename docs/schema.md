@@ -296,8 +296,9 @@ this repo.
 
 ## `attestation`
 
-Records that the user confirmed "I am authorized to analyze this repository"
-and when. The confirmation is part of the payload, not just a UI gate.
+Records that the user confirmed "Confirm you are authorized to analyze this
+repository." (the prompt defaults to N — an explicit `y` is required) and
+when. The confirmation is part of the payload, not just a UI gate.
 
 ## What is deliberately absent
 

@@ -13,31 +13,51 @@ redential scan --debug --repo <path>      # verbose diagnostics on stderr
 
 ## How it works
 
-1. **Enumerate authors.** `git log` is read locally (`git show`/`git diff`
+1. **Connectable-repo notice.** If the repo's remote looks like it's hosted
+   on a known public host (github.com/gitlab.com/bitbucket.org —
+   `isKnownPublicHost`, `src/public-remote.ts`), `scan` prints an
+   informational notice before anything else — this is a heuristic, never
+   proof the repo is actually public, so it never blocks (the CLI's primary
+   use case is a *private* employer repo hosted on github.com):
+   ```
+   This repo appears connectable through GitHub.
+
+   For repos you own, the GitHub App provides stronger evidence.
+   For employer or NDA-protected repos, continue with the local scan.
+   ```
+   On a real TTY, a follow-up question appears right after it — `Continue
+   locally? (Y/n)`, Y default. Pressing Enter (or `y`) continues with the
+   local scan exactly as before; answering `n` exits cleanly (exit code 0)
+   without scanning anything, printing a brief note suggesting the GitHub
+   App instead. Piped/non-TTY output is unaffected: the notice still prints
+   (non-blocking, to stderr), but no interactive question is ever asked —
+   the same "warn, never block" behavior every prior release had.
+2. **Enumerate authors.** `git log` is read locally (`git show`/`git diff`
    never leave the machine) to list distinct author emails and their commit
    counts.
-2. **Select identity.** With 2+ candidates, and the repo's own
+3. **Select identity.** With 2+ candidates, and the repo's own
    `git config user.email` matching one of them, that one is offered FIRST
-   as a fast default: "Found your git identity: you@example.com (12
-   commits). Use it? (Y/n)", Y is the default. Declining — or no match at
+   as a fast default: "Found 12 commits authored by you@example.com. Use
+   this identity? (Y/n)", Y is the default. Declining — or no match at
    all — falls through unchanged to the flow below: a single candidate
-   gets its own Y/n confirmation ("Found 1 identity: you@example.com (12
-   commits). Is this you? (Y/n)"); 2+ candidates get a numbered list
-   instead (skipping the git-identity pre-selection specifically to avoid
-   asking the same yes/no question twice in a row for a repo with exactly
-   one contributor). Declining the git-identity pre-selection shows the
-   FULL list, including the declined entry — "no" often means "that one
-   plus others" for a multi-identity repo, not "not that one at all".
-   Non-interactively, pass `--author <email>` (repeatable) for every email
-   that's yours — this skips identity selection entirely, unaffected by
-   any of the above.
-3. **Confirm authorization.** You must explicitly confirm "I am authorized
-   to analyze this repository" — interactively via a prompt, or
-   non-interactively via `--yes`. This is a separate step from author
-   selection on purpose: `--author` only answers "which emails are mine",
-   not "I'm allowed to scan this repo". Both are required before a bundle
-   is produced.
-4. **Compute the bundle.** Every field in `schema/bundle.v1.json` is derived
+   gets the same Y/n confirmation, identical copy ("Found 12 commits
+   authored by you@example.com. Use this identity? (Y/n)"); 2+ candidates
+   get a numbered list instead (skipping the git-identity pre-selection
+   specifically to avoid asking the same yes/no question twice in a row
+   for a repo with exactly one contributor). Declining the git-identity
+   pre-selection shows the FULL list, including the declined entry — "no"
+   often means "that one plus others" for a multi-identity repo, not "not
+   that one at all". Non-interactively, pass `--author <email>` (repeatable)
+   for every email that's yours — this skips identity selection entirely,
+   unaffected by any of the above.
+4. **Confirm authorization.** You must explicitly confirm "Confirm you are
+   authorized to analyze this repository. (y/N)" — interactively via a
+   prompt, or non-interactively via `--yes`. The default flips to N:
+   pressing Enter declines, you must type `y` to proceed. This is a
+   separate step from author selection on purpose: `--author` only answers
+   "which emails are mine", not "I'm allowed to scan this repo". Both are
+   required before a bundle is produced.
+5. **Compute the bundle.** Every field in `schema/bundle.v1.json` is derived
    from `git log --numstat` filtered to your selected commits: volume, span,
    hourly/weekday cadence, signed-commit ratio, churn share by file
    extension and by technical category (heuristic path/extension matching),
@@ -46,7 +66,7 @@ redential scan --debug --repo <path>      # verbose diagnostics on stderr
    `signatures/*.json` — see [docs/signatures.md](signatures.md); zero
    network, closed vocabulary, `detected_skills` may be empty if nothing
    matched).
-5. **Print it.** The JSON printed IS the bundle — byte for byte what
+6. **Print it.** The JSON printed IS the bundle — byte for byte what
    `submit` would send later.
 
 ## The consent summary
@@ -278,7 +298,7 @@ history before its shallow boundary ENTIRELY — not filtered out like
 `--since`, genuinely absent locally — so `commits.user_total`, span, and
 `repo.age_days` would all silently understate real activity with no
 indication why. `scan`/`submit` print a warning (same "warn, never block"
-stance as the public-host note above) naming the remedy (`git fetch
+stance as the connectable-repo notice above) naming the remedy (`git fetch
 --unshallow`) and continue with whatever history IS available; on a TTY,
 the wrapped summary repeats a short note next to the span line too, so
 it's visible even if the stderr warning scrolled past.

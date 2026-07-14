@@ -72,7 +72,7 @@ program
   )
   .option(
     "--yes",
-    "confirm 'I am authorized to analyze this repository' non-interactively",
+    "answer 'Confirm you are authorized to analyze this repository.' (y) non-interactively",
     false
   )
   .option(
@@ -132,7 +132,7 @@ program
   )
   .option(
     "--yes",
-    "confirm 'I am authorized to analyze this repository' non-interactively",
+    "answer 'Confirm you are authorized to analyze this repository.' (y) non-interactively",
     false
   )
   .option("--confirm-upload", "confirm the upload itself non-interactively (separate from --yes)", false)

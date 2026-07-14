@@ -141,41 +141,59 @@ selection, same authorization-confirmation prompt, same `runScan`. It then:
 
 1. Requires a stored session whose `site_url` matches the current
    `SITE_URL` (`redential login` first, otherwise it refuses).
-2. On a real TTY, prints a header line —
-   ```
-   Exact payload (byte-for-byte what gets sent):
-   ```
-   — then the bundle JSON itself, byte for byte what step 6 sends. This
-   closes the gap `scan`-only builds left open (see
-   [privacy-tests.md](privacy-tests.md)): the request body is the literal
-   string that was printed, not a re-serialization of the parsed object.
-   Right after the JSON, a short human-readable **consent summary** — a
-   boxed block (`formatConsentSummary`, `src/summary.ts`, the same
-   function and visual language `scan`'s consent summary uses — see
-   [docs/scan.md](scan.md#the-consent-summary)) listing what IS uploaded
-   (commit count and span, detected-skill count with the top 3 names, time
-   patterns/languages/categories as aggregates, salted fingerprints — every
-   number read off the bundle just printed, never hardcoded) and what is
-   NEVER uploaded (source code, file names, commit messages, the repo's
-   name, other contributors' identities). The summary comes *after* the
-   JSON on purpose (unlike `scan`, which shows it first) — the last thing
-   the user reads before being asked to consent should be the
-   human-readable recap, not the tail of a JSON blob. Piped/redirected
-   `submit` output (scripted use) is unaffected — `submit` has no `--json`
-   flag (that's `scan`-only) — this is a TTY-only addition, byte-identical
-   to prior releases otherwise.
+2. On a real TTY, output happens in a fixed order, everything before the
+   upload prompt (console-UX milestone, 2026-07 — see
+   [CHANGELOG.md](../CHANGELOG.md)):
+   1. A one-line **short summary** — span of history, commit count, and
+      detected-capability count, e.g. "2 years of private work · 1,378
+      commits · 23 capabilities detected"; when at least one detected skill
+      carries `evidence: "structural"`, a structural count is appended,
+      e.g. "23 capabilities detected (1 structural)" — visible right at the
+      upload edge, not buried inside the box or the JSON.
+   2. Step 3's identity-corroboration line, if the lookup succeeded.
+   3. A boxed human-readable **consent summary**, titled "WHAT GETS
+      UPLOADED" (`formatConsentSummary`, `src/summary.ts`, the same
+      function and visual language `scan`'s consent summary uses — see
+      [docs/scan.md](scan.md#the-consent-summary)) listing what IS uploaded
+      (commit count and span, detected-skill count with the top 3 names,
+      time patterns/languages/categories as aggregates, salted
+      fingerprints — every number read off the bundle just printed, never
+      hardcoded) and what is NEVER uploaded (source code, file names,
+      commit messages, the repo's name, other contributors' identities).
+   4. A header line —
+      ```
+      Exact payload (byte-for-byte what gets sent):
+      ```
+      — then the bundle JSON itself, byte for byte what step 6 sends. This
+      closes the gap `scan`-only builds left open (see
+      [privacy-tests.md](privacy-tests.md)): the request body is the
+      literal string that was printed, not a re-serialization of the
+      parsed object. The JSON is always the LAST thing printed before the
+      upload prompt — this is an inviolable guarantee: no flag, no
+      default, no code path can skip it or print anything after it before
+      the prompt.
+
+   Piped/redirected `submit` output (scripted use) is unaffected —
+   `submit` has no `--json` flag (that's `scan`-only) — the raw bundle
+   JSON is still the very first line printed, byte-identical to every
+   prior release; the short summary, consent box, and payload header above
+   are a TTY-only addition. Non-TTY corroboration (step 3) still prints,
+   same as always, right after the JSON.
 3. Fetches identity corroboration (below) and, if it succeeds, prints one
-   informational line with the result — right after the consent box, still
-   before asking for upload consent — see that section for exactly what is
-   and isn't sent. Never blocks or delays the next step: any failure here
-   simply skips the line.
-4. Asks "Upload this bundle?" — a **separate** confirmation from the
-   "I am authorized to analyze this repository" attestation `scan` already
-   requires. `--yes` answers the authorization question (same meaning as
-   `scan --yes`); `--confirm-upload` separately answers the upload
-   question. Both are required flags for a fully non-interactive `submit`,
-   on purpose — consenting to be scanned and consenting to upload are
-   different decisions.
+   informational line with the result — before asking for upload consent
+   in both modes (right after the short summary on a TTY per the sequence
+   above; right after the JSON when piped/non-TTY) — see that section for
+   exactly what is and isn't sent. Never blocks or delays the next step:
+   any failure here simply skips the line.
+4. Asks "Upload this bundle? (y/n)" — a **separate** confirmation from the
+   "Confirm you are authorized to analyze this repository. (y/N)"
+   attestation `scan` already requires (note that prompt's default flips to
+   N — pressing Enter declines, you must type `y` to proceed). `--yes`
+   answers the authorization question (same meaning as `scan --yes`);
+   `--confirm-upload` separately answers the upload question. Both are
+   required flags for a fully non-interactive `submit`, on purpose —
+   consenting to be scanned and consenting to upload are different
+   decisions.
 5. Runs the remote-visibility gate (below). If it's confirmed public,
    `submit` refuses outright — this is `submit`-only behavior; `scan`
    still only ever warns, never blocks, since `scan` has no network access

@@ -101,6 +101,10 @@ function nextStepsState(bundle: Bundle, configDir: string | undefined): {
 export async function executeScanCommand(opts: ScanCommandOptions): Promise<void> {
   const log = opts.log ?? console.log;
   const bundle = await buildBundleInteractively({ ...opts, onProgress: buildProgressReporter(opts) });
+  // `null` only happens when a real TTY user declined the connectable-repo
+  // "Continue locally?" follow-up (see build-bundle.ts) — buildBundleInteractively
+  // already printed the "nothing scanned" notice; nothing else to do here.
+  if (bundle === null) return;
   const bundleJson = JSON.stringify(bundle, null, 2);
 
   if (opts.isTTY && !opts.json) {

@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { Readable, Writable } from "node:stream";
-import { promptAuthors, promptConfirmAttestation, promptConfirmUpload, promptUseGitIdentity } from "../src/prompt.js";
+import {
+  promptAuthors,
+  promptConfirmAttestation,
+  promptConfirmUpload,
+  promptContinueLocally,
+  promptUseGitIdentity,
+} from "../src/prompt.js";
 import { ScanError } from "../src/scan.js";
 
 // Stdin closed/EOF before an answer (e.g. piped input in a script or CI)
@@ -25,6 +31,19 @@ function sinkOutput(): Writable {
       callback();
     },
   });
+}
+
+// Captures every chunk readline writes to `output` (which includes the
+// prompt text itself) — used below to assert on exact console-UX copy.
+function captureOutput(): { stream: Writable; text: () => string } {
+  const chunks: Buffer[] = [];
+  const stream = new Writable({
+    write(chunk, _encoding, callback) {
+      chunks.push(Buffer.from(chunk));
+      callback();
+    },
+  });
+  return { stream, text: () => Buffer.concat(chunks).toString("utf8") };
 }
 
 describe("prompt EOF handling", () => {
@@ -54,10 +73,71 @@ describe("prompt EOF handling", () => {
       promptUseGitIdentity({ email: "a@example.com", count: 1 }, { input: endedInput(), output: sinkOutput() })
     ).rejects.toBeInstanceOf(ScanError);
   });
+
+  it("promptContinueLocally rejects when input closes before an answer", async () => {
+    await expect(
+      promptContinueLocally({ input: endedInput(), output: sinkOutput() })
+    ).rejects.toBeInstanceOf(ScanError);
+  });
+});
+
+describe("promptContinueLocally — Y/n confirmation, Y default (console-UX milestone)", () => {
+  it("prints exactly 'Continue locally? (Y/n) '", async () => {
+    const out = captureOutput();
+    await promptContinueLocally({ input: lineInput(""), output: out.stream });
+    expect(out.text()).toBe("Continue locally? (Y/n) ");
+  });
+
+  it("accepts on Enter (empty answer), defaulting to yes", async () => {
+    const result = await promptContinueLocally({ input: lineInput(""), output: sinkOutput() });
+    expect(result).toBe(true);
+  });
+
+  it("accepts on an explicit y/Y", async () => {
+    const result = await promptContinueLocally({ input: lineInput("Y"), output: sinkOutput() });
+    expect(result).toBe(true);
+  });
+
+  it("declines on an explicit n", async () => {
+    const result = await promptContinueLocally({ input: lineInput("n"), output: sinkOutput() });
+    expect(result).toBe(false);
+  });
+});
+
+describe("promptConfirmAttestation — new copy, default flips to N (console-UX milestone)", () => {
+  it("prints exactly 'Confirm you are authorized to analyze this repository. (y/N) '", async () => {
+    const out = captureOutput();
+    await promptConfirmAttestation({ input: lineInput("y"), output: out.stream });
+    expect(out.text()).toBe("Confirm you are authorized to analyze this repository. (y/N) ");
+  });
+
+  it("Enter (empty answer) now DECLINES — the user must type y", async () => {
+    const result = await promptConfirmAttestation({ input: lineInput(""), output: sinkOutput() });
+    expect(result).toBe(false);
+  });
+
+  it("accepts only on an explicit y/Y", async () => {
+    const result = await promptConfirmAttestation({ input: lineInput("y"), output: sinkOutput() });
+    expect(result).toBe(true);
+  });
+
+  it("declines on an explicit n", async () => {
+    const result = await promptConfirmAttestation({ input: lineInput("n"), output: sinkOutput() });
+    expect(result).toBe(false);
+  });
 });
 
 describe("promptUseGitIdentity — Y/n confirmation, Y default", () => {
   const candidate = { email: "you@example.com", count: 42 };
+
+  it("prints the new 'Found <n> commits authored by <email>. Use this identity? (Y/n)' copy, thousands-separated", async () => {
+    const out = captureOutput();
+    await promptUseGitIdentity(
+      { email: "you@example.com", count: 1378 },
+      { input: lineInput(""), output: out.stream }
+    );
+    expect(out.text()).toBe("Found 1,378 commits authored by you@example.com. Use this identity? (Y/n) ");
+  });
 
   it("accepts on Enter (empty answer), defaulting to yes", async () => {
     const result = await promptUseGitIdentity(candidate, { input: lineInput(""), output: sinkOutput() });
@@ -77,6 +157,12 @@ describe("promptUseGitIdentity — Y/n confirmation, Y default", () => {
 
 describe("promptAuthors — single candidate (Y/n confirmation, Y default)", () => {
   const only = { email: "user@example.com", count: 250 };
+
+  it("prints the same new 'Found <n> commits authored by <email>. Use this identity? (Y/n)' copy, thousands-separated", async () => {
+    const out = captureOutput();
+    await promptAuthors([{ email: "user@example.com", count: 1378 }], { input: lineInput(""), output: out.stream });
+    expect(out.text()).toBe("Found 1,378 commits authored by user@example.com. Use this identity? (Y/n) ");
+  });
 
   it("accepts on Enter (empty answer), defaulting to yes", async () => {
     const result = await promptAuthors([only], { input: lineInput(""), output: sinkOutput() });

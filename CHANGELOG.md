@@ -13,6 +13,41 @@ always bump at least minor; breaking schema changes bump major.
   SKILLS DETECTED (`⚡ structural · DIRECT`/`INFERRED`) and a new
   STRUCTURAL EVIDENCE section pointing to `redential explain <slug>`.
   Display-only — no new data collection, no change to the bundle payload.
+- **Console UX (phase 1): connectable-repo notice, prompt copy, and
+  `submit`'s TTY output order.** Presentation-only — the bundle payload,
+  the schema, and every non-TTY/piped output contract are unchanged.
+  - The connectable-repo notice (`scan`/`submit`, shown when the remote
+    looks like it's hosted on github.com/gitlab.com/bitbucket.org) is
+    rewritten to a short three-line notice: "This repo appears connectable
+    through GitHub. / For repos you own, the GitHub App provides stronger
+    evidence. / For employer or NDA-protected repos, continue with the
+    local scan." On a real TTY only, a new follow-up question — "Continue
+    locally? (Y/n)", Y default — now appears right after it. Declining (`n`)
+    exits cleanly (exit code 0) without scanning anything, printing a brief
+    note pointing at the GitHub App instead. Piped/non-TTY output is
+    unaffected: the notice still prints (non-blocking, to stderr), but no
+    interactive question is ever asked, matching every prior release.
+  - The two identity-confirmation prompts (`scan`/`submit`'s single-author
+    and git-identity pre-selection flows) now share one unified,
+    thousands-separated copy: "Found 1,378 commits authored by
+    you@example.com. Use this identity? (Y/n)" (Y default, unchanged).
+  - The authorization-attestation prompt's copy and displayed default
+    change to "Confirm you are authorized to analyze this repository.
+    (y/N)" — pressing Enter now visibly declines; typing `y` is required to
+    proceed. The check itself already only ever accepted an explicit `y`
+    answer, so what gets recorded in the bundle's `attestation` field is
+    unchanged — only the prompt's copy and shown default changed.
+  - `submit`'s TTY output is reordered: a new one-line short summary
+    ("<span> of private work · <n> commits · <k> capabilities detected",
+    with a "(<s> structural)" suffix appended whenever at least one
+    detected skill carries `evidence: "structural"`) now prints first,
+    followed by the identity-corroboration line (if any), the consent box
+    ("WHAT GETS UPLOADED", title unchanged), and finally the payload header
+    followed by the exact bundle JSON, with the upload prompt immediately
+    after. The inviolable guarantee is unchanged and, if anything,
+    strengthened: the exact byte-for-byte JSON is always the last thing
+    printed before the upload prompt, on every code path. Piped/non-TTY
+    `submit` output, and the JSON bytes sent to the server, are unchanged.
 
 ## [0.3.0] - 2026-07-13
 

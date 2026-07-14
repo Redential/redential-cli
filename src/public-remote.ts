@@ -31,13 +31,23 @@ export function isKnownPublicHost(remoteUrl: string | null): boolean {
  * connectable", never "this IS public", so blocking on it would break the
  * CLI's main use case (a private employer repo that happens to be hosted
  * on github.com). The user decides; `scan` always proceeds.
+ *
+ * This text is shown in EVERY mode (TTY and non-TTY/piped) via `warn()` —
+ * always non-blocking on its own. In a real interactive terminal, callers
+ * (see build-bundle.ts) additionally ask a follow-up "Continue locally?
+ * (Y/n)" question after printing this; that question is a separate,
+ * TTY-only interactive prompt (prompt.ts's promptContinueLocally), not part
+ * of this string, so a piped `scan`/`submit` never has an unanswerable
+ * question sitting in its (non-blocking) warning output. Console-UX
+ * milestone (2026-07): CLAUDE.md's "warn, never block" convention wording
+ * still needs a follow-up edit to describe this TTY-only confirmation —
+ * left for phase 3 (docs alignment), which owns CLAUDE.md.
  */
 export function publicHostWarning(remoteUrl: string | null): string | null {
   if (!isKnownPublicHost(remoteUrl)) return null;
   return (
-    "Note: this repository's remote looks like it's hosted on GitHub, GitLab, or Bitbucket. " +
-    "If it's your own project and you can connect it directly, the GitHub App reads the actual " +
-    "code and grants a stronger tier than a local metadata scan. If this is a private/employer " +
-    "repo you can't connect that way, scanning normally (as below) is the right call — continuing."
+    "This repo appears connectable through GitHub.\n\n" +
+    "For repos you own, the GitHub App provides stronger evidence.\n" +
+    "For employer or NDA-protected repos, continue with the local scan."
   );
 }
