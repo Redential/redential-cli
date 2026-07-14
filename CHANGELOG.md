@@ -173,7 +173,7 @@ always bump at least minor; breaking schema changes bump major.
   version. The wrapped terminal summary does not display this field — it's
   for server-side scoring, not for surfacing messy rebase habits locally.
   Prior-discussion issue:
-  [#1](https://github.com/Jppblue/redential-cli/issues/1) (CLAUDE.md
+  [#1](https://github.com/Redential/redential-cli/issues/1) (CLAUDE.md
   requires one for any change to what data leaves the machine).
 - **Launch-polish batch: shallow-clone detection, author pre-selection,
   `redential status`, and `--debug`.**

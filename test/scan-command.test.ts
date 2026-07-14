@@ -114,7 +114,7 @@ describe("executeScanCommand", () => {
     const bundle = JSON.parse(logs[2]);
     expect(validateAgainstSchema(schema, bundle)).toEqual([]);
     expect(logs[3]).toContain("YOUR PRIVATE REPO, WRAPPED");
-    expect(logs[3]).toContain("Nothing left your machine. Verify: github.com/Jppblue/redential-cli");
+    expect(logs[3]).toContain("Nothing left your machine. Verify: github.com/Redential/redential-cli");
     // The summary is the LAST thing logged — it's what's left on screen
     // once the JSON above it has scrolled up.
     const lastLineOfLastLog = logs[3].split("\n").filter(Boolean).at(-1);

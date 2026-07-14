@@ -151,7 +151,7 @@ how it's drawn.
   Ownership       78% of this repo's commits are yours
   Signed commits  45% of your commits are cryptographically signed
 
-  Nothing left your machine. Verify: github.com/Jppblue/redential-cli
+  Nothing left your machine. Verify: github.com/Redential/redential-cli
 
   Want this on a public, verifiable profile?
   → redential login && redential submit

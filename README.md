@@ -1,7 +1,7 @@
 # Redential CLI
 
 [![npm version](https://img.shields.io/npm/v/%40redential%2Fcli.svg)](https://www.npmjs.com/package/@redential/cli)
-[![CI](https://github.com/Jppblue/redential-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/Jppblue/redential-cli/actions/workflows/ci.yml)
+[![CI](https://github.com/Redential/redential-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/Redential/redential-cli/actions/workflows/ci.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
 
 Your best work is probably under an NDA.
@@ -89,7 +89,7 @@ human-readable summary underneath it:
   Ownership       78% of this repo's commits are yours
   Signed commits  45% of your commits are cryptographically signed
 
-  Nothing left your machine. Verify: github.com/Jppblue/redential-cli
+  Nothing left your machine. Verify: github.com/Redential/redential-cli
 
   Want this on a public, verifiable profile?
   → redential login && redential submit

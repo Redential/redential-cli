@@ -57,14 +57,14 @@ describe("formatSummary", () => {
   it("includes commit count, humanized span, and the closing verification line", () => {
     const text = stripAnsi(formatSummary(baseBundle()));
     expect(text).toContain("2 years, 1,847 commits");
-    expect(text).toContain("Nothing left your machine. Verify: github.com/Jppblue/redential-cli");
+    expect(text).toContain("Nothing left your machine. Verify: github.com/Redential/redential-cli");
   });
 
   it("opens with a divider and ends with the closing verification line when there's no next-step hint to show (session + already submitted identical)", () => {
     const lines = formatSummary(baseBundle(), { hasSession: true, alreadySubmittedIdentical: true }).split("\n");
     expect(stripAnsi(lines[0])).toMatch(/^\s*─+\s*$/);
     const lastLine = stripAnsi(lines[lines.length - 1]);
-    expect(lastLine).toContain("Nothing left your machine. Verify: github.com/Jppblue/redential-cli");
+    expect(lastLine).toContain("Nothing left your machine. Verify: github.com/Redential/redential-cli");
   });
 
   it("shows the signing tip when signed ratio is 0%", () => {

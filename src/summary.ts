@@ -408,7 +408,7 @@ export function formatSummary(bundle: Bundle, opts: FormatSummaryOptions = {}): 
   lines.push("");
 
   lines.push(
-    `  ${colors.DIM}Nothing left your machine. Verify: github.com/Jppblue/redential-cli${colors.RESET}`
+    `  ${colors.DIM}Nothing left your machine. Verify: github.com/Redential/redential-cli${colors.RESET}`
   );
 
   // Three states, in order — see FormatSummaryOptions' own doc comment:

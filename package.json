@@ -17,11 +17,11 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Jppblue/redential-cli.git"
+    "url": "git+https://github.com/Redential/redential-cli.git"
   },
-  "homepage": "https://github.com/Jppblue/redential-cli#readme",
+  "homepage": "https://github.com/Redential/redential-cli#readme",
   "bugs": {
-    "url": "https://github.com/Jppblue/redential-cli/issues"
+    "url": "https://github.com/Redential/redential-cli/issues"
   },
   "keywords": [
     "cli",
