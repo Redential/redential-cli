@@ -5,7 +5,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: strict [semver](https://semver.org/) — bundle schema changes
 always bump at least minor; breaking schema changes bump major.
 
-## [Unreleased]
+## [0.5.0] - 2026-07-14
 
 ### Added
 - **Mandatory private label on `submit`** — a repo nickname only you ever

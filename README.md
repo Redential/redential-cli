@@ -127,7 +127,7 @@ reviewed before any upload:
 {
   "schema_version": "1.2.0",
   "runner": "local",
-  "tool_version": "0.4.0",
+  "tool_version": "0.5.0",
   "created_at": "2026-07-09T14:32:01.000Z",
   "repo": { "host_type": "github", "age_days": 742, "repo_fingerprint": "a3f9…" },
   "identity": { "author_identity_hashes": ["9c1e…"], "other_contributors_count": 3 },
