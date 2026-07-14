@@ -167,6 +167,36 @@ describe("executeScanCommand — connectable-repo decline (TTY)", () => {
   });
 });
 
+describe("executeScanCommand — --json treats a connectable-repo TTY run as non-interactive", () => {
+  it("--json on a real TTY never invokes the 'Continue locally?' prompt — it warns (stderr) and continues straight to JSON, same as a piped run", async () => {
+    const dir = connectableRepo();
+    const logs: string[] = [];
+    const warnings: string[] = [];
+    let promptCalled = false;
+
+    await executeScanCommand({
+      repoPath: dir,
+      author: ["you@example.com"],
+      yes: true,
+      toolVersion: "0.1.0",
+      configDir: tempConfigDir(),
+      log: (m) => logs.push(m),
+      warn: (m) => warnings.push(m),
+      isTTY: true,
+      json: true,
+      promptContinueLocallyFn: async () => {
+        promptCalled = true;
+        return false; // if this ever fired, declining would prove it fired.
+      },
+    });
+
+    expect(promptCalled).toBe(false);
+    expect(warnings.some((w) => w.includes("This repo appears connectable through GitHub."))).toBe(true);
+    expect(logs).toHaveLength(1);
+    expect(() => JSON.parse(logs[0])).not.toThrow();
+  });
+});
+
 describe("executeSubmitCommand — connectable-repo decline (TTY)", () => {
   it("uploads nothing and prints nothing to stdout when the user declines", async () => {
     const server = await startMockServer(() => ({ status: 200, body: { id: "should-not-be-called" } }));

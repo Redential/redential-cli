@@ -52,9 +52,20 @@ The bundle NEVER contains:
 
 ## 4. User-reviewed
 
-`redential scan` prints the exact JSON that would be uploaded. What the user
-sees is byte-for-byte what `submit` sends. No hidden fields, no enrichment
-after review.
+What the user reviews is always the exact payload, never a paraphrase of
+it. `redential submit` ALWAYS prints the exact byte-for-byte JSON
+immediately before the upload confirmation — on every code path,
+unskippably: there is no flag, no mode, and no default that lets `submit`
+ask for upload consent without having just shown the literal bytes it's
+about to send. `redential scan` makes that same exact JSON available too —
+via `--json`, and via piped/non-TTY output — byte-identical to what
+`submit` would send for the same repository state. On a real terminal with
+no `--json`, `scan`'s default output is a human-readable summary derived
+only from fields already inside that bundle (never a second, independent
+data source), with an explicit pointer to `redential scan --json` for
+anyone who wants the literal payload on screen instead. Whichever form is
+in front of you, the guarantee is the same: no hidden fields, no
+enrichment after review, ever.
 
 ## 5. NDA-safe by construction
 

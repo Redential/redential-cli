@@ -81,23 +81,31 @@ program
     false
   )
   .option(
+    "--details",
+    "on a TTY, add the COMMITS BY HOUR/WEEKDAY histogram sections to the summary (no effect with --json or piped output)",
+    false
+  )
+  .option(
     "--since <spec>",
     'limit analysis to commits at/after this date — a relative window ("2years", "18months", "30days") or an absolute date ("2024-01-01"); see docs/scan.md'
   )
-  .action(async (options: { repo: string; author: string[]; yes: boolean; json: boolean; since?: string }) => {
-    await run(() =>
-      executeScanCommand({
-        repoPath: resolve(options.repo),
-        author: options.author,
-        yes: options.yes,
-        toolVersion: getToolVersion(),
-        isTTY: process.stdout.isTTY === true,
-        json: options.json,
-        plain: shouldUsePlainOutput(process.platform, process.env),
-        since: options.since,
-      })
-    );
-  });
+  .action(
+    async (options: { repo: string; author: string[]; yes: boolean; json: boolean; details: boolean; since?: string }) => {
+      await run(() =>
+        executeScanCommand({
+          repoPath: resolve(options.repo),
+          author: options.author,
+          yes: options.yes,
+          toolVersion: getToolVersion(),
+          isTTY: process.stdout.isTTY === true,
+          json: options.json,
+          details: options.details,
+          plain: shouldUsePlainOutput(process.platform, process.env),
+          since: options.since,
+        })
+      );
+    }
+  );
 
 program
   .command("login")

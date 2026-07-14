@@ -44,8 +44,9 @@ npx @redential/cli scan
 ```
 
 No login, no config, nothing installed globally. `scan` makes zero network
-calls, prints the exact JSON it would upload, and stops for your review.
-If you like what you see:
+calls and shows you a local summary; the exact JSON it would upload is one
+flag away (`--json`) and always shown in full before any upload. If you
+like what you see:
 
 ```bash
 npx @redential/cli login    # device flow, one time
@@ -65,9 +66,62 @@ every release is verified against all six by CI.
 
 ## What `scan` looks like
 
-It prints the full JSON bundle first (see [docs/schema.md](docs/schema.md)
-for every field), then — only when stdout is an interactive terminal — a
-human-readable summary underneath it:
+On a real terminal, `scan` prints a short, human-readable summary — not the
+raw JSON. It's assembled entirely from fields already in the bundle (see
+[docs/schema.md](docs/schema.md) for every field, and
+[docs/scan.md](docs/scan.md) for the full layout): capabilities detected
+(structural findings, like a verified webhook-handling flow, called out
+first; everything else grouped by category), top languages and categories,
+ownership and signed-commit ratios, and a closing block restating what
+leaves the machine and what never does:
+
+```
+  PRIVATE WORK, LOCALLY DERIVED
+  1 year · 1,378 authored commits · 78% ownership
+
+  CAPABILITIES DETECTED
+
+  Payment webhook flow     4 commits   STRUCTURAL · DIRECT
+
+  Payments
+    Stripe                12 commits
+
+  TOP LANGUAGES
+  .ts   ████████████████████   62%
+  .sql  █████░░░░░░░░░░░░░░░   14%
+
+  TOP CATEGORIES
+  Backend  ████████████████████   51%
+  Testing  ███████░░░░░░░░░░░░░   18%
+
+  Ownership       78% of this repo's commits are yours
+  Signed commits  45% of your commits are cryptographically signed
+
+  ────────────────────────────────────────────────────────────
+  Nothing left your machine. Nothing is uploaded unless you run
+  `redential submit` — and only the bounded bundle: aggregates,
+  salted fingerprints, and closed-vocabulary capability slugs.
+  Never code, file names, commit messages, or other contributors.
+  Verify: github.com/Redential/redential-cli
+  ────────────────────────────────────────────────────────────
+
+  Inspect the exact payload:  redential scan --json
+  More detail (hour/weekday histograms):  redential scan --details
+
+  Add this private work to your public Redential profile:
+  → redential login && redential submit
+```
+
+The exact JSON is one flag away, never hidden: `redential scan --json` (or
+`redential scan | jq`, or any piped/redirected stdout) prints **only** the
+literal bundle, byte for byte what `submit` would send — and `redential
+submit` always shows you that same exact JSON in full, immediately before
+asking you to confirm the upload, on every path, unskippably. The summary
+above is a terminal-only convenience derived from that same bundle, never a
+second source of data.
+
+This is the payload shape (`redential scan --json`) — what's actually
+reviewed before any upload:
 
 ```
 {
@@ -86,48 +140,15 @@ human-readable summary underneath it:
   "integrity": { "merkle_root": "7be2…", "algorithm": "sha256", "date_forensics": { "author_span_days": 767, "committer_span_days": 763, "mismatch_ratio": 0.06, "committer_burst_ratio": 0.02 } },
   "attestation": { "authorized_confirmation": true, "confirmed_at": "2026-07-09T14:32:01.000Z" }
 }
-
-  ────────────────────────────────────────────────────────────
-
-  ╔════════════════════════════════════════════════════════════╗
-  ║                 YOUR PRIVATE REPO, WRAPPED                 ║
-  ╚════════════════════════════════════════════════════════════╝
-
-  2 years, 1,847 commits
-
-  COMMITS BY HOUR (UTC)
-  0     6     12    18
-  ▁····▁▁▃▅█▇▄▃▂▂▁▁▁▁▁····
-
-  COMMITS BY WEEKDAY
-  Sun  ██░░░░░░░░░░░░░░░░░░  5
-  Mon  ███████████████████░  40
-
-  TOP LANGUAGES
-  .ts    ████████████████████   62%
-  .sql   ████░░░░░░░░░░░░░░░░   14%
-
-  SKILLS DETECTED
-  payments/stripe     12 commits
-
-  Ownership       78% of this repo's commits are yours
-  Signed commits  45% of your commits are cryptographically signed
-
-  Nothing left your machine. Verify: github.com/Redential/redential-cli
-
-  Want this on a public, verifiable profile?
-  → redential login && redential submit
 ```
 
-Pipe it (`redential scan | jq`) or pass `--json` and you get only the raw
-JSON above — the wrapped summary is a terminal-only convenience, not a
-second source of data. Full command reference: [docs/scan.md](docs/scan.md).
+Full command reference: [docs/scan.md](docs/scan.md).
 
 ## Trust model
 
 | Never leaves your machine | Only travels after you run `submit`, and only this |
 |---|---|
-| Source code, diffs, snippets | The bundle printed by `scan` — byte for byte |
+| Source code, diffs, snippets | The bundle `scan` prints with `--json` (and `submit` always shows in full before upload) — byte for byte |
 | File and directory names | An extension (`.ts`) and an inferred category (`backend`) |
 | Commit messages | Aggregate cadence: hour/weekday histograms |
 | Other contributors' names or emails | An aggregate count of other contributors |
@@ -190,11 +211,14 @@ real time, is not. That gap is the actual security boundary, not the
 detection heuristics.
 
 **What exactly leaves my machine?**
-The bundle `scan` printed to your terminal — byte for byte, nothing added
-or enriched afterward. That's not a promise you have to take on faith:
+The bundle — byte for byte the JSON `redential scan --json` prints and
+`submit` always shows in full before asking for your confirmation, nothing
+added or enriched afterward. That's not a promise you have to take on
+faith:
 [`test/privacy/submit-guardrail.test.ts`](test/privacy/submit-guardrail.test.ts)
 asserts the literal string sent over HTTP by `submit` is `===` the string
-`scan` printed, not a re-serialization of a parsed object. Every field is
+it printed before your confirmation, not a re-serialization of a parsed
+object. Every field is
 documented in [docs/schema.md](docs/schema.md), and the schema itself
 (`schema/bundle.v1.json`) sets `additionalProperties: false` everywhere —
 an unlisted field makes the bundle invalid by construction, not just by

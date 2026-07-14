@@ -7,9 +7,26 @@ that `submit` would upload later — nothing is sent anywhere by `scan` itself.
 redential scan --repo <path>              # interactive author + confirmation
 redential scan --author you@example.com --yes   # non-interactive
 redential scan --repo <path> --json       # force JSON-only, even in a terminal
+redential scan --repo <path> --details    # TTY summary + hour/weekday histograms
 redential scan --since 2years             # limit analysis to the last 2 years
 redential scan --debug --repo <path>      # verbose diagnostics on stderr
 ```
+
+**Output at a glance (phase 2 of the console-UX redesign):**
+
+| stdout is...            | `--json` | output                                                         |
+| ------------------------ | -------- | ---------------------------------------------------------------- |
+| piped/redirected         | any      | the exact bundle JSON only — byte-identical to every prior release |
+| a real terminal (TTY)     | no       | the human-readable summary only (`--details` adds two extra sections) — **no JSON dump** |
+| a real terminal (TTY)     | yes      | the exact bundle JSON only, nothing else — suitable for piping even from an interactive shell |
+
+`--json` is treated as "this run is scripted," full stop, even when stdout
+happens to be a real terminal: besides forcing JSON-only stdout, it also
+skips the connectable-repo notice's interactive "Continue locally?"
+follow-up (see below) and the huge-repo progress line, exactly as if stdout
+were piped. The connectable-repo *warning* itself (stderr, non-blocking)
+still prints either way — only the interactive follow-up question is
+skipped.
 
 ## How it works
 
@@ -25,13 +42,14 @@ redential scan --debug --repo <path>      # verbose diagnostics on stderr
    For repos you own, the GitHub App provides stronger evidence.
    For employer or NDA-protected repos, continue with the local scan.
    ```
-   On a real TTY, a follow-up question appears right after it — `Continue
-   locally? (Y/n)`, Y default. Pressing Enter (or `y`) continues with the
-   local scan exactly as before; answering `n` exits cleanly (exit code 0)
-   without scanning anything, printing a brief note suggesting the GitHub
-   App instead. Piped/non-TTY output is unaffected: the notice still prints
-   (non-blocking, to stderr), but no interactive question is ever asked —
-   the same "warn, never block" behavior every prior release had.
+   On a real TTY (and no `--json`), a follow-up question appears right after
+   it — `Continue locally? (Y/n)`, Y default. Pressing Enter (or `y`)
+   continues with the local scan exactly as before; answering `n` exits
+   cleanly (exit code 0) without scanning anything, printing a brief note
+   suggesting the GitHub App instead. Piped/non-TTY output — and `--json`,
+   even on a real TTY — is unaffected: the notice still prints (non-blocking,
+   to stderr), but no interactive question is ever asked, the same "warn,
+   never block" behavior every prior release had.
 2. **Enumerate authors.** `git log` is read locally (`git show`/`git diff`
    never leave the machine) to list distinct author emails and their commit
    counts.
@@ -66,64 +84,40 @@ redential scan --debug --repo <path>      # verbose diagnostics on stderr
    `signatures/*.json` — see [docs/signatures.md](signatures.md); zero
    network, closed vocabulary, `detected_skills` may be empty if nothing
    matched).
-6. **Print it.** The JSON printed IS the bundle — byte for byte what
-   `submit` would send later.
+6. **Print it.** Piped/redirected stdout, or `--json` (even on a real
+   terminal), prints the JSON — byte for byte what `submit` would send
+   later, and nothing else. A real terminal with no `--json` prints the
+   human-readable summary instead (see below) — **not** the JSON — so run
+   `redential scan --json` whenever you specifically want the exact payload
+   on screen or piped into something else (`jq`, a file redirect, etc.).
 
-## The consent summary
+## `submit`'s own consent summary
 
-When stdout is an interactive terminal, `scan` prints a short human-readable
-**consent summary** BEFORE the exact JSON bundle — a boxed block, same
-visual language as the "wrapped" summary below (Unicode box-drawing
-characters + ANSI on rich terminals, the same ASCII fallback on plain
-Windows `conhost` via `shouldUsePlainOutput`), listing:
+`scan` itself no longer prints a "what would get uploaded" consent box —
+phase 2 of the console-UX redesign replaced it with the richer summary
+below, whose own footer already restates the same guarantees in plain
+language and points at `redential scan --json` for the literal payload.
+The boxed, itemized consent summary (`formatConsentSummary`,
+`src/summary.ts`) still exists and is still shown, unchanged, by
+`redential submit` right before its own upload confirmation — see
+[login-submit.md](login-submit.md#submit-review-then-upload) for that
+command's own output order and copy ("gets" vs. this doc's historical
+"would", since `submit` actually uploads).
 
-- **What IS uploaded** — the commit count and span, the number of detected
-  skills with the top 3 skill names, "time patterns, languages and
-  categories as aggregates", and "salted fingerprints". Every number in
-  this block is read off the actual bundle being printed right below it —
-  nothing here is hardcoded or computed separately.
-- **What is NEVER uploaded** — source code, file names, commit messages,
-  the repo's name, and other contributors' identities.
+## The summary (default TTY output)
 
-It's built by `formatConsentSummary` (`src/summary.ts`), pure formatting
-over the bundle `scan` already computed: no new data collection, no
-network, no schema change — it only restates, in plain language, what's
-already in the JSON that follows it.
-
-Right after the block, a header line makes explicit that what follows is
-the literal payload:
-
-```
-Exact payload (byte-for-byte what `redential submit` would send):
-```
-
-("would", since `scan` itself never uploads anything — see
-[login-submit.md](login-submit.md#submit-review-then-upload) for the
-equivalent header `submit` prints before its own confirmation prompt.)
-
-**Piped stdout and `--json` are unaffected.** `scan | jq` (or any
-redirected/piped stdout) still prints **only** the raw JSON, byte-identical
-to every prior release; `--json` forces that same JSON-only output even on
-a terminal. The consent summary — like the wrapped summary below it — is
-strictly a TTY-only addition on top of an unchanged stdout contract.
-
-On a real TTY, the full output order is now: consent summary → "Exact
-payload…" header → JSON → wrapped summary (the wrapped summary described
-next stays last, unchanged).
-
-## The "wrapped" summary
-
-When stdout is an interactive terminal, `scan` prints the full JSON bundle
-(exactly as always, now preceded by the consent summary above), then a
-human-readable summary **after** it —
-total commits and span, an hour-of-day and weekday cadence, top languages
-and categories, detected skills, ownership and signed-commit ratios —
-under a divider. It's printed last on purpose: the JSON scrolls up, and
-the summary is what's left on screen once the command finishes. It's
-rendered with ANSI colors and Unicode box-drawing characters only (no new
-dependency), and is derived entirely from the bundle `scan` already
-computed: no new data collection, no network, nothing beyond what's
-already in the JSON above it.
+When stdout is an interactive terminal and `--json` isn't passed, `scan`
+prints ONLY this human-readable summary — no JSON dump. It's a short,
+shareable overview: span/commits/ownership, detected capabilities
+(structural findings first, then grouped by category), top languages and
+categories, ownership and signed-commit ratios, and a closing block
+restating what does (and never) leaves the machine, followed by pointers to
+`--json` (the exact payload) and `--details` (the hour/weekday histograms,
+moved out of the default view in phase 2 to keep this shareable core
+short). It's rendered with ANSI colors and Unicode block/box-drawing
+characters only (no new dependency), and is derived entirely from the
+bundle `scan` already computed: no new data collection, no network,
+nothing beyond what's already in the JSON `--json` would print.
 
 **Plain-terminal fallback.** Plain Windows `conhost` (`cmd.exe` / classic
 PowerShell without Windows Terminal) doesn't reliably render either ANSI
@@ -138,19 +132,91 @@ terminal, gets the rich theme. Same data either way — this only changes
 how it's drawn.
 
 ```
-{
-  "schema_version": "1.2.0",
-  ...
-}
+  PRIVATE WORK, LOCALLY DERIVED
+  1 year · 1,378 authored commits · 100% ownership
+
+  CAPABILITIES DETECTED
+
+  Payment webhook flow    30 commits   STRUCTURAL · DIRECT
+
+  Frontend
+    Next.js              139 commits
+    React                113 commits
+    Tailwind CSS          80 commits
+    Zustand               40 commits
+    +1 more
+
+  Backend
+    Express               90 commits
+
+  Databases
+    PostgreSQL            60 commits
+
+  AI
+    Anthropic API         20 commits
+
+  TOP LANGUAGES
+  .ts   ████████████████████   62%
+  .tsx  ██████░░░░░░░░░░░░░░   20%
+  .md   ███░░░░░░░░░░░░░░░░░    8%
+
+  TOP CATEGORIES
+  Frontend  ████████████████████   59%
+  Backend   ████████░░░░░░░░░░░░   25%
+  Testing   ███░░░░░░░░░░░░░░░░░   10%
+
+  Ownership       100% of this repo's commits are yours
+  Signed commits  0% of your commits are cryptographically signed
+  Tip: signing future commits adds a stronger identity anchor to your attestation.
 
   ────────────────────────────────────────────────────────────
+  Nothing left your machine. Nothing is uploaded unless you run
+  `redential submit` — and only the bounded bundle: aggregates,
+  salted fingerprints, and closed-vocabulary capability slugs.
+  Never code, file names, commit messages, or other contributors.
+  Verify: github.com/Redential/redential-cli
+  ────────────────────────────────────────────────────────────
 
-  ╔════════════════════════════════════════════════════════════╗
-  ║                 YOUR PRIVATE REPO, WRAPPED                 ║
-  ╚════════════════════════════════════════════════════════════╝
+  Inspect the exact payload:  redential scan --json
+  More detail (hour/weekday histograms):  redential scan --details
 
-  2 years, 1,847 commits
+  Add this private work to your public Redential profile:
+  → redential login && redential submit
+```
 
+(Generated from a real fixture bundle via `formatSummary` — the trailing
+"More detail..." hint is itself omitted when `--details` is already active,
+since the summary is already showing what it would point to.)
+
+**Capabilities are grouped, not a flat list.** Structural findings
+(`evidence: "structural"` — see [proof-graph-spike.md](proof-graph-spike.md))
+are pulled out and always listed FIRST, each tagged `STRUCTURAL ·
+DIRECT`/`INFERRED`; if a scan has none, nothing is printed about their
+absence. Every remaining (ordinary import-tier) skill is grouped by its
+taxonomy slug prefix (`frontend`, `auth`, `payments`, `db`, `ai`, `backend`,
+`queues`, `observability`, `testing`, `email`, `infra`, `storage`,
+`realtime`, `data`, humanized to a display name — e.g. `queues` →
+"Background jobs & queues" — falling back to a capitalized prefix for
+anything not in that fixed list), groups ordered by their own total commit
+count descending, entries within a group ordered by commit count and capped
+at 4 with an honest `+N more` beyond that. Every label shown — capability
+names, group headers, category names — comes from `taxonomy.json`'s own
+`label` field (never a raw lowercase slug); a slug with no taxonomy label
+(should not normally happen — skill detection already enforces closed
+vocabulary) falls back to the bare slug rather than inventing one.
+**TOP CATEGORIES** hides the catch-all `other` bucket entirely and any
+category under 2% churn share, using this same humanization map.
+
+If your signed-commit ratio is above 0%, the "Tip: signing future
+commits..." line is simply omitted — no other change.
+
+### `--details`
+
+Adds two sections right after the header line — the same COMMITS BY
+HOUR/WEEKDAY histograms this summary always showed before phase 2 moved
+them out of the default view:
+
+```
   COMMITS BY HOUR (UTC)
   0     6     12    18
   ▁····▁▁▃▅█▇▄▃▂▂▁▁▁▁▁····
@@ -159,48 +225,28 @@ how it's drawn.
   Sun  ██░░░░░░░░░░░░░░░░░░  5
   Mon  ███████████████████░  40
   ...
-
-  TOP LANGUAGES
-  .ts    ████████████████████   62%
-  ...
-
-  SKILLS DETECTED
-  ai/anthropic-api    14 commits
-  ...
-
-  Ownership       78% of this repo's commits are yours
-  Signed commits  45% of your commits are cryptographically signed
-
-  Nothing left your machine. Verify: github.com/Redential/redential-cli
-
-  Want this on a public, verifiable profile?
-  → redential login && redential submit
 ```
 
-If your signed-commit ratio is 0%, one more line appears right under it:
-
-```
-  Signed commits  0% of your commits are cryptographically signed
-  Tip: sign your commits (git config commit.gpgsign true) — signed history is the strongest anchor for your credential.
-```
+No effect on `--json` or piped output — neither ever rendered histograms,
+JSON or otherwise.
 
 ### Closing next-step hint
 
-Below the "Nothing left your machine" line, the summary closes with a
-next-step hint in one of three states — a plain local-state check
-(`src/scan-command.ts`'s `nextStepsState`), never a network call:
+Below the "Inspect the exact payload"/"More detail" hints, the summary
+closes with a next-step hint in one of three states — a plain local-state
+check (`src/scan-command.ts`'s `nextStepsState`), never a network call:
 
 1. **No stored session** (never logged in, or the stored session is for a
    different `SITE_URL`):
    ```
-     Want this on a public, verifiable profile?
+     Add this private work to your public Redential profile:
      → redential login && redential submit
    ```
 2. **Stored session, but this exact bundle hasn't been uploaded yet**
    (nothing recorded locally yet, or the recorded hash doesn't match this
    scan's content — e.g. new commits since the last submit):
    ```
-     Want this on a public, verifiable profile?
+     Add this private work to your public Redential profile:
      → redential submit
    ```
 3. **Stored session AND this exact bundle content was already uploaded**:
@@ -221,11 +267,11 @@ successful upload; it's not a secret (just a hash of content you already
 reviewed and already chose to upload), so unlike `credentials.json` it
 isn't written with restricted file permissions.
 
-This only happens on a real TTY. `scan | jq` (or any redirected/piped
-stdout) prints **only** the raw JSON, byte-identical to before this
-summary existed — `--json` forces that same JSON-only behavior even on a
-terminal, for scripts that run interactively but still want machine
-output.
+This only happens on a real TTY with no `--json`. `scan | jq` (or any
+redirected/piped stdout) prints **only** the raw JSON, byte-identical to
+before this summary existed — `--json` forces that same JSON-only behavior
+even on a terminal, for scripts that run interactively but still want
+machine output.
 
 ## Huge repositories and `--since`
 
@@ -280,9 +326,9 @@ happen. Two fields are deliberately **exempt** from the window and always
 reflect the whole repo: `repo.age_days` and `repo.repo_fingerprint` (both
 derived from the repo's true root commit) — otherwise a windowed scan
 could misleadingly make an old repo look freshly created. On a TTY, the
-wrapped summary states the active window next to the span line (e.g. "2
-years, 1,847 commits (last 2 years)"), so it's never ambiguous whether a
-window was applied.
+summary states the active window next to the header line (e.g. "2 years ·
+1,847 authored commits · 78% ownership (last 2 years)"), so it's never
+ambiguous whether a window was applied.
 
 If `--since` excludes every commit in the repo (but the repo isn't
 actually empty), `scan` fails with a message naming the window rather than
@@ -300,8 +346,8 @@ history before its shallow boundary ENTIRELY — not filtered out like
 indication why. `scan`/`submit` print a warning (same "warn, never block"
 stance as the connectable-repo notice above) naming the remedy (`git fetch
 --unshallow`) and continue with whatever history IS available; on a TTY,
-the wrapped summary repeats a short note next to the span line too, so
-it's visible even if the stderr warning scrolled past.
+the summary repeats a short note next to the header line too, so it's
+visible even if the stderr warning scrolled past.
 
 ## `--debug`
 

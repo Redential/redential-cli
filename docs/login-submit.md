@@ -152,9 +152,10 @@ selection, same authorization-confirmation prompt, same `runScan`. It then:
       upload edge, not buried inside the box or the JSON.
    2. Step 3's identity-corroboration line, if the lookup succeeded.
    3. A boxed human-readable **consent summary**, titled "WHAT GETS
-      UPLOADED" (`formatConsentSummary`, `src/summary.ts`, the same
-      function and visual language `scan`'s consent summary uses — see
-      [docs/scan.md](scan.md#the-consent-summary)) listing what IS uploaded
+      UPLOADED" (`formatConsentSummary`, `src/summary.ts` — `submit`'s own
+      surface for this; as of the phase-2 console-UX redesign `scan` no
+      longer prints a consent box of its own, see
+      [docs/scan.md](scan.md#submits-own-consent-summary)) listing what IS uploaded
       (commit count and span, detected-skill count with the top 3 names,
       time patterns/languages/categories as aggregates, salted
       fingerprints — every number read off the bundle just printed, never

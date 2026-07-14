@@ -8,11 +8,75 @@ always bump at least minor; breaking schema changes bump major.
 ## [Unreleased]
 
 ### Changed
-- The `scan` TTY summary ("YOUR PRIVATE REPO, WRAPPED") now highlights
-  structural evidence: skills detected via the proof graph get a badge in
-  SKILLS DETECTED (`⚡ structural · DIRECT`/`INFERRED`) and a new
-  STRUCTURAL EVIDENCE section pointing to `redential explain <slug>`.
-  Display-only — no new data collection, no change to the bundle payload.
+- **Console UX (phase 2): `scan` becomes a summary-first command; the
+  wrapped summary is replaced by a "CAPABILITIES DETECTED" layout; new
+  `--details` flag; taxonomy label cleanup.** Presentation-only — the
+  bundle payload, the schema, and the piped/no-flags stdout contract (still
+  the exact JSON, byte-identical to every prior release) are unchanged.
+  Supersedes the phase-1-adjacent "structural evidence gets a badge in
+  SKILLS DETECTED" entry above: that badge and its separate STRUCTURAL
+  EVIDENCE (proof graph) section (with a `redential explain <slug>`
+  pointer line) are folded into this new layout instead, described below.
+  - **`scan`'s default TTY output is now the human-readable summary ONLY —
+    no JSON dump.** Previously a real terminal got the consent box, the
+    exact JSON, and the wrapped summary, in that order; now it gets just
+    the summary, which itself points at `redential scan --json` for the
+    exact payload. `--json` forces JSON-only output even on a TTY (existing
+    flag, now also treated as "non-interactive" throughout: it skips the
+    connectable-repo notice's "Continue locally?" follow-up and the
+    huge-repo progress line too, exactly as a piped run always has).
+    `scan`'s own consent box is removed (it's fully superseded by the new
+    summary's own closing "Nothing left your machine..." block plus the
+    `--json` pointer); `submit`'s consent box (`formatConsentSummary`) is
+    unchanged and still prints before its own upload confirmation. Piped
+    stdout with no flags is byte-identical to every prior release.
+  - **New `redential scan --details` flag** adds the COMMITS BY
+    HOUR/WEEKDAY histogram sections (unchanged content, just relocated) to
+    the summary; the default view omits them to stay a short, shareable
+    overview. No effect on `--json`/piped output.
+  - **New summary layout.** Header: `PRIVATE WORK, LOCALLY DERIVED` /
+    `<span> · <commits> authored commits · <ownership>% ownership`
+    (replaces the old boxed "YOUR PRIVATE REPO, WRAPPED" title and
+    `<span>, <commits> commits` line — ownership now appears up top too, not
+    only in the footer block). `CAPABILITIES DETECTED` replaces `SKILLS
+    DETECTED`: structural findings (`evidence: "structural"`) are always
+    listed FIRST with a `STRUCTURAL · DIRECT`/`INFERRED` tag (nothing is
+    printed when there are none); every other detected skill is grouped by
+    taxonomy slug prefix (`frontend` → "Frontend", `payments` → "Payments",
+    `queues` → "Background jobs & queues", etc. — 14 named prefixes, falling
+    back to a capitalized prefix otherwise), groups ordered by total commit
+    count descending, entries within a group capped at 4 with an honest
+    "+N more". Every capability/group/category label is now the taxonomy's
+    own human label, never the raw lowercase slug (falling back to the slug
+    only if a taxonomy label is genuinely missing). `TOP CATEGORIES` is now
+    humanized the same way (never a raw category slug), always hides the
+    `other` catch-all bucket, and hides any category under 2% churn share;
+    the `(N commits)` suffix is dropped (percentage only). The closing CTA
+    header changes from "Want this on a public, verifiable profile?" to
+    "Add this private work to your public Redential profile:" (never says
+    "verifiable profile" going forward); the footer's fixed "Nothing left
+    your machine..." block is expanded to also name what's uploaded
+    (aggregates, salted fingerprints, closed-vocabulary capability slugs)
+    and what never is, followed by `redential scan --json` /
+    `redential scan --details` pointers. The signed-commit tip's copy
+    changes to "Tip: signing future commits adds a stronger identity anchor
+    to your attestation." (same 0%-ratio trigger, shorter copy, no longer
+    names the `git config` command directly).
+  - **`formatConsentSummary`'s "top:" clause (`submit`'s consent box) now
+    shows human labels, not raw slugs** — e.g. "top: Stripe, PostgreSQL"
+    instead of "top: payments/stripe, db/postgres" (deferred from phase 1).
+    Same width-safety/honest-"+N more" behavior, just over labels instead
+    of slugs.
+  - **`taxonomy.json` (1.5.0 → 1.5.1, patch, label-only):** the 5
+    webhook/payment-flow structural slugs drop their redundant " (structural)"
+    label suffix (e.g. "Payment webhook flow (structural)" → "Payment
+    webhook flow") — the summary's own `STRUCTURAL · DIRECT`/`INFERRED` tag
+    already conveys that, making the suffix redundant noise in the new
+    label-driven display. `payments/iap-subscription-flow`'s label
+    ("...(RevenueCat)") is unaffected — it never carried the suffix. No
+    slugs added, removed, or renamed.
+  - See [docs/scan.md](docs/scan.md) for the full new output contract and
+    an example.
 - **Console UX (phase 1): connectable-repo notice, prompt copy, and
   `submit`'s TTY output order.** Presentation-only — the bundle payload,
   the schema, and every non-TTY/piped output contract are unchanged.

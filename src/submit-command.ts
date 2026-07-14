@@ -42,10 +42,9 @@ export type SubmitCommandOptions = BuildBundleOptions & {
 
 // Mirrors summary.ts's private `humanizeSpan` (kept in sync by hand).
 // Duplicated here — rather than exported from summary.ts and imported —
-// because summary.ts is out of scope for this console-UX milestone (owned
-// by its own follow-up phase that rebuilds `scan`'s wrapped summary);
-// extracting a single shared helper is a good small follow-up once that
-// phase lands, but isn't worth touching that file for on its own.
+// because this file is out of scope for the console-UX phases that have
+// touched summary.ts so far; extracting a single shared helper is a good
+// small follow-up, but isn't worth a cross-file change for its own sake.
 function humanizeSpanDays(days: number): string {
   if (days <= 0) return "a single day";
   const years = Math.floor(days / 365);
@@ -171,8 +170,8 @@ export async function executeSubmitCommand(opts: SubmitCommandOptions): Promise<
   const result = await postBundle(siteUrl, credentials.access_token, bundleJson, corroboration);
   log(`Uploaded. Bundle id: ${result.id}`);
 
-  // Local-only bookkeeping so a future `scan`'s wrapped summary can tell
-  // "already uploaded, nothing new to submit" from "not submitted yet" —
+  // Local-only bookkeeping so a future `scan`'s summary can tell "already
+  // uploaded, nothing new to submit" from "not submitted yet" —
   // see submission-record.ts. Never sent anywhere; best-effort in spirit
   // but not wrapped in try/catch like checkForUpdate below, since a
   // failure here (e.g. an unwritable config dir) would be a real local

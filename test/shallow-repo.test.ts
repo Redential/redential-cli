@@ -96,8 +96,9 @@ describe("scan continues after a shallow-clone warning (never blocks)", () => {
       isTTY: true,
     });
 
-    // TTY order: consent block, payload header, bundle JSON, wrapped summary.
-    expect(logs[3]).toContain("shallow clone");
+    // Phase 2: TTY default output is the summary alone (no JSON dump), so
+    // it's the sole log entry.
+    expect(logs[0]).toContain("shallow clone");
   });
 
   it("the wrapped summary has no shallow note for a full clone", async () => {
@@ -118,6 +119,6 @@ describe("scan continues after a shallow-clone warning (never blocks)", () => {
       isTTY: true,
     });
 
-    expect(logs[3]).not.toContain("shallow clone");
+    expect(logs[0]).not.toContain("shallow clone");
   });
 });

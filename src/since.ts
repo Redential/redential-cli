@@ -37,8 +37,8 @@ export function parseSince(spec: string, now: Date): Date {
 }
 
 /**
- * Human label for the wrapped summary's "last 2 years" line
- * (scan-command.ts) — purely a rendering of the `--since` spec itself, not
+ * Human label for the summary's "last 2 years" line (scan-command.ts) —
+ * purely a rendering of the `--since` spec itself, not
  * a re-derivation from the parsed Date, so it reads back exactly what the
  * user typed for a relative window ("2years" -> "last 2 years").
  */
