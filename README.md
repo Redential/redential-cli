@@ -6,21 +6,45 @@
 
 Your best work is probably under an NDA.
 
-The years you spent building payments infrastructure, hardening auth, or
-carrying on-call — none of it can go in a portfolio, because none of it can
-leave your employer's repo. `@redential/cli` reads your **local** git
-history and turns it into a metadata-only proof: volume, span, cadence,
-languages, technical categories, signed commits, ownership share. Never
-the code itself.
+Turn private work into an NDA-safe developer credential. Your code never
+leaves your machine.
 
 ```bash
 npx @redential/cli scan
 ```
 
-That's it — no login, no config, nothing installed globally. `scan` makes
-zero network calls (it's structurally incapable of phoning home, not just
-network-free by default — see [docs/principles.md](docs/principles.md)),
-prints the exact JSON it would ever upload, and stops there. You review it.
+<!-- TODO: Add demo GIF: scan → review bundle → public Attested credential -->
+_Demo video coming soon: scan locally → review the exact bundle → claim your
+public credential._
+
+## What you get
+
+The CLI is the private-work capture layer for Redential. It analyzes git
+history and implementation patterns locally, then turns bounded evidence
+from repositories you cannot connect into an **Attested capability profile**
+you can share.
+
+Your profile grows over time as you keep building and submit new evidence.
+
+Code is analyzed locally. Only the bounded metadata bundle can leave your
+machine, and only after explicit confirmation.
+
+<!-- TODO: Add screenshot of a public profile showing Attested private-work capabilities -->
+_Public profile screenshot coming soon._
+
+**Attested** means the evidence was derived locally from user-controlled
+repository data. It is reproducible and clearly separated from independently
+verified tiers. Local repository data can be manipulated, so the CLI never
+labels it as Verified.
+
+## Try it
+
+```bash
+npx @redential/cli scan
+```
+
+No login, no config, nothing installed globally. `scan` makes zero network
+calls, prints the exact JSON it would upload, and stops for your review.
 If you like what you see:
 
 ```bash
