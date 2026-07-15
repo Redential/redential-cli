@@ -3,7 +3,13 @@ name: Release
 # Publishes to npm. Triggers ONLY on a pushed tag matching v* — never on
 # pull_request, never on a branch push. This is deliberate: pull_request
 # workflows can run against a fork's untrusted code, and this is the one
-# workflow in this repo that touches NPM_TOKEN — see docs/releasing.md.
+# workflow in this repo with publish rights — see docs/releasing.md.
+#
+# Publishing auth is OIDC "trusted publishing": npmjs.com is configured
+# to trust THIS repo + THIS workflow file directly (npm package settings
+# -> Trusted Publisher), so there is no NPM_TOKEN secret anywhere —
+# nothing to expire, nothing to steal. The id-token permission below
+# powers both that trust exchange and the --provenance attestation.
 on:
   push:
     tags:
@@ -32,6 +38,10 @@ jobs:
           registry-url: "https://registry.npmjs.org"
           cache: "npm"
 
+      # OIDC trusted publishing requires npm >= 11.5; Node 20 runners ship
+      # npm 10, so upgrade the npm CLI itself before publishing.
+      - run: npm install -g npm@latest
+
       - run: npm ci
 
       - run: npm test
@@ -40,6 +50,7 @@ jobs:
 
       - run: npm run build
 
+      # No auth env var: npm exchanges this job's OIDC identity with
+      # npmjs.com's Trusted Publisher config (Redential/redential-cli +
+      # release.yml) at publish time.
       - run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

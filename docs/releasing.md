@@ -28,13 +28,16 @@ the rare case someone runs it by hand anyway, not as the intended flow.
    failing step stops the workflow before `npm publish` ever runs — the
    full test suite (including `test/privacy/`) and a clean typecheck are
    both hard gates on every release, not just CI.
-4. **`npm publish` authenticates via `NODE_AUTH_TOKEN`**, sourced from the
-   repository's `NPM_TOKEN` secret. This secret is only ever readable by
-   `release.yml`, and `release.yml` only ever runs on a `v*` tag push —
-   never on a `pull_request`, so a fork's PR can never see it (see
-   `.github/workflows/ci.yml`'s own comment on this, and CLAUDE.md's
-   "Releases: only from GitHub Actions on tags... Release workflows NEVER
-   run on `pull_request`").
+4. **`npm publish` authenticates via OIDC trusted publishing** — no token
+   secret exists at all. npmjs.com's package settings pin a Trusted
+   Publisher to exactly this repository and this workflow file
+   (`Redential/redential-cli` + `release.yml`), and npm exchanges the
+   workflow run's OIDC identity for publish access at publish time.
+   Nothing to expire, nothing to steal — and a fork's PR can never
+   publish: `release.yml` only ever runs on a `v*` tag push, never on a
+   `pull_request` (see `.github/workflows/ci.yml`'s own comment on this,
+   and CLAUDE.md's "Releases: only from GitHub Actions on tags... Release
+   workflows NEVER run on `pull_request`").
 
 ## Verifying provenance
 
@@ -73,11 +76,12 @@ exact workflow run and commit.
   # fix, commit, merge
   git tag v0.2.0 && git push origin v0.2.0
   ```
-- **`npm publish` itself failed** (registry outage, expired/misconfigured
-  `NPM_TOKEN`, network error): same recovery — nothing reached the
-  registry on a failed publish, so re-running is safe. If the token itself
-  is the problem, rotate `NPM_TOKEN` in the repository's secrets before
-  retrying.
+- **`npm publish` itself failed** (registry outage, network error, or an
+  OIDC/Trusted Publisher mismatch): same recovery — nothing reached the
+  registry on a failed publish, so re-running is safe. If the error names
+  authentication/OIDC, check that npmjs.com's Trusted Publisher config
+  still points at `Redential/redential-cli` + `release.yml` and that the
+  workflow kept its `id-token: write` permission, then retry.
 - **`npm publish` succeeded but something is wrong with the published
   package** (e.g. a file that should have been in `files` wasn't): npm
   does not allow overwriting a published version. Fix the issue, bump to
