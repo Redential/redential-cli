@@ -90,6 +90,39 @@ exact workflow run and commit.
   with a correct name and re-pushing is safe — an untriggered workflow run
   published nothing.
 
+## Alias packages
+
+`packages/redential/` and `packages/redential-cli/` are thin, bare-name
+launcher packages (`redential` and `redential-cli` on npm) that exist so
+`npx redential scan` and `npm install -g redential` work without the
+`@redential/` scope — `redential-cli` additionally exists as a defensive
+registration against typosquatting. Each is just a `package.json`, a
+minimal `bin.js` that imports `@redential/cli`'s real bin, and a README —
+no build step, no `dist/`.
+
+They are **not** part of this package's release pipeline
+(`release.yml` never touches `packages/`) and are **not** published
+automatically on every `@redential/cli` release. The owner publishes them
+manually, from each `packages/*` directory:
+
+```bash
+cd packages/redential && npm publish --provenance --access public
+cd packages/redential-cli && npm publish --provenance --access public
+```
+
+**When to bump an alias's own version:** only when the launcher itself
+changes (e.g. the import path into `@redential/cli` changes) or the
+floating dependency range needs tightening — not on every `@redential/cli`
+release. Each alias depends on `"@redential/cli": ">=0.5.0"`, a
+deliberately floating range: since the alias has no logic of its own
+beyond forwarding argv to whatever `@redential/cli` version npm resolves,
+a normal `@redential/cli` release (a new minor/patch, a new command, a new
+schema version) needs no corresponding alias release — npm resolves the
+floating range to the latest compatible `@redential/cli` on every fresh
+install automatically. A hard version pin would instead require a manual
+alias republish after every single `@redential/cli` release just to bump
+that pin, for no behavioral benefit.
+
 ## Local checks before tagging
 
 `npm run typecheck`, `npm test`, and `npm run build` all run again in CI,

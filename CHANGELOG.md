@@ -5,6 +5,30 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: strict [semver](https://semver.org/) — bundle schema changes
 always bump at least minor; breaking schema changes bump major.
 
+## [Unreleased]
+
+### Changed
+- **Bare-name alias packages published: `redential` and `redential-cli`.**
+  Two thin launcher packages, `packages/redential/` and
+  `packages/redential-cli/` (in this repo, published manually by the owner
+  — not part of this package's own release pipeline; see
+  [docs/releasing.md](docs/releasing.md#alias-packages)), so `npx redential
+  scan` and `npm install -g redential` work without the `@redential/`
+  scope. Each is a 3-file package (`package.json`, a minimal ESM `bin.js`
+  that does nothing but `import "@redential/cli/dist/cli.js"`, and a
+  README) with a floating `"@redential/cli": ">=0.5.0"` dependency, no
+  `devDependencies`, and no scripts — zero postinstall, per this repo's
+  security rules. `redential-cli` exists purely as a defensive
+  registration against typosquatting and points users at `redential` or
+  `@redential/cli` instead. **The canonical package, `@redential/cli`, is
+  completely unaffected** — its `package.json`, `files`, and published
+  tarball contents are unchanged (verified via `npm pack --dry-run`
+  producing an identical file list before and after).
+  README examples updated to lead with the shorter `npx redential
+  scan`/`login`/`submit`/`logout` and `npm install -g redential`, with the
+  canonical `@redential/cli` name kept visible alongside each for trust
+  and provenance verification.
+
 ## [0.5.0] - 2026-07-14
 
 ### Added

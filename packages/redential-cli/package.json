@@ -1,0 +1,36 @@
+{
+  "name": "redential-cli",
+  "version": "0.5.0",
+  "description": "Official alias for @redential/cli — turn private work into an NDA-safe developer credential. Your code never leaves your machine.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "redential": "./bin.js"
+  },
+  "files": [
+    "bin.js",
+    "README.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Redential/redential-cli.git"
+  },
+  "homepage": "https://github.com/Redential/redential-cli#readme",
+  "bugs": {
+    "url": "https://github.com/Redential/redential-cli/issues"
+  },
+  "keywords": [
+    "cli",
+    "git",
+    "credential-verification",
+    "proof-of-work",
+    "developer-portfolio",
+    "privacy"
+  ],
+  "dependencies": {
+    "@redential/cli": ">=0.5.0"
+  }
+}

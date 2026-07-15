@@ -12,7 +12,7 @@ Turn private work into an NDA-safe developer credential. Your code never
 leaves your machine.
 
 ```bash
-npx @redential/cli scan
+npx redential scan
 ```
 
 No login, no config, no global install. `scan` runs entirely locally and
@@ -40,17 +40,21 @@ Your source code never leaves your machine.
 When you want the result on your Redential profile:
 
 ```bash
-npx @redential/cli login    # device flow, one time
-npx @redential/cli submit   # scans again, shows you the bundle, asks before uploading
-npx @redential/cli logout   # deletes the locally stored session
+npx redential login    # device flow, one time
+npx redential submit   # scans again, shows you the bundle, asks before uploading
+npx redential logout   # deletes the locally stored session
 ```
 
 Prefer a persistent install:
 
 ```bash
-npm install -g @redential/cli
+npm install -g redential
 redential scan
 ```
+
+(`redential` is an alias of
+[`@redential/cli`](https://www.npmjs.com/package/@redential/cli), the
+canonical package — see [Verifying the package itself](#verifying-the-package-itself).)
 
 Supported platforms: macOS, Linux, and Windows, on Node.js 20 and 22 —
 every release is verified against all six by CI.
