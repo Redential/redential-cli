@@ -8,7 +8,7 @@
     "node": ">=20"
   },
   "bin": {
-    "redential": "./bin.js"
+    "redential": "bin.js"
   },
   "files": [
     "bin.js",
