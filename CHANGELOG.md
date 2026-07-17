@@ -9,6 +9,10 @@ always bump at least minor; breaking schema changes bump major.
 
 ### Added
 - Add `ai/mcp` to the closed skill taxonomy for Model Context Protocol work.
+- Map official MCP SDK imports (`@modelcontextprotocol/sdk`, Python `mcp` /
+  `fastmcp`, Rust `rmcp`, Java `io.modelcontextprotocol`, Go
+  `github.com/modelcontextprotocol/go-sdk/mcp`, C# `ModelContextProtocol`) to
+  `ai/mcp`.
 
 ### Changed
 - **Bare-name alias packages published: `redential` and `redential-cli`.**
