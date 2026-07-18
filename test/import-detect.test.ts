@@ -388,3 +388,40 @@ describe("extractImportedPackages — Swift", () => {
     expect(extractImportedPackages(diff, "Package.swift")).toEqual(["rxswift"]);
   });
 });
+
+describe("extractImportedPackages — MCP SDKs (ai/mcp package-map keys)", () => {
+  it("extracts the official TypeScript MCP SDK import", () => {
+    expect(extractImportedPackages('import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";', "server.ts")).toEqual([
+      "@modelcontextprotocol/sdk",
+    ]);
+  });
+
+  it("extracts the official Python MCP SDK import", () => {
+    expect(extractImportedPackages("from mcp.server.fastmcp import FastMCP", "server.py")).toEqual(["mcp"]);
+    expect(extractImportedPackages("import fastmcp", "server.py")).toEqual(["fastmcp"]);
+  });
+
+  it("extracts the official Rust MCP SDK crate", () => {
+    expect(extractImportedPackages("use rmcp::ServerHandler;", "main.rs")).toEqual(["rmcp"]);
+    expect(extractImportedPackages("[dependencies]\nrmcp = \"0.1\"", "Cargo.toml")).toEqual(["rmcp"]);
+  });
+
+  it("extracts the official Java MCP SDK import root", () => {
+    expect(
+      extractImportedPackages("import io.modelcontextprotocol.client.McpClient;", "App.java")
+    ).toContain("io.modelcontextprotocol");
+  });
+
+  it("extracts the official Go MCP SDK import path", () => {
+    expect(
+      extractImportedPackages('import "github.com/modelcontextprotocol/go-sdk/mcp"', "main.go")
+    ).toEqual(["github.com/modelcontextprotocol/go-sdk/mcp"]);
+  });
+
+  it("extracts the official C# MCP SDK using and PackageReference forms", () => {
+    expect(extractImportedPackages("using ModelContextProtocol.Client;", "Program.cs")).toContain("modelcontextprotocol");
+    expect(
+      extractImportedPackages('<PackageReference Include="ModelContextProtocol" Version="1.0.0" />', "App.csproj")
+    ).toEqual(["modelcontextprotocol"]);
+  });
+});
