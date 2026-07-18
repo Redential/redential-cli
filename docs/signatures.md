@@ -23,7 +23,7 @@ Cargo.toml, Java `import`, Kotlin `import`, C# `using`/.csproj, Swift
 below), normalizes each to a package name (`stripe/webhooks` → `stripe`,
 `@org/pkg/sub` → `@org/pkg`, a Go path's trailing `/v9` stripped, …), and
 looks it up in `signatures/package-map.json` — a flat
-`{"package-name": "taxonomy-slug"}` map, 580+ entries.
+`{"package-name": "taxonomy-slug"}` map, 600+ entries.
 
 Deliberately regex-based, not a real parser per language (a dependency per
 language is a supply-chain surface CLAUDE.md's policy doesn't allow without
