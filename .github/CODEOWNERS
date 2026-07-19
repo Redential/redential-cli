@@ -9,14 +9,14 @@
 # from the maintainer listed below before merge, regardless of who else
 # has approved — per CLAUDE.md's sensitive-zones rule.
 
-/schema/                @Jppblue
-/taxonomy.json          @Jppblue
-/signatures/            @Jppblue
-/src/secret-scan.ts     @Jppblue
-/src/public-remote.ts   @Jppblue
-/src/submit.ts          @Jppblue
-/src/submit-command.ts  @Jppblue
-/src/login.ts           @Jppblue
-/src/http-client.ts     @Jppblue
-/test/privacy/          @Jppblue
-/.github/               @Jppblue
+/schema/                @jpbelmo
+/taxonomy.json          @jpbelmo
+/signatures/            @jpbelmo
+/src/secret-scan.ts     @jpbelmo
+/src/public-remote.ts   @jpbelmo
+/src/submit.ts          @jpbelmo
+/src/submit-command.ts  @jpbelmo
+/src/login.ts           @jpbelmo
+/src/http-client.ts     @jpbelmo
+/test/privacy/          @jpbelmo
+/.github/               @jpbelmo
