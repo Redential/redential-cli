@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
-import { fixtureMatches, type Signature } from "../src/skill-detect.js";
+import { fixtureCoverage, fixtureMatches, type Signature } from "../src/skill-detect.js";
 
 describe("Tier 2 comment guard (#28)", () => {
   const supabase = JSON.parse(
@@ -26,5 +26,18 @@ describe("Tier 2 comment guard (#28)", () => {
         diff: '// evaluated model "whisper-1" but shipped with a vendor API instead\n',
       })
     ).toBe(false);
+  });
+
+  const oauthOidc = JSON.parse(
+    readFileSync(new URL("../signatures/auth/oauth-oidc.json", import.meta.url), "utf8")
+  ) as Signature;
+
+  it("auth/oauth-oidc apiPatterns still fire on sanitized positive fixture diffs", () => {
+    const coverages = oauthOidc.fixtures.positive.map((f) => fixtureCoverage(oauthOidc, f));
+    const apiCount = oauthOidc.apiPatterns?.length ?? 0;
+    for (let i = 0; i < apiCount; i++) {
+      const hit = coverages.some((c) => c.apiPatterns[i]);
+      expect(hit, `apiPatterns[${i}] ("${oauthOidc.apiPatterns![i]}")`).toBe(true);
+    }
   });
 });

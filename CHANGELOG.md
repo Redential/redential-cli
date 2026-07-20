@@ -7,6 +7,12 @@ always bump at least minor; breaking schema changes bump major.
 
 ## [Unreleased]
 
+### Fixed
+- Tier 2 `importPatterns`/`apiPatterns` no longer match line comments and
+  block comments (honest-scan false positives such as `// supabase.from("x")`
+  deprecation notes); template-literal and string content remain matchable
+  for `apiPatterns`.
+
 ### Added
 - Add `ai/mcp` to the closed skill taxonomy for Model Context Protocol work.
 - Map official MCP SDK imports (`@modelcontextprotocol/sdk`, Python `mcp` /

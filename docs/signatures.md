@@ -191,8 +191,14 @@ Signature file format (unchanged from before this refactor):
 
 `importPatterns`/`apiPatterns`/`configFilePatterns` may each be `[]`, but at
 least one must have a pattern. `configFilePatterns` match the file PATH,
-not content; the other two match the commit's ADDED lines (capped at 2000
-characters per line — minified/generated noise, not hand-authored code).
+not content; the other two match the commit's ADDED lines after Tier 2
+sanitization: lines longer than 2000 characters are dropped first (minified/
+generated noise), then block comments (`/* … */`) are blanked and whole
+comment lines (`//`, `#`, …) are removed. **Template literals and string
+contents are not stripped** — `apiPatterns` intentionally match quoted API
+shapes and template-literal URLs (e.g. OAuth query parameters inside
+`` `…grant_type=…` ``). Tier 1 import parsing applies fuller non-code
+stripping (see `src/import-detect.ts`).
 
 **Most Tier 2 signatures add importPatterns the map can't express** — a
 config file, an ambiguous package, or protocol-level usage with no import

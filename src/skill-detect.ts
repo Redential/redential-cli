@@ -137,12 +137,16 @@ function compile(signatures: Signature[], taxonomySlugs: Set<string>): CompiledS
   });
 }
 
+function tier2MatchText(addedLines: string): string {
+  return sanitizeForPatternMatching(boundedAddedLines(addedLines));
+}
+
 function matches(file: { path: string; addedLines: string }, sig: CompiledSignature): boolean {
   if (sig.configFileRegexes.some((r) => r.test(file.path))) return true;
-  // Tier 2 import/api patterns share Tier 1's comment and block-comment guards
-  // (see docs/signatures.md) — raw added-lines regex would false-positive on
-  // `// supabase.from("x")` deprecation notes and similar near-misses.
-  const text = boundedAddedLines(sanitizeForPatternMatching(file.addedLines));
+  // Tier 2 import/api patterns drop comment lines and blank block comments
+  // before regex (see docs/signatures.md) — raw added-lines would false-positive
+  // on `// supabase.from("x")` deprecation notes and similar near-misses.
+  const text = tier2MatchText(file.addedLines);
   if (sig.importRegexes.some((r) => r.test(text))) return true;
   if (sig.apiRegexes.some((r) => r.test(text))) return true;
   return false;
@@ -180,9 +184,10 @@ export interface PatternCoverage {
  * silently never fire. */
 export function fixtureCoverage(sig: Signature, fixture: FixtureCase): PatternCoverage {
   const compiled = compileOne(sig);
+  const text = tier2MatchText(fixture.diff);
   return {
-    importPatterns: compiled.importRegexes.map((r) => r.test(fixture.diff)),
-    apiPatterns: compiled.apiRegexes.map((r) => r.test(fixture.diff)),
+    importPatterns: compiled.importRegexes.map((r) => r.test(text)),
+    apiPatterns: compiled.apiRegexes.map((r) => r.test(text)),
     configFilePatterns: compiled.configFileRegexes.map((r) => r.test(fixture.path)),
   };
 }
