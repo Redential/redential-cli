@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import { getCommitsAddedLines, type RawCommit } from "./git.js";
 import { isExcludedPath, heuristicallyGeneratedPaths } from "./churn-exclusions.js";
-import { extractImportedPackages } from "./import-detect.js";
+import { extractImportedPackages, sanitizeForPatternMatching } from "./import-detect.js";
 import { ScanError } from "./errors.js";
 import { debugLog } from "./debug.js";
 import type { DetectedSkill } from "./types.js";
@@ -139,7 +139,10 @@ function compile(signatures: Signature[], taxonomySlugs: Set<string>): CompiledS
 
 function matches(file: { path: string; addedLines: string }, sig: CompiledSignature): boolean {
   if (sig.configFileRegexes.some((r) => r.test(file.path))) return true;
-  const text = boundedAddedLines(file.addedLines);
+  // Tier 2 import/api patterns share Tier 1's comment and block-comment guards
+  // (see docs/signatures.md) — raw added-lines regex would false-positive on
+  // `// supabase.from("x")` deprecation notes and similar near-misses.
+  const text = boundedAddedLines(sanitizeForPatternMatching(file.addedLines));
   if (sig.importRegexes.some((r) => r.test(text))) return true;
   if (sig.apiRegexes.some((r) => r.test(text))) return true;
   return false;

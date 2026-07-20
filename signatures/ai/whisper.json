@@ -30,6 +30,10 @@
       {
         "path": "src/lib/embeddings.ts",
         "diff": "import { pipeline } from \"@xenova/transformers\";\nconst embedder = await pipeline(\"feature-extraction\", \"Xenova/all-MiniLM-L6-v2\");"
+      },
+      {
+        "path": "src/lib/transcription.ts",
+        "diff": "// evaluated model \"whisper-1\" but shipped with a vendor API instead\n"
       }
     ]
   }

@@ -471,6 +471,15 @@ function extractSwift(text: string, filePath: string): string[] {
   return isPackageSwiftManifest(filePath) ? extractPackageSwiftDependencies(text) : extractSwiftImport(text);
 }
 
+/** Tier 2 pattern matching uses the same non-code stripping as Tier 1. */
+export function sanitizeForPatternMatching(addedLines: string): string {
+  const stripped = stripNonCodeRegions(addedLines);
+  return stripped
+    .split("\n")
+    .filter((line) => !isCommentLine(line))
+    .join("\n");
+}
+
 /**
  * Extracts normalized package names from one file's added diff lines.
  * `filePath` selects the language (and, for Ruby/PHP, distinguishes a

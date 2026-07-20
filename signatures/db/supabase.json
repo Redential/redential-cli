@@ -25,6 +25,10 @@
       {
         "path": "README.md",
         "diff": "supabase.auth.signInWithPassword handles our login; we're not using supabase for storage or database queries here."
+      },
+      {
+        "path": "src/db/notes.ts",
+        "diff": "// rejected: supabase.from(\"legacy_profiles\") — we query Postgres directly instead\n"
       }
     ]
   }
