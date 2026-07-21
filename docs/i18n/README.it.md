@@ -2,9 +2,9 @@
 
 [English](../../README.md) · [Español](README.es.md) · [Português (BR)](README.pt-BR.md) · [Français](README.fr.md) · **Italiano**
 
-# Redential CLI
-
 <img src="../assets/bannercli.png" alt="Redential CLI: trasforma il lavoro privato in una credenziale per sviluppatori NDA-safe" width="100%">
+
+# Redential CLI
 
 [![npm version](https://img.shields.io/npm/v/%40redential%2Fcli.svg)](https://www.npmjs.com/package/@redential/cli)
 [![CI](https://github.com/Redential/redential-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/Redential/redential-cli/actions/workflows/ci.yml)
