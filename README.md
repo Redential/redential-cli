@@ -1,3 +1,5 @@
+<div align="center">
+
 # Redential CLI
 
 <img src="docs/assets/bannercli.png" alt="Redential CLI — turn private work into an NDA-safe developer credential" width="100%">
@@ -23,6 +25,8 @@ makes zero network calls.
 <img src="docs/assets/demo.gif" alt="npx redential scan running in a terminal: capabilities detected locally, nothing uploaded" width="100%">
 
 [Website](https://redential.com) · [Trust model](#trust-model) · [FAQ](#faq) · [Docs](#docs)
+
+</div>
 
 ## How it works
 

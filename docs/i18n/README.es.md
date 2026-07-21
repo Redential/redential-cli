@@ -1,3 +1,5 @@
+<div align="center">
+
 [English](../../README.md) · **Español** · [Português (BR)](README.pt-BR.md) · [Français](README.fr.md) · [Italiano](README.it.md)
 
 # Redential CLI
@@ -23,6 +25,8 @@ completamente en local y no hace ninguna llamada de red.
 <img src="../assets/demo.gif" alt="npx redential scan ejecutándose en una terminal: capacidades detectadas localmente, nada se sube" width="100%">
 
 [Sitio web](https://redential.com) · [Modelo de confianza](#modelo-de-confianza) · [Preguntas frecuentes](#preguntas-frecuentes) · [Documentación](#documentación)
+
+</div>
 
 ## Cómo funciona
 
