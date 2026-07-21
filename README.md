@@ -6,6 +6,8 @@
 [![CI](https://github.com/Redential/redential-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/Redential/redential-cli/actions/workflows/ci.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
 
+**English** · [Español](docs/i18n/README.es.md) · [Português (BR)](docs/i18n/README.pt-BR.md) · [Français](docs/i18n/README.fr.md) · [Italiano](docs/i18n/README.it.md)
+
 Your best work is probably under an NDA.
 
 Turn private work into an NDA-safe developer credential. Your code never
