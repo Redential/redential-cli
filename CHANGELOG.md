@@ -7,6 +7,9 @@ always bump at least minor; breaking schema changes bump major.
 
 ## [Unreleased]
 
+### Fixed
+- Fix the author identity prompt showing "1 commits" instead of "1 commit" when a single commit is found.
+
 ## [0.6.0] - 2026-07-22
 
 ### Fixed
