@@ -21,7 +21,13 @@ Nothing is uploaded without the user running `redential submit` and
 confirming. **No daemon, no watch mode, no background process**, no
 telemetry. Session bookends are one-shot commands. A vault file may persist
 **append-only receipts** between bookends; nothing reads it except the next
-one-shot `finish` or `submit`. No hooks, no IDE plugins, no auto-emit.
+one-shot command the user runs: `session finish`, a voluntary
+`redential anchor`, or `submit`. No hooks, no IDE plugins, no auto-emit.
+
+Anchoring rides `submit` or that explicit `redential anchor` one-shot,
+never a cadence the tool assumes. `redential anchor` does not exist yet;
+when it ships, adding it to Principle 1's network list is its own ceremony
+PR — this amendment changes no network promise.
 
 The distinction that matters: forbidden is anything RESIDENT — a process
 that polls, a hook that fires, anything that emits without the user typing
