@@ -1,0 +1,40 @@
+{
+  "description": "Server-side anchor history before the forged submit. Identity and chain_id are fictional.",
+  "identity_hash": "sha256:salt:example-author-7f3a9c",
+  "chain_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "epsilon_days": 7,
+  "anchors": [
+    {
+      "schema_version": "anchor.v0.discussion",
+      "identity_hash": "sha256:salt:example-author-7f3a9c",
+      "chain_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "seq": 0,
+      "prev_anchor_hash": null,
+      "head_hash": "1111111111111111111111111111111111111111111111111111111111111111",
+      "receipt_count_total": 4,
+      "receipt_count_since_prev": 4,
+      "max_finished_at_claimed": "2026-03-14T22:30:00Z",
+      "received_at_server": "2026-03-15T10:00:00Z",
+      "activity_period": "2026-Q1",
+      "first_anchor_at": "2026-03-15T10:00:00Z",
+      "reset_reason": "genesis",
+      "privacy_profile": "default"
+    },
+    {
+      "schema_version": "anchor.v0.discussion",
+      "identity_hash": "sha256:salt:example-author-7f3a9c",
+      "chain_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "seq": 1,
+      "prev_anchor_hash": "anchor-hash-seq-0-canonical-sha256-placeholder000000000000",
+      "head_hash": "2222222222222222222222222222222222222222222222222222222222222222",
+      "receipt_count_total": 7,
+      "receipt_count_since_prev": 3,
+      "max_finished_at_claimed": "2026-06-19T17:45:00Z",
+      "received_at_server": "2026-06-20T09:15:00Z",
+      "activity_period": "2026-Q2",
+      "first_anchor_at": "2026-03-15T10:00:00Z",
+      "reset_reason": null,
+      "privacy_profile": "default"
+    }
+  ]
+}

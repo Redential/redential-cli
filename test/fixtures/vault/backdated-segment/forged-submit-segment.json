@@ -1,0 +1,27 @@
+{
+  "description": "Forged submit on 2026-07-22: 12 backdated receipts claiming activity in the gap between honest anchors.",
+  "submit": {
+    "schema_version": "anchor.v0.discussion",
+    "identity_hash": "sha256:salt:example-author-7f3a9c",
+    "chain_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    "seq": 2,
+    "prev_anchor_hash": "anchor-hash-seq-1-canonical-sha256-placeholder000000000000",
+    "head_hash": "3333333333333333333333333333333333333333333333333333333333333333",
+    "receipt_count_total": 19,
+    "receipt_count_since_prev": 12,
+    "max_finished_at_claimed": "2026-06-10T18:00:00Z",
+    "received_at_server": "2026-07-22T21:00:00Z",
+    "activity_period": "2026-Q3",
+    "first_anchor_at": "2026-03-15T10:00:00Z",
+    "reset_reason": null,
+    "privacy_profile": "default"
+  },
+  "segment_receipts_summary": {
+    "count": 12,
+    "claimed_finished_at_range": {
+      "earliest": "2026-04-01T09:00:00Z",
+      "latest": "2026-06-10T18:00:00Z"
+    },
+    "note": "Receipt bodies omitted — fixture tests anchor-level rejection only."
+  }
+}
