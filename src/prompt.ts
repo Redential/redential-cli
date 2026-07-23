@@ -39,7 +39,7 @@ function formatCandidate(c: AuthorCandidate): string {
 // identity), just reached from two different code paths. Thousands
 // separator matches scan-command.ts's own commit-count formatting.
 function formatIdentityConfirmationPrompt(c: AuthorCandidate): string {
-  return `Found ${c.count.toLocaleString("en-US")} commits authored by ${c.email}. Use this identity? (Y/n) `;
+    return `Found ${c.count.toLocaleString("en-US")} commit${c.count === 1 ? "" : "s"} authored by ${c.email}. Use this identity? (Y/n) `;
 }
 
 export async function promptAuthors(

@@ -226,6 +226,15 @@ describe("promptUseGitIdentity — Y/n confirmation, Y default", () => {
     expect(out.text()).toBe("Found 1,378 commits authored by you@example.com. Use this identity? (Y/n) ");
   });
 
+   it("prints singular commit wording for one commit", async () => {
+    const out = captureOutput();
+    await promptUseGitIdentity(
+      { email: "you@example.com", count: 1 },
+      { input: lineInput(""), output: out.stream }
+    );
+    expect(out.text()).toBe("Found 1 commit authored by you@example.com. Use this identity? (Y/n) ");
+  });
+
   it("accepts on Enter (empty answer), defaulting to yes", async () => {
     const result = await promptUseGitIdentity(candidate, { input: lineInput(""), output: sinkOutput() });
     expect(result).toBe(true);
@@ -249,6 +258,12 @@ describe("promptAuthors — single candidate (Y/n confirmation, Y default)", () 
     const out = captureOutput();
     await promptAuthors([{ email: "user@example.com", count: 1378 }], { input: lineInput(""), output: out.stream });
     expect(out.text()).toBe("Found 1,378 commits authored by user@example.com. Use this identity? (Y/n) ");
+  });
+
+  it("prints singular commit wording for one commit", async () => {
+    const out = captureOutput();
+    await promptAuthors([{ email: "user@example.com", count: 1 }], { input: lineInput(""), output: out.stream });
+    expect(out.text()).toBe("Found 1 commit authored by user@example.com. Use this identity? (Y/n) ");
   });
 
   it("accepts on Enter (empty answer), defaulting to yes", async () => {
