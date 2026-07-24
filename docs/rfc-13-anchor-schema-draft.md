@@ -4,9 +4,9 @@
 **Thread:** [issue #13](https://github.com/Redential/redential-cli/issues/13)
 **Machine-readable sketch:** `schema/anchor.v0.discussion.json`
 
-This draft closes the backdating window called out in the vault red-team
-([`rfc-13-vault-redteam-deep.md`](rfc-13-vault-redteam-deep.md)) and
-incorporates jpbelmo's 2026-07-22 acceptance: chain forks over silent
+This draft closes the backdating window called out in the
+[#13 vault thread](https://github.com/Redential/redential-cli/issues/13)
+and incorporates jpbelmo's 2026-07-22 acceptance: chain forks over silent
 splices, `0600` config-dir vault placement, and **coarse time buckets +
 gap non-exposure as the default privacy profile** (not an opt-in).
 
@@ -39,7 +39,7 @@ to an imagined weekly schedule.
 
 | Layer | Stored where | Leaves machine? |
 | --- | --- | --- |
-| Receipt chain (full) | `~/.redential/vault.json` (`0600`) | Only on `submit`, after byte-for-byte review |
+| Receipt chain (full) | `~/.config/redential/vault.json` (`0600`) | Only on `submit`, after byte-for-byte review |
 | Anchor record (summary) | Redential server | Yes — **coarse aggregates only** |
 | Per-session timestamps | Local receipt only | Never on server in default profile |
 | Gap pattern | — | **Never exposed** to verifiers or hiring UI |
@@ -69,6 +69,21 @@ One row per successful `submit` that opts into vault anchoring.
 | `first_anchor_at` | ISO-8601 | yes | Genesis anchor time for this `chain_id` |
 | `reset_reason` | enum \| null | yes | `null` on normal append; set on fork |
 | `privacy_profile` | const `"default"` | yes | Only profile at launch; gap-safe |
+
+### Deviations from #13 thread pin
+
+The [#13 settlement](https://github.com/Redential/redential-cli/issues/13) named a
+smaller field set. This draft **extends** it deliberately; the pin is honest about
+what changed:
+
+| #13 thread | This draft | Rationale |
+| --- | --- | --- |
+| `receipt_count` (single) | `receipt_count_total` + `receipt_count_since_prev` | Segment size vs cumulative depth for `chain_verify` without gap exposure |
+| (implicit identity) | `identity_hash` | Explicit server-side lineage key (bundle-compatible family) |
+| (not named) | `activity_period` | Coarse quarter bucket — default privacy profile |
+| (not named) | `first_anchor_at` | Detect anchor-timing arbitrage (`anchor_timing_suspect`) |
+| (not named) | `schema_version` | Ceremony pin before `anchor.v1` |
+| (not named) | `privacy_profile` | Closed profile id; only `"default"` at launch |
 
 ### `activity_period` (coarse buckets — default)
 
@@ -102,16 +117,29 @@ started — not a seamless narrative.
 
 ### Clock skew rule (ε)
 
-At submit (or voluntary `anchor`) verification:
+At submit (or voluntary `anchor`) verification, **both directions** are bounded.
+Default `ε = 7 days` per [#13](https://github.com/Redential/redential-cli/issues/13)
+and the `backdated-segment` fixture (`epsilon_days: 7`).
+
+**Within this submit** (client claim vs server ingest):
 
 ```
+max_finished_at_claimed - received_at_server ≤ ε
 received_at_server - max_finished_at_claimed ≤ ε
 ```
 
-Default `ε = 30 days` from prior anchor's `received_at_server` (not a
-weekly cadence — infrequent submitters are first-class). Segment whose
-claimed `max_finished_at` predates the previous anchor's
-`received_at_server` by more than ε → **reject** (`segment_backdate_suspect`).
+A future-dated `max_finished_at_claimed` beyond `received_at_server + ε` →
+**reject** (`clock_suspect`). A claim older than `received_at_server - ε` →
+**reject** (`clock_suspect`).
+
+**Vs prior anchor** (segment must not backdate before the last honest anchor):
+
+```
+max_finished_at_claimed ≥ prior_anchor.received_at_server - ε
+```
+
+Violation → **reject** (`segment_backdate_suspect`). Infrequent submitters
+remain first-class; ε is keyed to time since last anchor, not a heartbeat cadence.
 
 ---
 
@@ -126,7 +154,8 @@ outranks defended (`faq.md` rule holds).
 
 ## Local vault file (client-side)
 
-Path: `~/.redential/vault.json` (never repo cwd). Mode: **`0600`**. Included
+Path: `~/.config/redential/vault.json` (never repo cwd; same config-dir family as
+`credentials.json`). Mode: **`0600`**. Included
 in secret-scan paths before any upload.
 
 Append-only receipt chain. Each receipt links `prev_receipt_hash`. Receipt
