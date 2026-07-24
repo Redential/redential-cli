@@ -117,20 +117,19 @@ started — not a seamless narrative.
 
 ### Clock skew rule (ε)
 
-At submit (or voluntary `anchor`) verification, **both directions** are bounded.
 Default `ε = 7 days` per [#13](https://github.com/Redential/redential-cli/issues/13)
 and the `backdated-segment` fixture (`epsilon_days: 7`).
 
-**Within this submit** (client claim vs server ingest):
+**Within this submit** (client claim vs server ingest) — **future bound only**:
 
 ```
 max_finished_at_claimed - received_at_server ≤ ε
-received_at_server - max_finished_at_claimed ≤ ε
 ```
 
-A future-dated `max_finished_at_claimed` beyond `received_at_server + ε` →
-**reject** (`clock_suspect`). A claim older than `received_at_server - ε` →
-**reject** (`clock_suspect`).
+A `max_finished_at_claimed` beyond `received_at_server + ε` → **reject**
+(`clock_suspect`). There is **no** within-submit past bound: honest infrequent
+submitters may anchor sessions older than ε (e.g. work in January, submit in
+March). The past direction is governed entirely by the prior-anchor rule below.
 
 **Vs prior anchor** (segment must not backdate before the last honest anchor):
 
@@ -138,8 +137,10 @@ A future-dated `max_finished_at_claimed` beyond `received_at_server + ε` →
 max_finished_at_claimed ≥ prior_anchor.received_at_server - ε
 ```
 
-Violation → **reject** (`segment_backdate_suspect`). Infrequent submitters
-remain first-class; ε is keyed to time since last anchor, not a heartbeat cadence.
+Violation → **reject** (`segment_backdate_suspect`). On **genesis** (no prior
+anchor), pre-anchor history is not hard-rejected here — `first_anchor_at` plus
+low verifier weight for pre-anchor claims handles resume-padding without punishing
+first-timers with real old history.
 
 ---
 

@@ -63,7 +63,7 @@
     "max_finished_at_claimed": {
       "type": "string",
       "format": "date-time",
-      "description": "Max finished_at across segment receipts (client-claimed). Server applies epsilon window (default 7 days) in both directions vs received_at_server and vs prior anchor."
+      "description": "Max finished_at across segment receipts (client-claimed). Within-submit: future bound only (claim ≤ received_at_server + ε). Vs prior anchor: segment must not predate prior received_at_server by more than ε (default 7 days)."
     },
     "received_at_server": {
       "type": "string",
