@@ -215,6 +215,7 @@
     { "slug": "payments/paypal-webhook-flow", "label": "PayPal webhook flow" },
     { "slug": "payments/mercadopago-flow", "label": "Mercado Pago payment flow" },
     { "slug": "payments/lemonsqueezy-webhook-flow", "label": "Lemon Squeezy webhook flow" },
-    { "slug": "payments/paddle-webhook-flow", "label": "Paddle webhook flow" }
+    { "slug": "payments/paddle-webhook-flow", "label": "Paddle webhook flow" },
+    { "slug": "validation/zod", "label": "Zod" }
   ]
 }
