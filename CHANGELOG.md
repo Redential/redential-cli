@@ -7,6 +7,10 @@ always bump at least minor; breaking schema changes bump major.
 
 ## [Unreleased]
 
+### Added
+- Add `validation/zod` to the closed skill taxonomy for Zod work
+- Add `frontend/storybook` to the closed skill taxonomy for Storybook work
+
 ### Changed
 - Principle 2 ("Explicit") amended per RFC #13: append-only local state
   (a future session-receipt vault) is explicitly permitted; resident
