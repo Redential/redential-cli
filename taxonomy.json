@@ -218,4 +218,5 @@
     { "slug": "payments/paddle-webhook-flow", "label": "Paddle webhook flow" },
     { "slug": "validation/zod", "label": "Zod" },
     { "slug": "frontend/storybook", "label": "Storybook" }
+  ]
 }
