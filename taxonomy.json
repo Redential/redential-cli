@@ -1,6 +1,6 @@
 {
   "$comment": "Closed public vocabulary of skill slugs. This file is the ONLY source of valid values for detected_skills[].slug in the bundle: a slug not listed here makes the bundle invalid. Detection maps signatures/*.json matches to these slugs — deterministically, locally, with zero network calls. Adding a slug requires a PR to this file (and a signature definition); slugs are never hardcoded in the CLI. Placeholder set, to be expanded.",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "skills": [
     { "slug": "auth/supabase-auth", "label": "Supabase Auth" },
     { "slug": "auth/nextauth", "label": "NextAuth / Auth.js" },
@@ -215,6 +215,8 @@
     { "slug": "payments/paypal-webhook-flow", "label": "PayPal webhook flow" },
     { "slug": "payments/mercadopago-flow", "label": "Mercado Pago payment flow" },
     { "slug": "payments/lemonsqueezy-webhook-flow", "label": "Lemon Squeezy webhook flow" },
-    { "slug": "payments/paddle-webhook-flow", "label": "Paddle webhook flow" }
+    { "slug": "payments/paddle-webhook-flow", "label": "Paddle webhook flow" },
+    { "slug": "validation/zod", "label": "Zod" },
+    { "slug": "frontend/storybook", "label": "Storybook" }
   ]
 }
