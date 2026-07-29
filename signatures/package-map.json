@@ -616,6 +616,7 @@
     "nimble": "testing/quick-nimble",
     "swinject": "backend/swinject",
     "promisekit": "frontend/promisekit",
-    "firebasefirestore": "db/firebase-firestore"
+    "firebasefirestore": "db/firebase-firestore",
+    "zod": "validation/zod"
   }
 }

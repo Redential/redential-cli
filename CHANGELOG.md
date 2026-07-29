@@ -25,6 +25,10 @@ always bump at least minor; breaking schema changes bump major.
   [docs/identity-selection-memory.md](docs/identity-selection-memory.md).
 - Add `validation/zod` to the closed skill taxonomy for Zod work.
 - Add `frontend/storybook` to the closed skill taxonomy for Storybook work.
+- Map the `zod` npm import to `validation/zod` (Tier 1).
+- Add Tier 2 signature for Storybook (`frontend/storybook`): detects
+  `.storybook/main.*` and `.storybook/preview.*` config files,
+  `*.stories.*` story files, and `@storybook/*` scoped imports.
 
 ### Fixed
 - Detect package additions from `package.json` dependency blocks (`dependencies`, `devDependencies`, and `peerDependencies`) as Tier 1 evidence using the existing package signature map.
