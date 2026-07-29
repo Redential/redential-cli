@@ -5,8 +5,8 @@
   ],
   "apiPatterns": [],
   "configFilePatterns": [
-    "(^|/)\\.storybook/(main|preview)\\.(js|jsx|ts|tsx|cjs|mjs)$",
-    "\\.stories\\.(js|jsx|ts|tsx)$"
+    "(^|/)\\.storybook/(main|preview)\\.(js|jsx|ts|tsx|cjs|mjs|mts|cts)$",
+    "\\.stories\\.(js|jsx|ts|tsx|mdx)$"
   ],
   "fixtures": {
     "positive": [
@@ -21,6 +21,14 @@
       {
         "path": "src/components/ui/Button.stories.tsx",
         "diff": "import type { Meta, StoryObj } from '@storybook/react';\nimport { Button } from './Button';\nconst meta: Meta<typeof Button> = { title: 'UI Components/Button' };\nexport default meta;"
+      },
+      {
+        "path": ".storybook/main.mts",
+        "diff": "import type { StorybookConfig } from '@storybook/react-vite';\nconst config: StorybookConfig = { addons: [\"@storybook/addon-docs\"] };\nexport default config;"
+      },
+      {
+        "path": "src/components/ui/Button.stories.mdx",
+        "diff": "import { Meta, Story } from '@storybook/blocks';\nimport { Button } from './Button';\n\n<Meta title=\"UI Components/Button\" component={Button} />"
       }
     ],
     "negative": [
