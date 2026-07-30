@@ -12,6 +12,9 @@ always bump at least minor; breaking schema changes bump major.
 - Add Tier 2 signature for Storybook (`frontend/storybook`): detects
   `.storybook/main.*` and `.storybook/preview.*` config files,
   `*.stories.*` story files, and `@storybook/*` scoped imports.
+- Add `auth/session-flow`, `auth/oauth-flow`, and `auth/jwt-refresh-flow`
+  to the closed skill taxonomy (taxonomy 1.8.0, per the auth-flows spec
+  in #5).
 
 ### Changed
 - Show a tip in the TTY summary when no commits are cryptographically signed, with guidance for enabling commit signing.
