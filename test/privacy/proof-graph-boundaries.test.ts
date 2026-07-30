@@ -29,13 +29,18 @@ import { fixtureDirectPattern, fixtureOtherAuthor, fixtureStripeUnused, USER } f
 import { runScan } from "../../src/scan.js";
 import type { Bundle } from "../../src/types.js";
 
-// H6 phase 2c — the 6 structural slugs STRUCTURAL_PATTERNS (infer.ts) can
-// ever produce, kept as a plain literal list here (not imported from
-// infer.ts) so this privacy test's own negative assertions stay independent
-// of the production module it's checking — importing STRUCTURAL_PATTERNS
-// itself would make a future accidental drop of an entry from that table
-// silently narrow what this test even checks, defeating the point of a
-// fixed, hand-verified list.
+// The 9 structural slugs STRUCTURAL_PATTERNS (infer.ts) can ever produce —
+// the 6 payments patterns from H6 phase 2c plus the 3 auth flows added for
+// issue #5. Kept as a plain literal list here (not imported from infer.ts)
+// so this privacy test's own negative assertions stay independent of the
+// production module it's checking — importing STRUCTURAL_PATTERNS itself
+// would make a future accidental drop of an entry from that table silently
+// narrow what this test even checks, defeating the point of a fixed,
+// hand-verified list.
+//
+// ADDING A PATTERN MEANS ADDING IT HERE BY HAND. That is the intended cost:
+// this list is the record of what a human has confirmed must never reach a
+// bundle, and a slug that is never listed is a slug this test never guards.
 const ALL_STRUCTURAL_SLUGS = [
   "payments/payment-webhook-flow",
   "payments/paypal-webhook-flow",
@@ -43,6 +48,9 @@ const ALL_STRUCTURAL_SLUGS = [
   "payments/lemonsqueezy-webhook-flow",
   "payments/paddle-webhook-flow",
   "payments/iap-subscription-flow",
+  "auth/session-flow",
+  "auth/oauth-flow",
+  "auth/jwt-refresh-flow",
 ];
 
 const dirs: string[] = [];

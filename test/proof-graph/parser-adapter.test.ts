@@ -150,7 +150,7 @@ describe("TscParserAdapter — calls", () => {
   it("resolves a bare call at module top level", () => {
     const file = adapter.parse("a.ts", "f();\n");
     expect(file.calls).toEqual([
-      { chain: ["f"], line: 1, enclosingFunction: null, stringArgs: [], argPropertyNames: [] },
+      { chain: ["f"], line: 1, enclosingFunction: null, stringArgs: [], argPropertyNames: [], numberArgs: [] },
     ]);
   });
 
@@ -163,6 +163,7 @@ describe("TscParserAdapter — calls", () => {
         enclosingFunction: null,
         stringArgs: [],
         argPropertyNames: [],
+        numberArgs: [],
       },
     ]);
   });
@@ -170,7 +171,7 @@ describe("TscParserAdapter — calls", () => {
   it("resolves computed member access as a '*' segment", () => {
     const file = adapter.parse("a.ts", "obj[key]();\n");
     expect(file.calls).toEqual([
-      { chain: ["obj", "*"], line: 1, enclosingFunction: null, stringArgs: [], argPropertyNames: [] },
+      { chain: ["obj", "*"], line: 1, enclosingFunction: null, stringArgs: [], argPropertyNames: [], numberArgs: [] },
     ]);
   });
 
@@ -184,6 +185,7 @@ describe("TscParserAdapter — calls", () => {
         enclosingFunction: "handleWebhook",
         stringArgs: [],
         argPropertyNames: [],
+        numberArgs: [],
       },
     ]);
   });
@@ -198,6 +200,7 @@ describe("TscParserAdapter — calls", () => {
         enclosingFunction: "Handler.process",
         stringArgs: [],
         argPropertyNames: [],
+        numberArgs: [],
       },
     ]);
   });
@@ -281,6 +284,31 @@ describe("TscParserAdapter — call argPropertyNames", () => {
   });
 });
 
+describe("TscParserAdapter — call numberArgs", () => {
+  it("captures a numeric-literal argument", () => {
+    const file = adapter.parse("a.ts", "res.status(401);\n");
+    expect(file.calls[0].numberArgs).toEqual([401]);
+  });
+
+  it("collects multiple numeric arguments in call order, ignoring non-numeric ones", () => {
+    const file = adapter.parse("a.ts", 'f(401, "a", 403, g());\n');
+    expect(file.calls[0].numberArgs).toEqual([401, 403]);
+  });
+
+  it("does NOT capture a negated numeric literal (PrefixUnaryExpression, documented)", () => {
+    const file = adapter.parse("a.ts", "f(-1);\n");
+    expect(file.calls[0].numberArgs).toEqual([]);
+  });
+
+  it("does not capture a numeric literal nested inside another expression", () => {
+    const file = adapter.parse("a.ts", "f({ status: 401 });\n");
+    expect(file.calls[0].numberArgs).toEqual([]);
+    // The KEY is still recorded, the value never is — this is exactly the
+    // gap authGuardHits documents for `NextResponse.json({}, {status:401})`.
+    expect(file.calls[0].argPropertyNames).toEqual(["status"]);
+  });
+});
+
 describe("TscParserAdapter — file-wide literals", () => {
   it("records a short string literal read via a member/element access, not just call arguments", () => {
     const file = adapter.parse("a.ts", "const sig = req.headers['stripe-signature'];\n");
@@ -359,7 +387,7 @@ describe("TscParserAdapter — .tsx parsing", () => {
     ]);
     expect(file.functions).toEqual([{ name: "Widget", span: { startLine: 2, endLine: 5 }, exported: true }]);
     expect(file.calls).toEqual([
-      { chain: ["onClick"], line: 3, enclosingFunction: "Widget", stringArgs: [], argPropertyNames: [] },
+      { chain: ["onClick"], line: 3, enclosingFunction: "Widget", stringArgs: [], argPropertyNames: [], numberArgs: [] },
     ]);
   });
 

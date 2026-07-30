@@ -63,6 +63,24 @@ export interface ParsedCall {
   // their own and are skipped. Added for H2's idempotency-guard recognizer
   // (`{ idempotencyKey: ... }`).
   argPropertyNames: string[];
+  // Numeric-literal arguments passed DIRECTLY to this call, e.g.
+  // `res.status(401)` -> [401]. Added for the auth-flows milestone (issue
+  // #5: auth/session-flow, auth/oauth-flow, auth/jwt-refresh-flow), whose
+  // route-guard / guard-response anchors are defined as the ACCESS DECISION
+  // a handler makes — "redirect, 401/403, or early return". For the status
+  // shape the CODE is the entire signal: `res.status(401)` and
+  // `res.status(200)` are syntactically identical apart from that number,
+  // so without it a recognizer could only claim "some status was set",
+  // which is decoration rather than a guard — precisely what that issue's
+  // honesty rule ("the verification anchor must be real verification, not
+  // decoration") rules out.
+  //
+  // Mirrors stringArgs exactly in scope: direct arguments only, never
+  // nested inside another expression. A NEGATED literal (`-1`) is a
+  // PrefixUnaryExpression, not a NumericLiteral, and is deliberately not
+  // captured — no HTTP status code is negative, so representing it would
+  // add a shape with no consumer.
+  numberArgs: number[];
 }
 
 // String-literal call arguments are capped at 200 chars (truncated, not
@@ -322,10 +340,15 @@ function objectLiteralPropertyNames(obj: ts.ObjectLiteralExpression): string[] {
 function toCall(node: ts.CallExpression, sourceFile: ts.SourceFile): ParsedCall {
   const stringArgs: string[] = [];
   const argPropertyNames: string[] = [];
+  const numberArgs: number[] = [];
   for (const arg of node.arguments) {
     const text = staticStringText(arg);
     if (text !== undefined) stringArgs.push(truncate(text, ARG_STRING_MAX_CHARS));
     else if (ts.isObjectLiteralExpression(arg)) argPropertyNames.push(...objectLiteralPropertyNames(arg));
+    // See ParsedCall.numberArgs' own comment. `Number(arg.text)` is exact
+    // for the status-code-sized integers this exists to carry; a literal
+    // too large for a JS number isn't a shape any recognizer looks for.
+    else if (ts.isNumericLiteral(arg)) numberArgs.push(Number(arg.text));
   }
   return {
     chain: chainOf(node.expression),
@@ -333,6 +356,7 @@ function toCall(node: ts.CallExpression, sourceFile: ts.SourceFile): ParsedCall 
     enclosingFunction: enclosingFunctionName(node, sourceFile),
     stringArgs,
     argPropertyNames,
+    numberArgs,
   };
 }
 

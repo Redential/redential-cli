@@ -1108,3 +1108,635 @@ export function fixtureIapOtherAuthor(): string {
   });
   return dir;
 }
+
+// -----------------------------------------------------------------------
+// Auth flows (issue #5) — three patterns, each with the 4 standard cases
+// (connected same-file DIRECT / cross-file INFERRED / import-without-use
+// AMBIGUOUS / non-attributed), plus the negative fixtures the issue's "#28
+// discipline" calls for at the bottom of this section.
+//
+// Every fixture below uses SUPABASE AUTH or PLAIN JWT rather than NextAuth,
+// deliberately: NextAuth exposes no code-exchange call site at all (it does
+// the exchange inside its own route handler — see AUTH_LIBRARIES' own
+// comment in anchors.ts), so it cannot complete the oauth-flow triad, and
+// its `auth()` helper resolves through a LOCAL re-export that receiver
+// resolution can't place. Supabase is the one library in the table with a
+// call site for every auth anchor kind, which makes it the only honest
+// choice for a fixture asserting a full triad.
+//
+// The Supabase client binding shape used throughout — `const supabase =
+// createClient(...)` — resolves via resolveReceiver's RULE 2: `supabase` is a
+// same-file "call"-kind binding whose own chain root (`createClient`) is
+// directly an import of "@supabase/supabase-js". The spliced chain is
+// therefore ["auth", ...], which is exactly what AUTH_LIBRARIES' Supabase
+// suffixes match against.
+// -----------------------------------------------------------------------
+
+const FAKE_SUPABASE_URL = "https://xxx-EXAMPLE-xxx.supabase.co";
+const FAKE_SUPABASE_KEY = "xxx-EXAMPLE-xxx";
+const FAKE_JWT_SECRET = "xxx-EXAMPLE-xxx";
+
+function supabaseClientLines(): string[] {
+  return [
+    'import { createClient } from "@supabase/supabase-js";',
+    "",
+    `const supabase = createClient("${FAKE_SUPABASE_URL}", "${FAKE_SUPABASE_KEY}");`,
+  ];
+}
+
+// -----------------------------------------------------------------------
+// auth/session-flow — credential-verification / session-issuance / route-guard
+// -----------------------------------------------------------------------
+
+/**
+ * ONE file, USER-committed, all three anchors inside one function ->
+ * DIRECT (same-function):
+ *   - `supabase.auth.signInWithPassword(...)` -> session-issuance
+ *   - `supabase.auth.getUser()` -> credential-verification (real
+ *     verification: getUser re-validates the token against the auth server
+ *     rather than trusting its claims — the issue's honesty rule)
+ *   - `res.status(401)` -> route-guard (the 401 is the whole signal; see
+ *     ParsedCall.numberArgs and authGuardHits' own comments)
+ */
+export function fixtureAuthSessionDirect(): string {
+  const dir = createRepo();
+  commit(dir, {
+    message: "add supabase session auth handler",
+    authorName: USER.name,
+    authorEmail: USER.email,
+    files: {
+      "src/session.ts": [
+        ...supabaseClientLines(),
+        "",
+        "export async function signInAndGuard(req, res) {",
+        "  await supabase.auth.signInWithPassword({ email: req.body.email, password: req.body.password });",
+        "  const { data } = await supabase.auth.getUser();",
+        '  if (!data.user) return res.status(401).send("unauthorized");',
+        '  return res.status(200).send("ok");',
+        "}",
+        "",
+      ].join("\n"),
+    },
+  });
+  return dir;
+}
+
+/**
+ * THREE files connected only by relative imports: src/handler.ts
+ * (credential-verification) -> src/issue.ts (session-issuance) ->
+ * src/guard.ts (route-guard). Max pairwise import distance is 2 hops, within
+ * the <=3 bound -> INFERRED.
+ */
+export function fixtureAuthSessionLayered(): string {
+  const dir = createRepo();
+  commit(dir, {
+    message: "add layered session auth (handler -> issue -> guard)",
+    authorName: USER.name,
+    authorEmail: USER.email,
+    files: {
+      "src/handler.ts": [
+        ...supabaseClientLines(),
+        'import { issueSession } from "./issue.js";',
+        "",
+        "export async function requireUser(req) {",
+        "  const { data } = await supabase.auth.getUser();",
+        "  return issueSession(data.user);",
+        "}",
+        "",
+      ].join("\n"),
+      "src/issue.ts": [
+        ...supabaseClientLines(),
+        'import { denyAccess } from "./guard.js";',
+        "",
+        "export async function issueSession(user) {",
+        "  if (!user) return denyAccess;",
+        "  return supabase.auth.setSession({ access_token: user.token, refresh_token: user.refresh });",
+        "}",
+        "",
+      ].join("\n"),
+      "src/guard.ts": ["export function denyAccess(res) {", '  return res.status(403).send("forbidden");', "}", ""].join("\n"),
+    },
+  });
+  return dir;
+}
+
+/**
+ * USER commits a file that ONLY imports "@supabase/supabase-js" — no auth
+ * call of any kind — alongside an unrelated, fully connected Stripe pattern
+ * in the same commit. auth/session-flow classifies AMBIGUOUS (package
+ * present, never wired); the Stripe pattern classifies DIRECT. Same
+ * "ownAnchors must not leak across patterns" proof as fixturePaypalUnused —
+ * and a stronger one here, since none of Stripe's anchor KINDS are even
+ * members of any auth pattern's anchorKinds.
+ *
+ * Note the Stripe noise file's status calls are `res.status(200)`, never
+ * 401/403, so it contributes no route-guard/guard-response anchors of its
+ * own — the auth findings' anchor sets stay clean for a reason the fixture
+ * controls, not by luck.
+ */
+export function fixtureAuthSessionUnused(): string {
+  const dir = createRepo();
+  commit(dir, {
+    message: "add unused supabase auth client alongside an unrelated stripe handler",
+    authorName: USER.name,
+    authorEmail: USER.email,
+    files: {
+      "src/auth-client.ts": [...supabaseClientLines(), "", "export const client = supabase;", ""].join("\n"),
+      "src/stripe-webhook.ts": stripeNoiseFileContent(),
+    },
+  });
+  return dir;
+}
+
+/**
+ * The exact same connected session pattern as fixtureAuthSessionDirect, but
+ * committed by OTHER — not USER. Classifies DIRECT overall, unattributed and
+ * unclaimed for USER.
+ */
+export function fixtureAuthSessionOtherAuthor(): string {
+  const dir = createRepo();
+  commit(dir, {
+    message: "add supabase session auth handler",
+    authorName: OTHER.name,
+    authorEmail: OTHER.email,
+    files: {
+      "src/session.ts": [
+        ...supabaseClientLines(),
+        "",
+        "export async function signInAndGuard(req, res) {",
+        "  await supabase.auth.signInWithPassword({ email: req.body.email, password: req.body.password });",
+        "  const { data } = await supabase.auth.getUser();",
+        '  if (!data.user) return res.status(401).send("unauthorized");',
+        '  return res.status(200).send("ok");',
+        "}",
+        "",
+      ].join("\n"),
+    },
+  });
+  commit(dir, {
+    message: "add unrelated util",
+    authorName: USER.name,
+    authorEmail: USER.email,
+    files: {
+      "src/util.ts": ["export function noop() {", "  return null;", "}", ""].join("\n"),
+    },
+  });
+  return dir;
+}
+
+// -----------------------------------------------------------------------
+// auth/oauth-flow — authorize-redirect / code-exchange / session-issuance
+// -----------------------------------------------------------------------
+
+/**
+ * ONE file, USER-committed, all three anchors in one function -> DIRECT
+ * (same-function). The authorize-redirect + code-exchange PAIR is what the
+ * issue says separates "wired OAuth" from "pasted a login button", so both
+ * appear here as real calls.
+ */
+export function fixtureAuthOauthDirect(): string {
+  const dir = createRepo();
+  commit(dir, {
+    message: "add supabase oauth login flow",
+    authorName: USER.name,
+    authorEmail: USER.email,
+    files: {
+      "src/oauth.ts": [
+        ...supabaseClientLines(),
+        "",
+        "export async function loginWithGithub(req, res) {",
+        '  await supabase.auth.signInWithOAuth({ provider: "github" });',
+        "  const { data } = await supabase.auth.exchangeCodeForSession(req.query.code);",
+        "  await supabase.auth.setSession(data.session);",
+        '  return res.redirect("/dashboard");',
+        "}",
+        "",
+      ].join("\n"),
+    },
+  });
+  return dir;
+}
+
+/**
+ * THREE files connected only by relative imports: src/login.ts
+ * (authorize-redirect) -> src/callback.ts (code-exchange) -> src/session.ts
+ * (session-issuance). 2 hops -> INFERRED.
+ */
+export function fixtureAuthOauthLayered(): string {
+  const dir = createRepo();
+  commit(dir, {
+    message: "add layered oauth flow (login -> callback -> session)",
+    authorName: USER.name,
+    authorEmail: USER.email,
+    files: {
+      "src/login.ts": [
+        ...supabaseClientLines(),
+        'import { handleCallback } from "./callback.js";',
+        "",
+        "export async function startLogin() {",
+        '  await supabase.auth.signInWithOAuth({ provider: "github" });',
+        "  return handleCallback;",
+        "}",
+        "",
+      ].join("\n"),
+      "src/callback.ts": [
+        ...supabaseClientLines(),
+        'import { persistSession } from "./session.js";',
+        "",
+        "export async function handleCallback(code) {",
+        "  const { data } = await supabase.auth.exchangeCodeForSession(code);",
+        "  return persistSession(data.session);",
+        "}",
+        "",
+      ].join("\n"),
+      "src/session.ts": [
+        ...supabaseClientLines(),
+        "",
+        "export async function persistSession(session) {",
+        "  return supabase.auth.setSession(session);",
+        "}",
+        "",
+      ].join("\n"),
+    },
+  });
+  return dir;
+}
+
+/**
+ * USER commits a file that imports Supabase and renders a login BUTTON —
+ * no signInWithOAuth, no exchange, no session call. The issue's "pasted a
+ * login button" case: the package is present so auth/oauth-flow classifies
+ * AMBIGUOUS and never claims.
+ */
+export function fixtureAuthOauthUnused(): string {
+  const dir = createRepo();
+  commit(dir, {
+    message: "add oauth login button alongside an unrelated stripe handler",
+    authorName: USER.name,
+    authorEmail: USER.email,
+    files: {
+      "src/LoginButton.tsx": [
+        ...supabaseClientLines(),
+        "",
+        "export function LoginButton() {",
+        '  return <button className="login">Sign in with GitHub</button>;',
+        "}",
+        "",
+      ].join("\n"),
+      "src/stripe-webhook.ts": stripeNoiseFileContent(),
+    },
+  });
+  return dir;
+}
+
+/**
+ * The exact same connected OAuth pattern as fixtureAuthOauthDirect, but
+ * committed by OTHER — not USER. DIRECT overall, unattributed for USER.
+ */
+export function fixtureAuthOauthOtherAuthor(): string {
+  const dir = createRepo();
+  commit(dir, {
+    message: "add supabase oauth login flow",
+    authorName: OTHER.name,
+    authorEmail: OTHER.email,
+    files: {
+      "src/oauth.ts": [
+        ...supabaseClientLines(),
+        "",
+        "export async function loginWithGithub(req, res) {",
+        '  await supabase.auth.signInWithOAuth({ provider: "github" });',
+        "  const { data } = await supabase.auth.exchangeCodeForSession(req.query.code);",
+        "  await supabase.auth.setSession(data.session);",
+        '  return res.redirect("/dashboard");',
+        "}",
+        "",
+      ].join("\n"),
+    },
+  });
+  commit(dir, {
+    message: "add unrelated util",
+    authorName: USER.name,
+    authorEmail: USER.email,
+    files: {
+      "src/util.ts": ["export function noop() {", "  return null;", "}", ""].join("\n"),
+    },
+  });
+  return dir;
+}
+
+// -----------------------------------------------------------------------
+// auth/jwt-refresh-flow — token-verification / refresh-rotation /
+// guard-response. This is the one auth pattern with an optionalAnchorKinds
+// cap (on refresh-rotation), so it needs 5 fixtures rather than 4: the
+// cap-engaged case and the cap-lifted case, plus the usual layered/unused/
+// other-author trio. Same reason fixtureMercadoPago* needs 5.
+//
+// NOTE the refresh marker is read as `req.body["refresh_token"]`, an ELEMENT
+// ACCESS with a string literal — not `req.body.refresh_token`, a property
+// access. Only the former puts "refresh_token" into ParsedFile.literals,
+// which is what refreshRotationHits requires. This mirrors the existing
+// `req.headers["stripe-signature"]` convention exactly, and is a real
+// constraint of the rule, not a fixture stylistic choice.
+// -----------------------------------------------------------------------
+
+/**
+ * ONE file, USER-committed, full triad in one function -> DIRECT
+ * (same-function):
+ *   - `jwt.verify(...)` -> token-verification (NOT jwt.decode — the
+ *     canonical instance of the issue's honesty rule)
+ *   - `jwt.sign(...)` co-located with that verify, in a file carrying the
+ *     "refresh_token" marker literal -> refresh-rotation
+ *   - `res.status(401)` -> guard-response
+ */
+export function fixtureAuthJwtRefreshDirect(): string {
+  const dir = createRepo();
+  commit(dir, {
+    message: "add jwt refresh endpoint",
+    authorName: USER.name,
+    authorEmail: USER.email,
+    files: {
+      "src/refresh.ts": [
+        'import jwt from "jsonwebtoken";',
+        "",
+        "export function refreshAccessToken(req, res) {",
+        `  const payload = jwt.verify(req.body["refresh_token"], "${FAKE_JWT_SECRET}");`,
+        '  if (!payload) return res.status(401).send("invalid refresh token");',
+        `  const token = jwt.sign({ sub: payload.sub }, "${FAKE_JWT_SECRET}");`,
+        "  return res.status(200).json({ token });",
+        "}",
+        "",
+      ].join("\n"),
+    },
+  });
+  return dir;
+}
+
+/**
+ * The cap-LIFTED case: the same triad as fixtureAuthJwtRefreshDirect PLUS an
+ * explicit invalidation of the old refresh token
+ * (`prisma.session.deleteMany(...)`, whose last chain segment is in
+ * INVALIDATION_SEGMENTS, in a file carrying the refresh marker literal).
+ * refresh-invalidation is therefore present, the optionalAnchorKinds cap
+ * does not engage, and this reaches DIRECT.
+ *
+ * Note `deleteMany` is NOT one of PRISMA_WRITE_VERBS, so this contributes no
+ * db-write anchor and no payments pattern is disturbed.
+ */
+export function fixtureAuthJwtRefreshWithInvalidation(): string {
+  const dir = createRepo();
+  commit(dir, {
+    message: "add jwt refresh endpoint that revokes the old token",
+    authorName: USER.name,
+    authorEmail: USER.email,
+    files: {
+      "src/refresh.ts": [
+        'import jwt from "jsonwebtoken";',
+        'import { PrismaClient } from "@prisma/client";',
+        "",
+        "const prisma = new PrismaClient();",
+        "",
+        "export async function refreshAccessToken(req, res) {",
+        `  const payload = jwt.verify(req.body["refresh_token"], "${FAKE_JWT_SECRET}");`,
+        '  if (!payload) return res.status(401).send("invalid refresh token");',
+        `  const token = jwt.sign({ sub: payload.sub }, "${FAKE_JWT_SECRET}");`,
+        '  await prisma.session.deleteMany({ where: { token: req.body["refresh_token"] } });',
+        "  return res.status(200).json({ token });",
+        "}",
+        "",
+      ].join("\n"),
+    },
+  });
+  return dir;
+}
+
+/**
+ * Verification and guard only — NO token issuance anywhere, so
+ * refresh-rotation (a REQUIRED member of this triad) is absent and the
+ * pattern cannot classify at all. It falls through to the shared AMBIGUOUS
+ * gate on package presence and never claims.
+ *
+ * This fixture is the regression guard for the over-claim that an earlier
+ * draft of this milestone shipped: with refresh-rotation treated as OPTIONAL,
+ * this exact shape — verify a token, deny with 401 — produced a CLAIMED
+ * jwt-refresh-flow finding on code that refreshes nothing. See
+ * refreshRotationHits' own comment in anchors.ts.
+ */
+export function fixtureAuthJwtRefreshNoRotation(): string {
+  const dir = createRepo();
+  commit(dir, {
+    message: "add jwt verification endpoint with no rotation anywhere",
+    authorName: USER.name,
+    authorEmail: USER.email,
+    files: {
+      "src/verify.ts": [
+        'import jwt from "jsonwebtoken";',
+        "",
+        "export function requireValidToken(req, res, next) {",
+        `  const payload = jwt.verify(req.headers["authorization"], "${FAKE_JWT_SECRET}");`,
+        '  if (!payload) return res.status(401).send("unauthorized");',
+        "  return next();",
+        "}",
+        "",
+      ].join("\n"),
+    },
+  });
+  return dir;
+}
+
+/**
+ * THREE files connected by relative imports. token-verification AND
+ * refresh-rotation necessarily share a file here — refreshRotationHits
+ * requires a verify call in the SAME enclosing scope — so the cross-file
+ * split is (verify + rotate) in src/service.ts vs. guard-response in
+ * src/guard.ts, 1 import hop apart. Same-function and same-file triple
+ * searches both fail; the cross-file search succeeds -> INFERRED.
+ */
+export function fixtureAuthJwtRefreshLayered(): string {
+  const dir = createRepo();
+  commit(dir, {
+    message: "add layered jwt refresh (handler -> service -> guard)",
+    authorName: USER.name,
+    authorEmail: USER.email,
+    files: {
+      "src/handler.ts": [
+        'import { rotateToken } from "./service.js";',
+        "",
+        "export function handleRefresh(req, res) {",
+        "  return rotateToken(req, res);",
+        "}",
+        "",
+      ].join("\n"),
+      "src/service.ts": [
+        'import jwt from "jsonwebtoken";',
+        'import { denyAccess } from "./guard.js";',
+        "",
+        "export function rotateToken(req, res) {",
+        `  const payload = jwt.verify(req.body["refresh_token"], "${FAKE_JWT_SECRET}");`,
+        "  if (!payload) return denyAccess(res);",
+        `  return jwt.sign({ sub: payload.sub }, "${FAKE_JWT_SECRET}");`,
+        "}",
+        "",
+      ].join("\n"),
+      "src/guard.ts": ["export function denyAccess(res) {", '  return res.status(401).send("unauthorized");', "}", ""].join("\n"),
+    },
+  });
+  return dir;
+}
+
+/**
+ * USER commits a file that ONLY imports "jsonwebtoken" — no verify, no
+ * sign — alongside an unrelated, fully connected Stripe pattern. AMBIGUOUS,
+ * never claimed.
+ */
+export function fixtureAuthJwtRefreshUnused(): string {
+  const dir = createRepo();
+  commit(dir, {
+    message: "add unused jsonwebtoken import alongside an unrelated stripe handler",
+    authorName: USER.name,
+    authorEmail: USER.email,
+    files: {
+      "src/jwt-client.ts": ['import jwt from "jsonwebtoken";', "", "export const signer = jwt;", ""].join("\n"),
+      "src/stripe-webhook.ts": stripeNoiseFileContent(),
+    },
+  });
+  return dir;
+}
+
+/**
+ * The exact same connected refresh pattern as fixtureAuthJwtRefreshDirect,
+ * but committed by OTHER — not USER. DIRECT overall, unattributed for USER.
+ */
+export function fixtureAuthJwtRefreshOtherAuthor(): string {
+  const dir = createRepo();
+  commit(dir, {
+    message: "add jwt refresh endpoint",
+    authorName: OTHER.name,
+    authorEmail: OTHER.email,
+    files: {
+      "src/refresh.ts": [
+        'import jwt from "jsonwebtoken";',
+        "",
+        "export function refreshAccessToken(req, res) {",
+        `  const payload = jwt.verify(req.body["refresh_token"], "${FAKE_JWT_SECRET}");`,
+        '  if (!payload) return res.status(401).send("invalid refresh token");',
+        `  const token = jwt.sign({ sub: payload.sub }, "${FAKE_JWT_SECRET}");`,
+        "  return res.status(200).json({ token });",
+        "}",
+        "",
+      ].join("\n"),
+    },
+  });
+  commit(dir, {
+    message: "add unrelated util",
+    authorName: USER.name,
+    authorEmail: USER.email,
+    files: {
+      "src/util.ts": ["export function noop() {", "  return null;", "}", ""].join("\n"),
+    },
+  });
+  return dir;
+}
+
+// -----------------------------------------------------------------------
+// NEGATIVE fixtures — the issue's "#28 discipline": one per signal, each
+// asserting an ABSENCE. These are what make "built real auth" a claim worth
+// defending.
+// -----------------------------------------------------------------------
+
+/**
+ * THE canonical negative case, named in the issue verbatim: a repo using
+ * `jwt.decode` ONLY. `decode` parses a token's claims without checking its
+ * signature, so it must never produce a token-verification anchor —
+ * AUTH_LIBRARIES lists it under `decodeOnlyChainSuffixes` precisely to make
+ * that intent assertable rather than implicit in an absence.
+ *
+ * A NOTE ON THE ISSUE'S WORDING (worth settling upstream): the issue asks
+ * for "zero auth/jwt-refresh-flow findings". Under the existing machinery
+ * that is not literally reachable — importing a tracked package always
+ * yields an AMBIGUOUS finding via inferStructuralSkills' step 3, exactly as
+ * fixtureStripeUnused already does for payments. The defensible assertion,
+ * and the one detection.test.ts makes, is: zero token-verification anchors
+ * and zero CLAIMED findings. Ambiguous never claims, which is the property
+ * this negative fixture actually exists to protect.
+ */
+export function fixtureAuthJwtDecodeOnly(): string {
+  const dir = createRepo();
+  commit(dir, {
+    message: "add jwt claims reader (decode only, no verification)",
+    authorName: USER.name,
+    authorEmail: USER.email,
+    files: {
+      "src/claims.ts": [
+        'import jwt from "jsonwebtoken";',
+        "",
+        "export function readClaims(req, res) {",
+        '  const payload = jwt.decode(req.headers["authorization"]);',
+        '  if (!payload) return res.status(401).send("no claims");',
+        "  return res.status(200).json(payload);",
+        "}",
+        "",
+      ].join("\n"),
+    },
+  });
+  return dir;
+}
+
+/**
+ * The issue's other named negative: "Rendering a login form does not" count
+ * as verification. No auth package import anywhere, no verification call —
+ * just a form. Produces NO auth finding at all (inferStructuralSkills' step
+ * 4: no package presence, no primary anchor), not even an ambiguous one.
+ */
+export function fixtureAuthLoginFormOnly(): string {
+  const dir = createRepo();
+  commit(dir, {
+    message: "add login form component",
+    authorName: USER.name,
+    authorEmail: USER.email,
+    files: {
+      "src/LoginForm.tsx": [
+        "export function LoginForm() {",
+        "  return (",
+        '    <form method="post" action="/login">',
+        '      <input name="email" />',
+        '      <input name="password" type="password" />',
+        "      <button>Sign in</button>",
+        "    </form>",
+        "  );",
+        "}",
+        "",
+      ].join("\n"),
+    },
+  });
+  return dir;
+}
+
+/**
+ * Guard-shaped code with NO auth library anywhere: a plain rate-limit
+ * middleware that returns 401. authGuardHits is deliberately ungated on any
+ * auth import (same posture as db-write), so this DOES produce route-guard
+ * and guard-response anchors — and must still produce NO auth finding of any
+ * kind, because every auth pattern's PRIMARY anchor is a verification kind
+ * requiring one of AUTH_LIBRARIES' packages.
+ *
+ * This is the direct test of the claim authGuardHits' own comment makes: the
+ * guard anchors can never manufacture a finding by themselves.
+ */
+export function fixtureAuthGuardWithoutAuthLibrary(): string {
+  const dir = createRepo();
+  commit(dir, {
+    message: "add rate-limit middleware that 401s without any auth library",
+    authorName: USER.name,
+    authorEmail: USER.email,
+    files: {
+      "src/rate-limit.ts": [
+        "export function rateLimit(req, res, next) {",
+        '  if (req.tooMany) return res.status(401).send("slow down");',
+        "  return next();",
+        "}",
+        "",
+      ].join("\n"),
+    },
+  });
+  return dir;
+}

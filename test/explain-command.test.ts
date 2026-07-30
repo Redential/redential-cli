@@ -23,6 +23,10 @@ import {
   fixturePaddleDirect,
   fixturePaypalDirect,
   fixtureStripeUnused,
+  fixtureAuthSessionDirect,
+  fixtureAuthOauthDirect,
+  fixtureAuthJwtRefreshDirect,
+  fixtureAuthJwtRefreshWithInvalidation,
 } from "./proof-graph/fixtures.js";
 import { generateBudgetBustingSourceFiles } from "./proof-graph/scale-fixtures.js";
 
@@ -396,6 +400,113 @@ describe("executeExplainCommand", () => {
       } finally {
         writeSpy.mockRestore();
       }
+    });
+  });
+
+  // Issue #5: `redential explain` must accept the three new auth slugs. No
+  // production change was needed for that — explain-command.ts resolves the
+  // requested slug against STRUCTURAL_PATTERNS itself and drives its anchor
+  // grouping from the matched pattern's own `anchorKinds`, so the auth
+  // patterns became explainable the moment they entered that table. These
+  // tests exist to PROVE that rather than assume it, one happy path per new
+  // slug, mirroring the H6 per-provider tests below.
+  describe("auth-flows explain (issue #5)", () => {
+    it("session-flow fixture: DIRECT, its own three anchor kinds, claimed yes", async () => {
+      const dir = fixtureAuthSessionDirect();
+      dirs.push(dir);
+      const { log, lines } = collectLog();
+
+      await executeExplainCommand({
+        repoPath: dir,
+        skill: "auth/session-flow",
+        author: [USER.email],
+        log,
+      });
+
+      const output = lines.join("\n");
+      expect(output).toContain("Skill: auth/session-flow");
+      expect(output).toContain("DIRECT");
+      expect(output).toContain("credential-verification:");
+      expect(output).toContain("session-issuance:");
+      expect(output).toContain("route-guard:");
+      expect(output).toContain("src/session.ts");
+      expect(output).toContain("Claimed: yes");
+    });
+
+    it("oauth-flow fixture: DIRECT, authorize-redirect + code-exchange + session-issuance, claimed yes", async () => {
+      const dir = fixtureAuthOauthDirect();
+      dirs.push(dir);
+      const { log, lines } = collectLog();
+
+      await executeExplainCommand({
+        repoPath: dir,
+        skill: "auth/oauth-flow",
+        author: [USER.email],
+        log,
+      });
+
+      const output = lines.join("\n");
+      expect(output).toContain("Skill: auth/oauth-flow");
+      expect(output).toContain("DIRECT");
+      expect(output).toContain("authorize-redirect:");
+      expect(output).toContain("code-exchange:");
+      expect(output).toContain("session-issuance:");
+      expect(output).toContain("Claimed: yes");
+    });
+
+    it("jwt-refresh-flow without invalidation: capped at INFERRED with the cap line naming refresh-invalidation", async () => {
+      const dir = fixtureAuthJwtRefreshDirect();
+      dirs.push(dir);
+      const { log, lines } = collectLog();
+
+      await executeExplainCommand({
+        repoPath: dir,
+        skill: "auth/jwt-refresh-flow",
+        author: [USER.email],
+        log,
+      });
+
+      const output = lines.join("\n");
+      expect(output).toContain("Skill: auth/jwt-refresh-flow");
+      expect(output).toContain("Classification: INFERRED");
+      // The real topology is still same-function — only confidence is
+      // capped. This is the FIRST pattern whose optional kind lives OUTSIDE
+      // its required triad, so it also exercises that generalization end to
+      // end through the explain renderer.
+      const connectionLine = lines.find((l) => l.startsWith("Connection:"))!;
+      expect(connectionLine).toContain("same-function");
+      const capLine = lines.find((l) => l.includes("Note: confidence is capped"))!;
+      expect(capLine).toBeDefined();
+      expect(capLine).toContain("refresh-invalidation");
+      expect(output).toContain("Claimed: yes");
+    });
+
+    it("jwt-refresh-flow WITH invalidation: cap lifts to DIRECT and no cap line is printed", async () => {
+      const dir = fixtureAuthJwtRefreshWithInvalidation();
+      dirs.push(dir);
+      const { log, lines } = collectLog();
+
+      await executeExplainCommand({
+        repoPath: dir,
+        skill: "auth/jwt-refresh-flow",
+        author: [USER.email],
+        log,
+      });
+
+      const output = lines.join("\n");
+      expect(output).toContain("Classification: DIRECT");
+      expect(lines.find((l) => l.includes("Note: confidence is capped"))).toBeUndefined();
+      // refresh-invalidation is deliberately ABSENT from this output, and
+      // that is correct on two independent counts: `explain` groups anchors
+      // by the matched pattern's own `anchorKinds` (which it is not a member
+      // of), and the finding's supporting anchors are the triple the search
+      // returned (which it is not part of either). Its only observable
+      // effect is the one asserted above — the cap lifting, so the same
+      // fixture-minus-invalidation reaches INFERRED and this one reaches
+      // DIRECT.
+      expect(output).toContain("token-verification:");
+      expect(output).toContain("refresh-rotation:");
+      expect(output).toContain("guard-response:");
     });
   });
 

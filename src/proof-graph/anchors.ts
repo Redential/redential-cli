@@ -20,13 +20,42 @@ import type { ProofGraph } from "./graph.js";
 // "webhook verification" node at all (there's no webhook in an in-app
 // purchase flow), so it needed its own anchor kinds rather than being
 // squeezed into the webhook/db-write/idempotency shape.
+// Auth-flows milestone (issue #5): three more 3-anchor shapes, none of which
+// fit the webhook or IAP triads. Same additive posture as H6 phase 2a — a
+// union extension plus a descriptor table plus recognizers, with ZERO change
+// to infer.ts's triple/pair search functions (they never inspect
+// AnchorHit.kind; see StructuralPattern.anchorKinds' own comment there).
+//
+// One structural difference from payments, deliberate: the payments slugs are
+// PER-PROVIDER (Stripe/PayPal/Paddle each get their own), so
+// webhook-verification hits must carry providerSlug and be filtered per
+// pattern. The auth slugs are PER-FLOW, not per-library — NextAuth, Supabase
+// Auth, and plain JWT all feed the SAME three flow slugs — so every anchor
+// kind below is library-agnostic and SHARED across patterns, exactly like
+// db-write already is. None of them ever sets providerSlug, and
+// anchorsForPatternKind (infer.ts) needs no new filtering branch.
 export type AnchorKind =
   | "webhook-verification"
   | "db-write"
   | "idempotency-guard"
   | "iap-configure"
   | "iap-purchase"
-  | "iap-entitlement-gate";
+  | "iap-entitlement-gate"
+  // auth/session-flow
+  | "credential-verification"
+  | "session-issuance"
+  | "route-guard"
+  // auth/oauth-flow
+  | "authorize-redirect"
+  | "code-exchange"
+  // auth/jwt-refresh-flow
+  | "token-verification"
+  | "refresh-rotation"
+  | "guard-response"
+  // OPTIONAL strengthener for auth/jwt-refresh-flow — never part of its
+  // required triad. See refreshInvalidationHits below and the pattern's
+  // optionalAnchorKinds entry in infer.ts.
+  | "refresh-invalidation";
 
 export interface AnchorHit {
   kind: AnchorKind;
@@ -732,6 +761,338 @@ function iapEntitlementGateHits(path: string, file: ParsedFile): AnchorHit[] {
 }
 
 // -----------------------------------------------------------------------
+// (e) auth flows — issue #5
+//
+// Three shapes, one descriptor table. Same "SPIKE DETECTOR DATA, not the
+// taxonomy authority" status as WEBHOOK_PROVIDERS/IAP_PACKAGES above (see
+// the comment over STRIPE_SPECIFIER): inferStructuralSkills still validates
+// every STRUCTURAL_PATTERNS slug against taxonomy.json at runtime.
+//
+// THE HONESTY RULE (issue #5, verbatim): "The verification anchor must be
+// real verification, not decoration. `jwt.verify` counts, `jwt.decode` alone
+// does not. Rendering a login form does not." That rule is enforced two
+// ways here: (1) by omission — no decode-shaped call appears in any
+// `*ChainSuffixes` field below, so it can never produce a hit; and (2) by
+// `decodeOnlyChainSuffixes`, which exists ONLY to name the calls that
+// deliberately produce nothing, so the intent is greppable and testable
+// rather than implicit in an absence. Nothing reads that field to make a
+// hit; test/proof-graph/anchors.test.ts reads it to assert the absence.
+// -----------------------------------------------------------------------
+
+export interface AuthLibraryDescriptor {
+  /** Human-readable library name — used in `reason` strings only. */
+  name: string;
+  /** npm specifiers that identify this library (mirrors WebhookProviderDescriptor.packages). */
+  packages: string[];
+  /**
+   * Per-anchor-kind call-chain suffixes, each checked against the END of a
+   * RESOLVED receiver chain by matchesChainSuffix — the exact same mechanism
+   * WEBHOOK_PROVIDERS.verifyChainSuffixes uses. A kind a given library has no
+   * shape for is simply absent (e.g. NextAuth performs its own code exchange
+   * internally and exposes no call for it, so it has no codeExchange entry
+   * and therefore can never, on its own, complete the oauth-flow triad — a
+   * documented consequence, not an oversight).
+   */
+  credentialVerification?: string[][];
+  sessionIssuance?: string[][];
+  authorizeRedirect?: string[][];
+  codeExchange?: string[][];
+  tokenVerification?: string[][];
+  /**
+   * DOCUMENTED NON-ANCHORS. Calls that look adjacent to verification but
+   * deliberately produce NO hit of any kind — the honesty rule made
+   * explicit and testable. Never read by any recognizer below.
+   */
+  decodeOnlyChainSuffixes?: string[][];
+}
+
+export const AUTH_LIBRARIES: AuthLibraryDescriptor[] = [
+  {
+    name: "NextAuth/Auth.js",
+    packages: ["next-auth", "next-auth/next", "next-auth/jwt", "@auth/core"],
+    // `getServerSession(...)` / `getToken(...)` both validate an existing
+    // session or JWT server-side — real verification. Auth.js v5's `auth()`
+    // helper is deliberately NOT listed: the idiomatic shape is
+    // `const { auth } = NextAuth(config)` re-exported from a LOCAL module
+    // (`@/auth`), so resolveReceiver resolves its root to a relative
+    // specifier, never to one of `packages` — listing it would match
+    // nothing while implying coverage this table doesn't have.
+    credentialVerification: [["getServerSession"], ["getToken"]],
+    sessionIssuance: [["signIn"]],
+    // `signIn("github")` is what builds and follows the provider authorize
+    // URL — the same call is therefore BOTH the authorize-redirect anchor
+    // and the session-issuance anchor. One call producing two kinds is
+    // precedented and intentional (an upsert-shaped write is already both a
+    // db-write and an idempotency-guard; see DbWriteMatch's own comment).
+    authorizeRedirect: [["signIn"]],
+    // No codeExchange: NextAuth performs the exchange inside its own route
+    // handler and exposes no call site to anchor on. See this interface's
+    // own comment.
+  },
+  {
+    name: "Supabase Auth",
+    packages: [SUPABASE_SPECIFIER],
+    // getUser() re-validates the JWT against the auth server; getSession()
+    // reads and validates the stored session. Both are real verification —
+    // unlike a bare decode, neither trusts the token's own claims.
+    credentialVerification: [
+      ["auth", "getUser"],
+      ["auth", "getSession"],
+    ],
+    sessionIssuance: [
+      ["auth", "signInWithPassword"],
+      ["auth", "signInWithOtp"],
+      ["auth", "verifyOtp"],
+      ["auth", "setSession"],
+    ],
+    authorizeRedirect: [["auth", "signInWithOAuth"]],
+    codeExchange: [["auth", "exchangeCodeForSession"]],
+    tokenVerification: [["auth", "getUser"]],
+  },
+  {
+    name: "plain JWT (jsonwebtoken/jose)",
+    packages: ["jsonwebtoken", "jose"],
+    // THE canonical instance of the honesty rule: `verify`/`jwtVerify`
+    // check the signature; `decode`/`decodeJwt` parse claims WITHOUT
+    // checking anything. Only the former appear here.
+    credentialVerification: [["verify"], ["jwtVerify"]],
+    tokenVerification: [["verify"], ["jwtVerify"]],
+    // jsonwebtoken's `jwt.sign(...)` resolves cleanly (default import ->
+    // chain ["sign"]). jose's `new SignJWT(payload).setProtectedHeader(...)
+    // .sign(key)` does NOT: its chain root is a CALL RESULT, which chainOf
+    // folds to "*", so resolveReceiver has no root name to place. That is
+    // the same documented parser limitation the supabase/knex db-write
+    // fallback exists for, and it is left as a known gap here rather than
+    // adding a second co-location fallback for it.
+    sessionIssuance: [["sign"]],
+    decodeOnlyChainSuffixes: [["decode"], ["decodeJwt"]],
+  },
+];
+
+// Access-decision shapes for route-guard / guard-response. LIBRARY-AGNOSTIC
+// and deliberately ungated on any auth import — exactly like db-write, which
+// is also recognized wherever it appears. A stray `res.status(401)` in a repo
+// with no auth library therefore produces an anchor and NO finding: every
+// auth pattern's PRIMARY anchor (anchorKinds[0]) is a verification kind that
+// requires one of AUTH_LIBRARIES' packages, and inferStructuralSkills' step 4
+// emits nothing for a pattern with neither package presence nor a primary
+// anchor. The guard anchors can never manufacture a finding by themselves.
+const GUARD_STATUS_CODES = new Set([401, 403]);
+const GUARD_STATUS_SEGMENTS = new Set(["status", "sendStatus"]);
+const GUARD_REDIRECT_SEGMENT = "redirect";
+
+/**
+ * route-guard / guard-response hits — the SAME rule emitted under BOTH kind
+ * names, because the same access decision genuinely serves both flows
+ * (auth/session-flow calls it route-guard; auth/jwt-refresh-flow calls it
+ * guard-response) and infer.ts filters anchors by kind per pattern. Emitting
+ * one kind and aliasing it in infer.ts would instead require a special case
+ * in anchorsForPatternKind, which this file's precedent (one call, two kinds
+ * — see the upsert case) avoids needing.
+ *
+ * Two recognized shapes:
+ *   (a) a call whose chain ends in "status"/"sendStatus" carrying a 401 or
+ *       403 NUMERIC argument (see ParsedCall.numberArgs, added for this
+ *       milestone — the code is the whole signal; a bare "some status was
+ *       set" match would be decoration);
+ *   (b) a call whose chain ends in "redirect" — `res.redirect(...)`,
+ *       `NextResponse.redirect(...)`, bare `redirect(...)` from
+ *       next/navigation. Receiver-agnostic on purpose: the redirect target
+ *       varies per framework while the segment name does not.
+ *
+ * KNOWN, ACCEPTED GAP (documented, not a bug): the App-Router idiom
+ * `NextResponse.json({ error }, { status: 401 })` carries its code as a
+ * PROPERTY of an object-literal argument. ParsedCall.argPropertyNames
+ * records that a `status` KEY is present but never its VALUE (see its own
+ * comment), so this rule cannot tell that shape's 401 from a 200 and
+ * deliberately does not match it at all — under-claiming rather than
+ * guessing, consistent with this module's "a call it can't confidently
+ * place is simply not a hit" posture. Widening argPropertyNames to carry
+ * literal values would be a parser change with a much broader blast radius
+ * than numberArgs, and is left for a follow-up.
+ */
+function authGuardHits(path: string, file: ParsedFile): AnchorHit[] {
+  const hits: AnchorHit[] = [];
+
+  const push = (call: ParsedCall, reason: string): void => {
+    for (const kind of ["route-guard", "guard-response"] as const) {
+      hits.push({ kind, path, enclosingFunction: call.enclosingFunction, line: call.line, reason });
+    }
+  };
+
+  for (const call of file.calls) {
+    const last = call.chain[call.chain.length - 1];
+    if (last === undefined) continue;
+
+    if (GUARD_STATUS_SEGMENTS.has(last)) {
+      const code = call.numberArgs.find((n) => GUARD_STATUS_CODES.has(n));
+      if (code !== undefined) {
+        push(call, `access decision: call chain ending ".${last}(${code})" (denial status code, not a bare status call)`);
+        continue; // one call never produces two guard hits of the same kind
+      }
+    }
+
+    if (last === GUARD_REDIRECT_SEGMENT) {
+      push(call, `access decision: call chain ending ".${GUARD_REDIRECT_SEGMENT}(...)" (chain: ${call.chain.join(".")})`);
+    }
+  }
+
+  return hits;
+}
+
+/**
+ * Every AUTH_LIBRARIES-driven anchor kind, in one pass. Receiver resolution
+ * ONLY (resolveReceiver, same three-rule contract every other recognizer in
+ * this file uses) — there is deliberately NO file-level co-location fallback
+ * anywhere in this function. The webhook fallback exists because a signature
+ * HEADER READ is a member access with no call to attach to; every auth anchor
+ * here is a genuine call, so a fallback would only ever buy false positives
+ * against the honesty rule.
+ */
+function authLibraryHits(path: string, file: ParsedFile): AnchorHit[] {
+  const hits: AnchorHit[] = [];
+
+  for (const call of file.calls) {
+    const resolved = resolveReceiver(file, call);
+    if (!resolved) continue;
+    const library = AUTH_LIBRARIES.find((l) => l.packages.includes(resolved.specifier));
+    if (!library) continue;
+
+    // Ordered so `reason` names the kind that fired. A single call MAY
+    // produce several kinds (NextAuth's signIn is both authorize-redirect
+    // and session-issuance; Supabase's auth.getUser is both
+    // credential-verification and token-verification) — that is the
+    // intended, precedented behavior, not double-counting.
+    const table: [AnchorKind, string[][] | undefined][] = [
+      ["credential-verification", library.credentialVerification],
+      ["session-issuance", library.sessionIssuance],
+      ["authorize-redirect", library.authorizeRedirect],
+      ["code-exchange", library.codeExchange],
+      ["token-verification", library.tokenVerification],
+    ];
+
+    for (const [kind, suffixes] of table) {
+      const matched = suffixes?.find((suffix) => matchesChainSuffix(resolved.chain, suffix));
+      if (!matched) continue;
+      hits.push({
+        kind,
+        path,
+        enclosingFunction: call.enclosingFunction,
+        line: call.line,
+        reason: `${library.name}: ${resolved.specifier}.${matched.join(".")} (receiver resolved to import "${resolved.specifier}")`,
+      });
+    }
+  }
+
+  return hits;
+}
+
+// Marker literals for the refresh-rotation rule below. Presence of one of
+// these SOMEWHERE in the file is what distinguishes "this sign call mints a
+// refreshed access token" from "this sign call mints the original one" —
+// the two are otherwise the identical `jwt.sign(...)` shape.
+const REFRESH_MARKER_LITERALS = new Set(["refresh_token", "refreshToken", "refresh"]);
+
+/**
+ * refresh-rotation: a session-issuance-shaped call sitting in the SAME
+ * enclosing function as a token-verification call, in a file that also
+ * carries a refresh marker literal.
+ *
+ * Deliberately the narrowest rule in this file, because the shape it names
+ * is genuinely ambiguous syntactically: `jwt.sign(...)` is byte-identical
+ * whether it mints a first access token or a refreshed one. Requiring
+ * co-located verification (you must have checked the refresh token before
+ * issuing against it) plus an explicit refresh marker is what makes the
+ * claim defensible rather than a guess.
+ *
+ * refresh-rotation is a REQUIRED member of the auth/jwt-refresh-flow triad.
+ * That is a deliberate correction to an earlier reading of issue #5, which
+ * took refresh-rotation to be the OPTIONAL member by analogy with Mercado
+ * Pago's idempotency-guard. Making it optional was demonstrably wrong: with
+ * rotation optional, the pattern classified from token-verification +
+ * guard-response alone, so "verify a token, deny with 401" — one of the most
+ * common shapes in any web codebase, and one that refreshes nothing — became
+ * a CLAIMED jwt-refresh-flow finding (reproduced end-to-end against
+ * fixtureAuthSessionDirect, a plain Supabase password login).
+ *
+ * The precedent doesn't transfer, and the reason is worth stating: an
+ * idempotency guard genuinely STRENGTHENS a payment webhook flow, so making
+ * it optional is sound. Rotation does not strengthen a refresh flow — it IS
+ * the refresh flow. What issue #5's sentence actually describes as the
+ * strengthener is invalidation of the OLD token, which is now its own
+ * optional kind (see refreshInvalidationHits below).
+ */
+function refreshRotationHits(path: string, file: ParsedFile, libraryHits: AnchorHit[]): AnchorHit[] {
+  if (!file.literals.some((l) => REFRESH_MARKER_LITERALS.has(l.value))) return [];
+
+  const verifyScopes = new Set(
+    libraryHits.filter((h) => h.kind === "token-verification").map((h) => h.enclosingFunction)
+  );
+
+  return libraryHits
+    .filter((h) => h.kind === "session-issuance" && verifyScopes.has(h.enclosingFunction))
+    .map((h) => ({
+      kind: "refresh-rotation" as AnchorKind,
+      path,
+      enclosingFunction: h.enclosingFunction,
+      line: h.line,
+      reason: `token issuance co-located with a token-verification call in the same scope, in a file carrying a refresh marker literal (${h.reason})`,
+    }));
+}
+
+// Call-chain last segments that mean "the OLD credential was revoked", not
+// merely "a new one was issued". Deliberately a short, distinctive
+// allowlist: each of these names an act of destruction/revocation, none is a
+// generic verb that shows up incidentally in unrelated code. `delete` and
+// `deleteMany` are the ORM shapes for dropping a stored refresh-token row
+// (Prisma/Supabase/knex all use one of these); `signOut` is Supabase's own
+// session teardown.
+const INVALIDATION_SEGMENTS = new Set([
+  "revoke",
+  "revokeToken",
+  "revokeRefreshToken",
+  "invalidate",
+  "blacklist",
+  "signOut",
+  "delete",
+  "deleteMany",
+]);
+
+/**
+ * refresh-invalidation — the OPTIONAL strengthener for
+ * auth/jwt-refresh-flow, per issue #5: "If rotation/invalidation of the old
+ * token is present it strengthens the finding."
+ *
+ * Gated on the SAME refresh marker literal refreshRotationHits requires, for
+ * the same reason: `prisma.session.delete(...)` is an utterly generic call,
+ * and only its co-location with refresh-token handling makes it evidence of
+ * anything. Without that gate this rule would fire on every ORM delete in
+ * every repo.
+ *
+ * Never a required anchor. Its absence caps auth/jwt-refresh-flow at
+ * `inferred`; its presence lets the pattern reach `direct`. A flow that
+ * rotates without invalidating is real and provable — it just isn't the same
+ * strength of claim as one that also closes the old token out.
+ */
+function refreshInvalidationHits(path: string, file: ParsedFile): AnchorHit[] {
+  if (!file.literals.some((l) => REFRESH_MARKER_LITERALS.has(l.value))) return [];
+
+  const hits: AnchorHit[] = [];
+  for (const call of file.calls) {
+    const last = call.chain[call.chain.length - 1];
+    if (last === undefined || !INVALIDATION_SEGMENTS.has(last)) continue;
+    hits.push({
+      kind: "refresh-invalidation",
+      path,
+      enclosingFunction: call.enclosingFunction,
+      line: call.line,
+      reason: `old-credential revocation: call chain ending ".${last}(...)" in a file carrying a refresh marker literal (chain: ${call.chain.join(".")})`,
+    });
+  }
+  return hits;
+}
+
+// -----------------------------------------------------------------------
 // findAnchors
 // -----------------------------------------------------------------------
 
@@ -760,6 +1121,16 @@ export function findAnchors(graph: ProofGraph): AnchorHit[] {
     hits.push(...webhookHits(graph, path, file));
     hits.push(...iapConfigureAndPurchaseHits(path, file));
     hits.push(...iapEntitlementGateHits(path, file));
+
+    // Auth flows (issue #5). refreshRotationHits derives from the library
+    // hits rather than re-walking file.calls — it needs to know which scopes
+    // already contain a token-verification hit, which is exactly what
+    // authLibraryHits just computed.
+    const libraryHits = authLibraryHits(path, file);
+    hits.push(...libraryHits);
+    hits.push(...refreshRotationHits(path, file, libraryHits));
+    hits.push(...refreshInvalidationHits(path, file));
+    hits.push(...authGuardHits(path, file));
 
     // Reads seen so far in each enclosing-function scope of THIS file, in
     // source-position order. file.calls is already sorted by source
