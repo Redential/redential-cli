@@ -203,6 +203,7 @@ and what the provenance attestation actually proves.
 - [docs/principles.md](docs/principles.md) — the six non-negotiable rules
 - [docs/privacy-tests.md](docs/privacy-tests.md) — which test proves which rule
 - [docs/scan.md](docs/scan.md) — full `scan` command reference
+- [docs/exit-codes.md](docs/exit-codes.md) — exit codes for CI and shell scripts
 - [docs/login-submit.md](docs/login-submit.md) — `login`, `submit`, `logout`
 - [docs/identity-selection-memory.md](docs/identity-selection-memory.md) — how `scan`/`submit` remember your per-repo identity selection
 - [docs/private-label.md](docs/private-label.md) — the mandatory private label: what it is, why it travels outside the bundle

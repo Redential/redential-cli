@@ -114,7 +114,7 @@ diverge on what counts as valid:
   this repo (only you will ever see it): `. An invalid answer (empty, too
   long, control characters, or secret-shaped) re-asks, up to 2 retries (3
   attempts total); the final failed attempt raises the specific validation
-  error and aborts — exit 1, **nothing was uploaded**, not even the
+  error and aborts — [exit 1](exit-codes.md), **nothing was uploaded**, not even the
   bundle. This is a deliberate widening of the spec's literal "empty
   answer re-asks" language to cover every validation failure the same way
   (rather than treating an over-long or secret-shaped answer differently

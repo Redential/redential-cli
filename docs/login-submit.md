@@ -6,7 +6,7 @@ only place the CLI ever does — see [principles.md](principles.md).
 ```bash
 redential login                              # device flow, one time
 redential submit --repo <path>                # interactive: prints the bundle, then asks
-redential submit --author you@x.com --yes --confirm-upload --label "Acme Corp"   # non-interactive
+redential submit --author you@x.com --yes --confirm-upload --label "Acme Corp"   # non-interactive (exit codes: docs/exit-codes.md)
 redential logout                              # delete the stored session
 ```
 
@@ -239,7 +239,8 @@ selection, same authorization-confirmation prompt, same `runScan`. It then:
    failure semantics: this request is never retried, and a failure here
    never triggers a second bundle upload — it only prints a warning
    (naming the label, so it can be set again from the web) and `submit`
-   still exits 0, since the bundle itself is already safely uploaded.
+   still exits 0, since the bundle itself is already safely uploaded (see
+   [exit-codes.md](exit-codes.md)).
 9. Records the upload locally (`last-submission.json`, above) — not part
    of what's sent, just local bookkeeping for a later `scan`'s next-step
    hint. Unlike the version-check notice below, this is not best-effort:
