@@ -937,8 +937,13 @@ export function inferStructuralSkills(
     // no auth library and a real single-library flow must still find it.
     //
     // The library chosen is the one covering the most of this pattern's
-    // required kinds, ties broken by AUTH_LIBRARIES order so the result is
-    // deterministic. KNOWN, ACCEPTED LIMIT: this picks a scope by
+    // required kinds. Ties go to the FIRST LIBRARY ENCOUNTERED while walking
+    // this pattern's anchor arrays in kind order (anchorsA, then B, then C,
+    // each already sorted by path/line) — NOT AUTH_LIBRARIES declaration
+    // order, which this comment previously claimed. Deterministic either
+    // way, since findAnchors' output is deterministic, but the two are not
+    // the same order and the code follows the former.
+    // KNOWN, ACCEPTED LIMIT: this picks a scope by
     // kind-coverage BEFORE running the connectivity search, so if the
     // best-covered library's anchors turn out not to connect while a
     // lesser-covered one's would have, this under-claims rather than

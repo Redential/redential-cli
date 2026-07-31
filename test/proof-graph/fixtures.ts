@@ -1815,3 +1815,85 @@ export function fixtureAuthGuardWithoutAuthLibrary(): string {
   });
   return dir;
 }
+
+/**
+ * The POSITIVE case for same-library scoping, and the commonest real-world
+ * shape: one library completes a flow on its own while a SECOND,
+ * partially-overlapping library also lives in the repo.
+ *
+ * src/session.ts — Supabase completes auth/session-flow entirely in one
+ * function: getUser (credential-verification) + signInWithPassword
+ * (session-issuance) + res.status(401) (route-guard).
+ *
+ * src/social.ts — NextAuth is present but only PARTIAL: signIn contributes
+ * session-issuance and authorize-redirect, never a credential-verification.
+ * Deliberately NOT import-linked to session.ts; its mere presence in the
+ * repo is what makes libraryIds.length > 1 and engages scoping.
+ *
+ * Scoping must therefore pick Supabase — coverage 3 (it or a
+ * library-agnostic anchor supplies all three of session-flow's kinds)
+ * against NextAuth's 2 — and auth/session-flow must still claim DIRECT.
+ * This is the case fixtureAuthMixedLibraries cannot prove: that the fix
+ * suppresses only the cross-library assembly, not real flows that happen to
+ * share a repo with another auth library.
+ */
+export function fixtureAuthScopedFlowWithOverlappingLibrary(): string {
+  const dir = createRepo();
+  commit(dir, {
+    message: "add supabase session flow alongside a partial nextauth social login",
+    authorName: USER.name,
+    authorEmail: USER.email,
+    files: {
+      "src/session.ts": [
+        ...supabaseClientLines(),
+        "",
+        "export async function signInAndGuard(req, res) {",
+        "  await supabase.auth.signInWithPassword({ email: req.body.email, password: req.body.password });",
+        "  const { data } = await supabase.auth.getUser();",
+        '  if (!data.user) return res.status(401).send("unauthorized");',
+        '  return res.status(200).send("ok");',
+        "}",
+        "",
+      ].join("\n"),
+      "src/social.ts": [
+        'import { signIn } from "next-auth/react";',
+        "",
+        "export async function socialLogin() {",
+        '  return signIn("github");',
+        "}",
+        "",
+      ].join("\n"),
+    },
+  });
+  return dir;
+}
+
+/**
+ * ALIASED named import: `import { signIn as login }`. Pins
+ * importedNameForLocalName's preference for the EXPORTED name — the
+ * descriptor table names API functions, so matching must not depend on
+ * whatever local alias a file happened to choose.
+ *
+ * Without that preference this file would produce no NextAuth anchor at
+ * all, since the local name "login" appears in no descriptor.
+ */
+export function fixtureAuthAliasedImport(): string {
+  const dir = createRepo();
+  commit(dir, {
+    message: "add nextauth social login imported under an alias",
+    authorName: USER.name,
+    authorEmail: USER.email,
+    files: {
+      "src/social.ts": [
+        'import { signIn as login } from "next-auth/react";',
+        "",
+        "export async function socialLogin(res) {",
+        '  await login("github");',
+        '  return res.status(401).send("not signed in");',
+        "}",
+        "",
+      ].join("\n"),
+    },
+  });
+  return dir;
+}

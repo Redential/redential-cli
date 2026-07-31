@@ -62,6 +62,8 @@ import {
   fixtureAuthLoginFormOnly,
   fixtureAuthGuardWithoutAuthLibrary,
   fixtureAuthMixedLibraries,
+  fixtureAuthScopedFlowWithOverlappingLibrary,
+  fixtureAuthAliasedImport,
 } from "./fixtures.js";
 
 const adapter = new TscParserAdapter();
@@ -851,6 +853,44 @@ describe("auth flows — negative fixtures (#28 discipline, issue #5)", () => {
     // Guard anchors carry no library and stay shared across scopes, so a
     // real single-library flow can still find its own guard.
     expect(anchors.some((a) => a.kind === "guard-response" && a.libraryId === undefined)).toBe(true);
+  });
+
+  it("a real single-library flow STILL claims when a second, partial library shares the repo", async () => {
+    const dir = fixtureAuthScopedFlowWithOverlappingLibrary();
+    dirs.push(dir);
+
+    const { anchors, findings } = await runPipeline(dir, USER.email);
+
+    // Both libraries are present, so scoping is engaged (not a no-op path).
+    expect(anchors.some((a) => a.libraryId === "Supabase Auth")).toBe(true);
+    expect(anchors.some((a) => a.libraryId === "NextAuth/Auth.js")).toBe(true);
+
+    // Supabase covers all three of session-flow's kinds (route-guard via the
+    // library-agnostic anchor); NextAuth covers two. coverage() must pick
+    // Supabase, and the flow must still claim at full strength.
+    const session = findBySlug(findings, SESSION_SLUG);
+    expect(session!.confidence).toBe("direct");
+    expect(session!.claimed).toBe(true);
+    expect(session!.connection).toEqual({ kind: "same-function", edgeDistance: 0 });
+
+    // ...and every supporting anchor is Supabase's or library-agnostic —
+    // NextAuth's partial contribution never leaks into the claim.
+    expect(session!.anchors.every((a) => a.libraryId === undefined || a.libraryId === "Supabase Auth")).toBe(true);
+  });
+
+  it("an ALIASED named import still matches on the exported name", async () => {
+    const dir = fixtureAuthAliasedImport();
+    dirs.push(dir);
+
+    const { anchors } = await runPipeline(dir, USER.email);
+
+    // `import { signIn as login }` — the local name appears in no
+    // descriptor, so this only fires if the exported name is preferred.
+    const nextAuth = anchors.filter((a) => a.libraryId === "NextAuth/Auth.js");
+    expect(nextAuth.length).toBeGreaterThan(0);
+    expect(nextAuth.some((a) => a.kind === "authorize-redirect")).toBe(true);
+    expect(nextAuth.some((a) => a.kind === "session-issuance")).toBe(true);
+    expect(nextAuth.every((a) => a.reason.includes("signIn"))).toBe(true);
   });
 
   it("guard-shaped 401 with NO auth library -> guard anchors exist but manufacture no finding", async () => {
