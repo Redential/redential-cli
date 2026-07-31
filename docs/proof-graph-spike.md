@@ -139,11 +139,11 @@ redential explain payments/payment-webhook-flow [--repo <path>] [--author <email
 `src/proof-graph/infer.ts`) was explainable — the spike's one target shape at
 the time. As of H6 (see "Multi-provider expansion (H6)" below),
 `explain`'s gate is generalized: any slug present in
-`STRUCTURAL_PATTERNS` (`src/proof-graph/infer.ts`) is explainable, which is
-now all 6 structural patterns (Stripe, PayPal, Mercado Pago, Lemon Squeezy,
-Paddle, IAP/RevenueCat) — the pattern table itself is the source of truth
-for "which slugs does `explain` cover," not a single hardcoded name. Any
-other valid taxonomy slug (e.g. `payments/stripe`, a plain import-matching
+`STRUCTURAL_PATTERNS` (`src/proof-graph/infer.ts`) is explainable — the
+pattern table itself is the source of truth for "which slugs does `explain`
+cover," not a single hardcoded name. As of H6 that was six payment/IAP
+patterns; auth-flow patterns (#5, PR #54) add three more (`auth/session-flow`,
+`auth/oauth-flow`, `auth/jwt-refresh-flow`). Any other valid taxonomy slug (e.g. `payments/stripe`, a plain import-matching
 slug) gets a friendly "not covered by explain in the spike" message,
 dynamically listing every explainable slug from the table, and exits 1:
 generalizing `explain` to Tier 1's plain import matches is still out of
@@ -967,3 +967,72 @@ over two scanned bundles (the original Stripe-only fixture, plus one
 non-vacuous PayPal-shaped fixture for the new tier), keeping the existing
 Stripe/PayPal Tier-1 positive controls that prove each scan actually looked
 at real content rather than an empty repo.
+
+## Auth flow structural patterns (#5)
+
+A follow-up milestone after H6, adding three **per-flow** (not per-library)
+structural patterns for the taxonomy 1.8.0 slugs from issue #5:
+`auth/session-flow`, `auth/oauth-flow`, and `auth/jwt-refresh-flow`. NextAuth,
+Supabase Auth, and plain `jsonwebtoken` all feed the same three slugs via one
+shared `AUTH_LIBRARIES: AuthLibraryDescriptor[]` table in
+`src/proof-graph/anchors.ts` — the mirror of H6's `WEBHOOK_PROVIDERS` idea,
+but library-agnostic anchor **kinds** (credential-verification,
+session-issuance, authorize-redirect, etc.) instead of one slug per provider.
+`STRUCTURAL_PATTERNS` in `src/proof-graph/infer.ts` carries three new
+entries with `kind: "auth-flow"`, each with its own 3-kind triad and shared
+`AUTH_FLOW_PACKAGES` for the AMBIGUOUS gate.
+
+Same invariants as the rest of the spike: zero network, zero LLM, closed
+vocabulary, structural signal still out of the bundle until a separate schema
+decision (unchanged from H5/H6).
+
+### Same-library scoping
+
+Unlike webhook hits (which carry `providerSlug` and filter per pattern),
+auth anchor kinds are shared across libraries. Without extra state, a repo
+with three unrelated auth libraries wired into one import chain could satisfy
+a triad **no single library completes** — reproduced by
+`fixtureAuthMixedLibraries` before the fix; see
+`test/proof-graph/detection.test.ts`'s regression comment. The fix is
+`libraryId` on every auth `AnchorHit` and same-library constraints in
+`inferStructuralSkills`: a claimed finding must be completable inside one
+`AUTH_LIBRARIES` entry's anchors. Capping confidence at `inferred` would **not**
+have been sufficient — `buildFinding` still claims inferred findings when
+attributed.
+
+### Two honesty calls (documented for future contributors)
+
+1. **Decode is not verification.** `jwt.decode` (and similar) must not
+   satisfy `token-verification` or `credential-verification` — only calls that
+   actually verify signatures/counts count. Guard-shaped code without any auth
+   library import must not manufacture a flow (`fixtureAuthGuardWithoutAuthLibrary`,
+   `fixtureAuthJwtDecodeOnly`).
+2. **Rotation is required for `auth/jwt-refresh-flow`.** The third anchor in
+   that triad is `refresh-rotation`, not an optional fourth — a path that
+   verifies a token and 401s but never rotates cannot claim the slug (see
+   `fixtureAuthSessionDirect` / `refreshRotationHits` in `anchors.ts`). What
+   *is* optional is **`refresh-invalidation`** as a strengthener outside the
+   triad: when that kind is absent repo-wide, the pattern may still classify
+   from the full triad but `optionalAnchorKinds` caps confidence at `inferred`
+   (same mechanism as Mercado Pago's missing idempotency-guard — see H6).
+
+### `numberArgs` and route guards
+
+Auth route-guard hits match `res.status(401)` / `res.status(403)` via numeric
+literals on the call, not string parsing alone. `ParsedCall.numberArgs` in
+`parser-adapter.ts` exists for that contract (`test/proof-graph/parser-adapter.test.ts`).
+
+### Testing posture
+
+Auth fixtures follow the same tmpdir-git-repo style as payments: per-flow DIRECT
+/ INFERRED / AMBIGUOUS shapes, mixed-library negative, same-library positive
+overlap (`fixtureAuthScopedFlowWithOverlappingLibrary`), aliased imports
+(`fixtureAuthAliasedImport`), and the cross-library reproduction record above.
+Privacy boundaries extend the structural-slug-never-in-bundle assertion to
+include the three auth slugs alongside the payment slugs.
+
+### DSL threshold (unchanged)
+
+Nine hand-written `STRUCTURAL_PATTERNS` entries now exist (six from H6, three
+auth). The H5/H6 "3+ patterns" DSL discussion input still stands; nothing
+about a declarative DSL was decided in this milestone.

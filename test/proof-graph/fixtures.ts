@@ -1712,7 +1712,13 @@ export function fixtureAuthLoginFormOnly(): string {
 }
 
 /**
- * CROSS-LIBRARY CONTAMINATION probe (jpbelmo's review question on PR #54).
+ * CROSS-LIBRARY CONTAMINATION regression record (jpbelmo's review question on
+ * PR #54).
+ *
+ * Reproduced the pre-fix bug: three unrelated auth libraries in one import
+ * chain could satisfy a triad no single library completes — both
+ * auth/oauth-flow and auth/session-flow CLAIMED. Same-library scoping in
+ * inferStructuralSkills fixed it; detection.test.ts asserts the fix.
  *
  * Three files, three DIFFERENT auth libraries, wired into one import chain
  * (login -> callback -> middleware), where NO SINGLE LIBRARY completes any
@@ -1734,12 +1740,10 @@ export function fixtureAuthLoginFormOnly(): string {
  *   - plain JWT has credential-verification (and the guards) but no
  *               session-issuance -> session-flow incomplete.
  *
- * Yet auth AnchorHits carry NO library identity (unlike webhook hits, which
- * carry providerSlug), anchorsForPatternKind filters auth kinds by KIND
- * alone, and the triple search compares only path/enclosingFunction. So
- * nothing in the pipeline can tell these anchors came from three unrelated
- * auth systems, and both auth/oauth-flow and auth/session-flow connect
- * across the seam and CLAIM.
+ * Before libraryId scoping, auth hits carried no library identity (unlike
+ * webhook hits' providerSlug), kind-only filtering, and path/function triple
+ * search — so anchors from three systems could connect and CLAIM. After the
+ * fix, neither slug may claim here.
  *
  * Deliberately contains no Stripe/Prisma, so no payments pattern fires and
  * the assertion stays about auth alone.

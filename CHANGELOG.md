@@ -18,6 +18,13 @@ always bump at least minor; breaking schema changes bump major.
 - Add `auth/session-flow`, `auth/oauth-flow`, and `auth/jwt-refresh-flow`
   to the closed skill taxonomy (taxonomy 1.8.0, per the auth-flows spec
   in #5).
+- Structural detection for the three auth-flow slugs (issue #5, PR #54):
+  shared `AUTH_LIBRARIES` recognizers in the proof-graph spike, same-library
+  scoping so mixed stacks cannot claim a flow no single library completes,
+  `ParsedCall.numberArgs` for numeric HTTP status guards, and
+  `optionalAnchorKinds` on `auth/jwt-refresh-flow` (refresh-invalidation
+  strengthener capped at `inferred` when absent). `redential explain` covers
+  all three slugs via `STRUCTURAL_PATTERNS`.
 
 ### Changed
 - Show a tip in the TTY summary when no commits are cryptographically signed, with guidance for enabling commit signing.
