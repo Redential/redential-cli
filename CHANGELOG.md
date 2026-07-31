@@ -19,6 +19,7 @@ always bump at least minor; breaking schema changes bump major.
 ### Changed
 - Show a tip in the TTY summary when no commits are cryptographically signed, with guidance for enabling commit signing.
 - Document the global install conflict between `redential` and `@redential/cli`, with guidance for updating or switching between them.
+- Bump the checkout and setup-node GitHub Actions to their current v7 majors so CI uses Node 24-compatible action runtimes.
 
 ## [0.7.0] - 2026-07-28
 
