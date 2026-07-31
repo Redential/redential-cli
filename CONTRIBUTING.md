@@ -26,6 +26,24 @@ entries get agreed on before code exists. PRs in these areas without a
 prior issue get closed regardless of code quality — sorry, the trust
 contract comes first.
 
+## Docs first (CLI contract)
+
+The privacy rule guards **what leaves the machine**. This section guards
+**what operators and CI can rely on**: exit codes, flags, stdout vs stderr,
+and any behavior a script might parse.
+
+- **Document before you change.** A PR that changes user-visible CLI
+  semantics must update the relevant `docs/` page (or add one), link it from
+  README's [Docs](README.md#docs) list when it's a new top-level page, and
+  add a `CHANGELOG.md` line under `[Unreleased]` in the **same PR** as the
+  code. Don't merge behavior without the doc.
+- **Docs-only is fine.** Issues that only ask to describe current behavior
+  (for example exit-code tables verified against `src/program.ts`) ship as
+  documentation PRs with no code changes.
+- **Cross-link, don't scatter.** One canonical page per contract (see
+  [docs/exit-codes.md](docs/exit-codes.md) for process outcome); other docs
+  link to it instead of duplicating tables.
+
 Everything else (bug fixes, performance, DX, docs, tests, detection
 signatures): PRs welcome directly.
 
@@ -131,6 +149,8 @@ before opening the PR.
 - Any change to WHAT data leaves the machine requires, in order: a prior
   discussion issue, a schema version bump, and an entry in
   `docs/schema.md` and `CHANGELOG.md` — see "The privacy rule" above.
+- Any change to CLI scripting semantics (exit codes, flags, output
+  channels) follows "Docs first (CLI contract)" above.
 - English only, in code comments and in docs — this is an international,
   public repo.
 - Tests use vitest. Fixtures are git repos created programmatically in a
