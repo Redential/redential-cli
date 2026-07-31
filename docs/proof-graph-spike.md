@@ -983,8 +983,12 @@ entries with `kind: "auth-flow"`, each with its own 3-kind triad and shared
 `AUTH_FLOW_PACKAGES` for the AMBIGUOUS gate.
 
 Same invariants as the rest of the spike: zero network, zero LLM, closed
-vocabulary, structural signal still out of the bundle until a separate schema
-decision (unchanged from H5/H6).
+vocabulary. The bundle contract is the one H7 established: a CLAIMED,
+attributed structural finding's slug enters `detected_skills` with
+`evidence: "structural"` and its confidence; ambiguous and unattributed
+findings still never travel. The auth patterns inherit that H7 contract
+exactly as the payments patterns do (see
+[schema-change-h7.md](schema-change-h7.md)).
 
 ### Same-library scoping
 
@@ -1028,8 +1032,9 @@ Auth fixtures follow the same tmpdir-git-repo style as payments: per-flow DIRECT
 / INFERRED / AMBIGUOUS shapes, mixed-library negative, same-library positive
 overlap (`fixtureAuthScopedFlowWithOverlappingLibrary`), aliased imports
 (`fixtureAuthAliasedImport`), and the cross-library reproduction record above.
-Privacy boundaries extend the structural-slug-never-in-bundle assertion to
-include the three auth slugs alongside the payment slugs.
+Privacy boundaries extend the hand-verified guard list so the three auth
+slugs, like the payment slugs, can never appear in a bundle they don't
+belong to (unrelated repos, unclaimed findings).
 
 ### DSL threshold (unchanged)
 
