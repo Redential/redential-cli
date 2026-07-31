@@ -9,7 +9,6 @@ always bump at least minor; breaking schema changes bump major.
 
 ### Added
 - Document the CLI exit-code contract for scripting and CI (`docs/exit-codes.md`, #29).
-- Add a "Docs first (CLI contract)" section to `CONTRIBUTING.md`.
 - `redential --version` (and `-V`) prints the CLI version. Program
   construction moved into a testable `createProgram()` to cover it.
 - Map the `zod` npm import to `validation/zod` (Tier 1).
