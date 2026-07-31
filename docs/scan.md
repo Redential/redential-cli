@@ -49,7 +49,8 @@ skipped.
    suggesting the GitHub App instead. Piped/non-TTY output — and `--json`,
    even on a real TTY — is unaffected: the notice still prints (non-blocking,
    to stderr), but no interactive question is ever asked, the same "warn,
-   never block" behavior every prior release had.
+   never block" behavior every prior release had. For how that choice maps to
+   process exit codes in pipelines, see [exit-codes.md](exit-codes.md).
 2. **Enumerate authors.** `git log` is read locally (`git show`/`git diff`
    never leave the machine) to list distinct author emails and their commit
    counts.
@@ -271,7 +272,8 @@ This only happens on a real TTY with no `--json`. `scan | jq` (or any
 redirected/piped stdout) prints **only** the raw JSON, byte-identical to
 before this summary existed — `--json` forces that same JSON-only behavior
 even on a terminal, for scripts that run interactively but still want
-machine output.
+machine output. Exit codes for piped and `--json` runs are documented in
+[exit-codes.md](exit-codes.md).
 
 ## Huge repositories and `--since`
 

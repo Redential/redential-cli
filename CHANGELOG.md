@@ -8,6 +8,9 @@ always bump at least minor; breaking schema changes bump major.
 ## [Unreleased]
 
 ### Added
+- Document the CLI exit-code contract for scripting and CI (`docs/exit-codes.md`, #29).
+- `redential --version` (and `-V`) prints the CLI version. Program
+  construction moved into a testable `createProgram()` to cover it.
 - Map the `zod` npm import to `validation/zod` (Tier 1).
 - Add Tier 2 signature for Storybook (`frontend/storybook`): detects
   `.storybook/main.*` and `.storybook/preview.*` config files,
@@ -19,6 +22,7 @@ always bump at least minor; breaking schema changes bump major.
 ### Changed
 - Show a tip in the TTY summary when no commits are cryptographically signed, with guidance for enabling commit signing.
 - Document the global install conflict between `redential` and `@redential/cli`, with guidance for updating or switching between them.
+- Bump the checkout and setup-node GitHub Actions to their current v7 majors so CI uses Node 24-compatible action runtimes.
 
 ## [0.7.0] - 2026-07-28
 
