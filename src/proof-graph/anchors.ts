@@ -88,6 +88,19 @@ export interface AnchorHit {
   // never set this either — there is only ever one IAP pattern
   // (payments/iap-subscription-flow), so there is nothing to disambiguate.
   providerSlug?: string;
+  // OPTIONAL, set ONLY on auth anchors produced from an AUTH_LIBRARIES
+  // descriptor (authLibraryHits, and refreshRotationHits which derives from
+  // them). The auth analogue of providerSlug, and it exists for the same
+  // reason: without it, nothing downstream can tell that a triad was
+  // assembled from anchors belonging to DIFFERENT auth libraries.
+  //
+  // Deliberately unset on the guard anchors (route-guard / guard-response)
+  // and on refresh-invalidation: those are framework-level shapes
+  // (`res.status(401)`, `redirect(...)`, an ORM delete), not the property of
+  // any auth library, so they are shared across every library scope. Setting
+  // a libraryId on them would wrongly prevent a real single-library flow
+  // from finding its own guard.
+  libraryId?: string;
 }
 
 // -----------------------------------------------------------------------
@@ -322,6 +335,28 @@ function importSpecifierForLocalName(file: ParsedFile, localName: string): strin
   for (const imp of file.imports) {
     for (const binding of imp.bindings) {
       if (binding.local === localName) return imp.specifier;
+    }
+  }
+  return null;
+}
+
+/**
+ * The EXPORTED name a local binding came from — `import { signIn as login }`
+ * -> "signIn" for local "login"; a plain `import { signIn }` -> "signIn".
+ * Null when the local name isn't an import binding at all.
+ *
+ * Needed by authLibraryHits for BARE-FUNCTION anchors (see its own comment):
+ * resolveReceiver returns the receiver chain with its root REMOVED, so a call
+ * like `signIn(...)` — where the imported binding IS the whole callee —
+ * resolves to an EMPTY chain and can never match a suffix. Recovering the
+ * name requires going back to the import, and the exported name is the right
+ * one to match against a descriptor table that names API functions, not
+ * whatever local alias a file happened to choose.
+ */
+function importedNameForLocalName(file: ParsedFile, localName: string): string | null {
+  for (const imp of file.imports) {
+    for (const binding of imp.bindings) {
+      if (binding.local === localName) return binding.imported;
     }
   }
   return null;
@@ -809,7 +844,12 @@ export interface AuthLibraryDescriptor {
 export const AUTH_LIBRARIES: AuthLibraryDescriptor[] = [
   {
     name: "NextAuth/Auth.js",
-    packages: ["next-auth", "next-auth/next", "next-auth/jwt", "@auth/core"],
+    // "next-auth/react" is where `signIn`/`signOut` actually live in v4 —
+    // the single most common NextAuth import in real code. Omitting it made
+    // the sessionIssuance/authorizeRedirect entries below unreachable for
+    // the idiomatic client shape; found while building
+    // fixtureAuthMixedLibraries.
+    packages: ["next-auth", "next-auth/react", "next-auth/next", "next-auth/jwt", "@auth/core"],
     // `getServerSession(...)` / `getToken(...)` both validate an existing
     // session or JWT server-side — real verification. Auth.js v5's `auth()`
     // helper is deliberately NOT listed: the idiomatic shape is
@@ -958,6 +998,27 @@ function authLibraryHits(path: string, file: ParsedFile): AnchorHit[] {
     const library = AUTH_LIBRARIES.find((l) => l.packages.includes(resolved.specifier));
     if (!library) continue;
 
+    // BARE-FUNCTION anchors. Unlike every payments descriptor — all of which
+    // match a receiver-shaped call (`stripe.webhooks.constructEvent`,
+    // `paddle.webhooks.unmarshal`) — several auth anchors ARE the imported
+    // binding itself: `signIn(...)`, `getServerSession(...)`, `getToken(...)`,
+    // `jwtVerify(...)`. resolveReceiver strips the chain ROOT (it returns the
+    // tail, since only the specifier matters for what the root resolved to),
+    // so those calls arrive here with an EMPTY chain and can never match a
+    // 1-segment suffix — matchesChainSuffix treats a chain shorter than the
+    // suffix as an automatic miss.
+    //
+    // Recover the name from the import instead, preferring the EXPORTED name
+    // so `import { signIn as login }` still matches the descriptor's "signIn"
+    // rather than the file's private alias. Found by
+    // fixtureAuthMixedLibraries, which produced no NextAuth anchor at all
+    // until this was fixed — the whole NextAuth descriptor was dead code, as
+    // were jose's `jwtVerify` entries.
+    const effectiveChain =
+      resolved.chain.length > 0
+        ? resolved.chain
+        : [importedNameForLocalName(file, call.chain[0]) ?? call.chain[0]];
+
     // Ordered so `reason` names the kind that fired. A single call MAY
     // produce several kinds (NextAuth's signIn is both authorize-redirect
     // and session-issuance; Supabase's auth.getUser is both
@@ -972,7 +1033,7 @@ function authLibraryHits(path: string, file: ParsedFile): AnchorHit[] {
     ];
 
     for (const [kind, suffixes] of table) {
-      const matched = suffixes?.find((suffix) => matchesChainSuffix(resolved.chain, suffix));
+      const matched = suffixes?.find((suffix) => matchesChainSuffix(effectiveChain, suffix));
       if (!matched) continue;
       hits.push({
         kind,
@@ -980,6 +1041,7 @@ function authLibraryHits(path: string, file: ParsedFile): AnchorHit[] {
         enclosingFunction: call.enclosingFunction,
         line: call.line,
         reason: `${library.name}: ${resolved.specifier}.${matched.join(".")} (receiver resolved to import "${resolved.specifier}")`,
+        libraryId: library.name,
       });
     }
   }
@@ -1036,6 +1098,9 @@ function refreshRotationHits(path: string, file: ParsedFile, libraryHits: Anchor
       path,
       enclosingFunction: h.enclosingFunction,
       line: h.line,
+      // Inherits the issuing call's library — a rotation belongs to whichever
+      // library minted the token.
+      libraryId: h.libraryId,
       reason: `token issuance co-located with a token-verification call in the same scope, in a file carrying a refresh marker literal (${h.reason})`,
     }));
 }

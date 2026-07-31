@@ -61,6 +61,7 @@ import {
   fixtureAuthJwtDecodeOnly,
   fixtureAuthLoginFormOnly,
   fixtureAuthGuardWithoutAuthLibrary,
+  fixtureAuthMixedLibraries,
 } from "./fixtures.js";
 
 const adapter = new TscParserAdapter();
@@ -808,6 +809,48 @@ describe("auth flows — negative fixtures (#28 discipline, issue #5)", () => {
     expect(findBySlug(findings, SESSION_SLUG)).toBeUndefined();
     expect(findBySlug(findings, OAUTH_SLUG)).toBeUndefined();
     expect(findBySlug(findings, JWT_REFRESH_SLUG)).toBeUndefined();
+  });
+
+  // -----------------------------------------------------------------------
+  // REGRESSION GUARD for jpbelmo's review question on PR #54: can an auth
+  // triad be satisfied ACROSS libraries, claiming a flow no single library
+  // completes? It could. This fixture reproduced it end-to-end — both
+  // auth/oauth-flow and auth/session-flow claimed — before same-library
+  // scoping landed in inferStructuralSkills.
+  //
+  // Worth recording why "cap it at inferred" was NOT the fix: buildFinding
+  // sets `claimed = confidence !== "ambiguous" && attributed`, so an
+  // inferred finding still claims. Lowering confidence would have relabelled
+  // the false claim, not removed it.
+  // -----------------------------------------------------------------------
+  it("three unrelated auth libraries do NOT combine into a claimed flow", async () => {
+    const dir = fixtureAuthMixedLibraries();
+    dirs.push(dir);
+
+    const { anchors, findings } = await runPipeline(dir, USER.email);
+
+    // Each library contributes only its own part, and the reason strings are
+    // the only place library identity survives at all.
+    const reasons = anchors.map((a) => a.reason).join("\n");
+    expect(reasons).toContain("NextAuth/Auth.js");
+    expect(reasons).toContain("Supabase Auth");
+    expect(reasons).toContain("plain JWT");
+
+    // No single library completes either triad (see the fixture's own
+    // comment for the per-library breakdown), so neither may claim.
+    expect(findBySlug(findings, OAUTH_SLUG)!.claimed).toBe(false);
+    expect(findBySlug(findings, SESSION_SLUG)!.claimed).toBe(false);
+
+    // Anchors are still FOUND — this is a classification fix, not a
+    // recognition one. Each library's own contribution is present and
+    // correctly attributed to it; they simply no longer combine.
+    const byLibrary = (id: string) => anchors.filter((a) => a.libraryId === id);
+    expect(byLibrary("NextAuth/Auth.js").length).toBeGreaterThan(0);
+    expect(byLibrary("Supabase Auth").length).toBeGreaterThan(0);
+
+    // Guard anchors carry no library and stay shared across scopes, so a
+    // real single-library flow can still find its own guard.
+    expect(anchors.some((a) => a.kind === "guard-response" && a.libraryId === undefined)).toBe(true);
   });
 
   it("guard-shaped 401 with NO auth library -> guard anchors exist but manufacture no finding", async () => {

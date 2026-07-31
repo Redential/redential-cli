@@ -917,9 +917,55 @@ export function inferStructuralSkills(
 
   for (const pattern of STRUCTURAL_PATTERNS) {
     const [kindA, kindB, kindC] = pattern.anchorKinds;
-    const anchorsA = anchorsForPatternKind(anchors, kindA, pattern, sharedKindCache);
-    const anchorsB = anchorsForPatternKind(anchors, kindB, pattern, sharedKindCache);
-    const anchorsC = anchorsForPatternKind(anchors, kindC, pattern, sharedKindCache);
+    let anchorsA = anchorsForPatternKind(anchors, kindA, pattern, sharedKindCache);
+    let anchorsB = anchorsForPatternKind(anchors, kindB, pattern, sharedKindCache);
+    let anchorsC = anchorsForPatternKind(anchors, kindC, pattern, sharedKindCache);
+
+    // ── SAME-LIBRARY SCOPING for auth patterns ────────────────────────────
+    // Payments slugs are per-PROVIDER, so a webhook-verification hit carries
+    // providerSlug and anchorsForPatternKind filters by it. Auth slugs are
+    // per-FLOW, with several libraries feeding the same slug — which left a
+    // hole: a triad could be assembled from anchors belonging to DIFFERENT
+    // auth libraries and claim a flow no single library completes.
+    // Reproduced end-to-end by fixtureAuthMixedLibraries (NextAuth signIn +
+    // Supabase exchangeCodeForSession + jwt.verify, all in one import chain,
+    // producing a CLAIMED auth/oauth-flow and auth/session-flow).
+    //
+    // Fix: scope this pattern's library-bearing anchors to ONE library.
+    // Library-agnostic anchors (guards, refresh-invalidation — libraryId
+    // unset) stay visible to every scope, since `res.status(401)` belongs to
+    // no auth library and a real single-library flow must still find it.
+    //
+    // The library chosen is the one covering the most of this pattern's
+    // required kinds, ties broken by AUTH_LIBRARIES order so the result is
+    // deterministic. KNOWN, ACCEPTED LIMIT: this picks a scope by
+    // kind-coverage BEFORE running the connectivity search, so if the
+    // best-covered library's anchors turn out not to connect while a
+    // lesser-covered one's would have, this under-claims rather than
+    // searching every scope and taking the strongest. Under-claiming is this
+    // module's stated posture, and a full per-scope search can replace this
+    // selection without touching anything else if it proves too strict.
+    //
+    // NOTE this necessarily stops a genuinely MIXED stack (e.g. NextAuth for
+    // OAuth, Supabase for session persistence) from claiming. That is the
+    // intended trade: capping such a finding at `inferred` instead would NOT
+    // have helped, because buildFinding sets
+    // `claimed = confidence !== "ambiguous" && attributed` — an inferred
+    // finding still claims. Only scoping (or degrading to ambiguous)
+    // actually prevents the false claim.
+    if (pattern.kind === "auth-flow") {
+      const groups = [anchorsA, anchorsB, anchorsC];
+      const libraryIds = [...new Set(groups.flat().map((a) => a.libraryId).filter((id): id is string => !!id))];
+      if (libraryIds.length > 1) {
+        const coverage = (id: string): number =>
+          groups.filter((g) => g.some((a) => a.libraryId === id || a.libraryId === undefined)).length;
+        let bestId = libraryIds[0];
+        for (const id of libraryIds) if (coverage(id) > coverage(bestId)) bestId = id;
+        const inScope = (g: AnchorHit[]): AnchorHit[] =>
+          g.filter((a) => a.libraryId === undefined || a.libraryId === bestId);
+        [anchorsA, anchorsB, anchorsC] = [inScope(anchorsA), inScope(anchorsB), inScope(anchorsC)];
+      }
+    }
     // This pattern's OWN anchors only — used for every AMBIGUOUS finding
     // below (see this function's own doc comment, step 3).
     const ownAnchors = [...anchorsA, ...anchorsB, ...anchorsC];

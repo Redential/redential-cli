@@ -1712,6 +1712,81 @@ export function fixtureAuthLoginFormOnly(): string {
 }
 
 /**
+ * CROSS-LIBRARY CONTAMINATION probe (jpbelmo's review question on PR #54).
+ *
+ * Three files, three DIFFERENT auth libraries, wired into one import chain
+ * (login -> callback -> middleware), where NO SINGLE LIBRARY completes any
+ * triad on its own:
+ *
+ *   src/login.ts       next-auth/react        signIn(...)
+ *                        -> authorize-redirect + session-issuance
+ *   src/callback.ts    @supabase/supabase-js  exchangeCodeForSession(...)
+ *                        -> code-exchange
+ *   src/middleware.ts  jsonwebtoken           jwt.verify(...) + res.status(401)
+ *                        -> credential-verification + token-verification,
+ *                           plus the (library-agnostic) guard anchors
+ *
+ * Per library, every triad is INCOMPLETE:
+ *   - NextAuth  has authorize-redirect + session-issuance but no code-exchange
+ *               -> oauth-flow incomplete; and no credential-verification
+ *               -> session-flow incomplete.
+ *   - Supabase  has code-exchange only -> both incomplete.
+ *   - plain JWT has credential-verification (and the guards) but no
+ *               session-issuance -> session-flow incomplete.
+ *
+ * Yet auth AnchorHits carry NO library identity (unlike webhook hits, which
+ * carry providerSlug), anchorsForPatternKind filters auth kinds by KIND
+ * alone, and the triple search compares only path/enclosingFunction. So
+ * nothing in the pipeline can tell these anchors came from three unrelated
+ * auth systems, and both auth/oauth-flow and auth/session-flow connect
+ * across the seam and CLAIM.
+ *
+ * Deliberately contains no Stripe/Prisma, so no payments pattern fires and
+ * the assertion stays about auth alone.
+ */
+export function fixtureAuthMixedLibraries(): string {
+  const dir = createRepo();
+  commit(dir, {
+    message: "add mixed-stack auth: nextauth login, supabase callback, jwt middleware",
+    authorName: USER.name,
+    authorEmail: USER.email,
+    files: {
+      "src/login.ts": [
+        'import { signIn } from "next-auth/react";',
+        'import { handleCallback } from "./callback.js";',
+        "",
+        "export async function startLogin() {",
+        '  await signIn("github");',
+        "  return handleCallback;",
+        "}",
+        "",
+      ].join("\n"),
+      "src/callback.ts": [
+        ...supabaseClientLines(),
+        'import { requireValidToken } from "./middleware.js";',
+        "",
+        "export async function handleCallback(code) {",
+        "  const { data } = await supabase.auth.exchangeCodeForSession(code);",
+        "  return requireValidToken(data);",
+        "}",
+        "",
+      ].join("\n"),
+      "src/middleware.ts": [
+        'import jwt from "jsonwebtoken";',
+        "",
+        "export function requireValidToken(req, res) {",
+        `  const payload = jwt.verify(req.headers["authorization"], "${FAKE_JWT_SECRET}");`,
+        '  if (!payload) return res.status(401).send("unauthorized");',
+        "  return payload;",
+        "}",
+        "",
+      ].join("\n"),
+    },
+  });
+  return dir;
+}
+
+/**
  * Guard-shaped code with NO auth library anywhere: a plain rate-limit
  * middleware that returns 401. authGuardHits is deliberately ungated on any
  * auth import (same posture as db-write), so this DOES produce route-guard
