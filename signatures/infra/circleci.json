@@ -1,0 +1,16 @@
+{
+  "slug": "infra/circleci",
+  "importPatterns": [],
+  "apiPatterns": [],
+  "configFilePatterns": [
+    "(^|/)\\.circleci/config\\.yml$"
+  ],
+  "fixtures": {
+    "positive": [
+      { "path": ".circleci/config.yml", "diff": "version: 2.1\njobs:\n  test:\n    docker:\n      - image: cimg/node:22.0\n    steps:\n      - checkout\n      - run: npm test" }
+    ],
+    "negative": [
+      { "path": "README.md", "diff": "CircleCI looks for its configuration at .circleci/config.yml." }
+    ]
+  }
+}
