@@ -8,6 +8,7 @@ always bump at least minor; breaking schema changes bump major.
 ## [Unreleased]
 
 ### Added
+- Add `infra/circleci` to the closed skill taxonomy (#24).
 - Document the CLI exit-code contract for scripting and CI (`docs/exit-codes.md`, #29).
 - `redential --version` (and `-V`) prints the CLI version. Program
   construction moved into a testable `createProgram()` to cover it.
