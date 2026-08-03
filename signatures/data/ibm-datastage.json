@@ -1,0 +1,26 @@
+{
+  "slug": "data/ibm-datastage",
+  "importPatterns": [],
+  "apiPatterns": [],
+  "configFilePatterns": [
+    "\\.dsx$"
+  ],
+  "fixtures": {
+    "positive": [
+      {
+        "path": "jobs/etl_customer_load.dsx",
+        "diff": "BEGIN DSJOB\nJOB NAME \"etl_customer_load\"\nCATEGORY \"jobs\"\nBEGIN DSRECORD\nRECORD TYPE STAGE\nEND DSRECORD\nEND DSJOB\n"
+      }
+    ],
+    "negative": [
+      {
+        "path": "README.md",
+        "diff": "Legacy ETL jobs were originally authored in IBM DataStage and exported as .dsx files, but this repository only contains the migrated Python replacements."
+      },
+      {
+        "path": "docs/datastage-migration.md",
+        "diff": "The old jobs/etl_customer_load.dsx export is kept in cold storage for reference and is not part of this codebase anymore."
+      }
+    ]
+  }
+}

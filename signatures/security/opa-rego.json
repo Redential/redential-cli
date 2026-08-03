@@ -1,0 +1,26 @@
+{
+  "slug": "security/opa-rego",
+  "importPatterns": [],
+  "apiPatterns": [],
+  "configFilePatterns": [
+    "\\.rego$"
+  ],
+  "fixtures": {
+    "positive": [
+      {
+        "path": "policies/authz.rego",
+        "diff": "package authz\n\ndefault allow = false\n\nallow {\n  input.method == \"GET\"\n  input.path == [\"public\"]\n}\n"
+      }
+    ],
+    "negative": [
+      {
+        "path": "README.md",
+        "diff": "Authorization decisions are enforced with OPA: policies are written in Rego and live under policies/ as .rego files."
+      },
+      {
+        "path": "docs/opa-setup.md",
+        "diff": "To add a new policy, follow the same shape as policies/authz.rego and register it with conftest before merging."
+      }
+    ]
+  }
+}

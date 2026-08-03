@@ -1,0 +1,26 @@
+{
+  "slug": "data/jupyter-notebooks",
+  "importPatterns": [],
+  "apiPatterns": [],
+  "configFilePatterns": [
+    "\\.ipynb$"
+  ],
+  "fixtures": {
+    "positive": [
+      {
+        "path": "notebooks/analysis.ipynb",
+        "diff": "{\n \"cells\": [\n  {\n   \"cell_type\": \"code\",\n   \"source\": [\"import pandas as pd\\n\", \"df = pd.read_csv(\\\"data.csv\\\")\"],\n   \"outputs\": []\n  }\n ],\n \"metadata\": {\n  \"kernelspec\": { \"name\": \"python3\", \"display_name\": \"Python 3\" }\n },\n \"nbformat\": 4,\n \"nbformat_minor\": 5\n}\n"
+      }
+    ],
+    "negative": [
+      {
+        "path": "README.md",
+        "diff": "Our exploratory analysis lives in Jupyter notebooks under notebooks/, tracked as .ipynb files and re-run before every release."
+      },
+      {
+        "path": "docs/notebook-export.md",
+        "diff": "This guide explains how to export a notebook to notebooks/report.ipynb.pdf for sharing with stakeholders who don't have Jupyter installed."
+      }
+    ]
+  }
+}

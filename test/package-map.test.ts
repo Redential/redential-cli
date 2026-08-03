@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { loadPackageMap, loadTaxonomySlugs } from "../src/skill-detect.js";
+import { extractImportedPackages } from "../src/import-detect.js";
 
 const PACKAGE_MAP_PATH = fileURLToPath(new URL("../signatures/package-map.json", import.meta.url));
 const TAXONOMY_PATH = fileURLToPath(new URL("../taxonomy.json", import.meta.url));
@@ -78,5 +79,26 @@ describe("signatures/package-map.json", () => {
       seen.add(k);
     }
     expect([...dupes]).toEqual([]);
+  });
+
+  it("db/bigquery wins over infra/gcp-sdk for a bigquery-only fixture (spec precedence)", () => {
+    const map = loadPackageMap(PACKAGE_MAP_PATH);
+    const packageJsonDiff =
+      '"dependencies": {\n' + '  "@google-cloud/bigquery": "^7.9.0"\n' + "}\n";
+    const pkgs = extractImportedPackages(packageJsonDiff, "package.json");
+    expect(pkgs).toContain("@google-cloud/bigquery");
+    const slugs = pkgs.map((p) => map.get(p)).filter((s): s is string => !!s);
+    expect(slugs).toContain("db/bigquery");
+    expect(slugs).not.toContain("infra/gcp-sdk");
+    // The map itself must never list a bigquery package under gcp-sdk, and
+    // never map @google-cloud/bigquery to anything other than db/bigquery —
+    // the data-side half of the precedence guarantee (the fixture above is
+    // the behavioral half).
+    expect(map.get("@google-cloud/bigquery")).toBe("db/bigquery");
+    for (const [pkg, slug] of map) {
+      if (slug === "infra/gcp-sdk") {
+        expect(pkg.toLowerCase()).not.toContain("bigquery");
+      }
+    }
   });
 });

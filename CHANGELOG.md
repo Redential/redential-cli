@@ -21,6 +21,27 @@ always bump at least minor; breaking schema changes bump major.
   this taxonomy didn't reach before: data science / ML, data engineering,
   cloud security, and enterprise data platforms. Detection for these
   slugs lands in a follow-up PR.
+- Detection for taxonomy 1.10.0 (completes its coverage): 54 Tier 1
+  `signatures/package-map.json` entries across the new `ml/`/`security/`
+  slugs and the 26 others (PyTorch, TensorFlow, scikit-learn, XGBoost,
+  LightGBM, statsmodels, NumPy, SciPy, Polars, Matplotlib, seaborn,
+  Snowflake, dbt, Apache Airflow, Databricks, Apache Flink, Apache Hadoop,
+  SQL Server, Oracle Database, BigQuery, Azure SDK, Google Cloud SDK,
+  MQTT, AWS Bedrock, CrewAI, SAML, HashiCorp Vault) plus `pgvector` ->
+  `ai/vector-search`; and 7 new Tier 2 signatures with positive and
+  genuine near-miss fixtures: `data/jupyter-notebooks` (`.ipynb`),
+  `data/azure-data-factory` (`Microsoft.DataFactory`),
+  `data/ibm-datastage` (`.dsx`), `infra/helm` (`Chart.yaml`),
+  `infra/cloudformation` (`AWSTemplateFormatVersion`), `infra/puppet`
+  (`manifests/*.pp` or `Puppetfile` — never a bare `.pp`, which collides
+  with Pascal source), and `security/opa-rego` (`.rego`). `db/bigquery`
+  is exact-key-only in the map (never listed under `infra/gcp-sdk`), so a
+  BigQuery-only import is never double-tagged as generic GCP SDK usage —
+  covered by a dedicated precedence test. Documented miss: Python
+  `google-cloud-*` imports collapse to the ambiguous root `google` and
+  are deliberately unmapped, so `infra/gcp-sdk` and `db/bigquery` are
+  JS-only in Tier 1 for now (see docs/signatures.md, "Python namespace
+  collapse").
 
 ## [0.8.0] - 2026-08-02
 

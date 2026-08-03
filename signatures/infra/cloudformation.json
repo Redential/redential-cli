@@ -1,0 +1,26 @@
+{
+  "slug": "infra/cloudformation",
+  "importPatterns": [],
+  "apiPatterns": [
+    "AWSTemplateFormatVersion"
+  ],
+  "configFilePatterns": [],
+  "fixtures": {
+    "positive": [
+      {
+        "path": "infra/stack.yaml",
+        "diff": "AWSTemplateFormatVersion: '2010-09-09'\nDescription: App storage stack\nResources:\n  AppBucket:\n    Type: AWS::S3::Bucket\n"
+      }
+    ],
+    "negative": [
+      {
+        "path": "README.md",
+        "diff": "We provision infrastructure with AWS CloudFormation templates stored under infra/, one stack per environment."
+      },
+      {
+        "path": "infra/notes.ts",
+        "diff": "// Every CloudFormation template must start with an AWSTemplateFormatVersion line — see AWS docs for the exact value.\nexport const CFN_DOCS_URL = \"https://example.com/cfn\";\n"
+      }
+    ]
+  }
+}

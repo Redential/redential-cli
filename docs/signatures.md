@@ -108,6 +108,18 @@ never appears in a real `import` statement is a dead key — the same
 class the map's own `$comment` already warns about for a PyPI
 distribution name that differs from its Python import name.
 
+**Python namespace collapse (documented miss).** Unlike Java/Kotlin/C#,
+the Python extractor keeps only the import's first dot-segment, so
+`google.cloud.bigquery`, `google.cloud.storage`, `google.protobuf` and
+`google.auth` all collapse to the ambiguous root `google`. A `google`
+map key would mis-credit protobuf/auth users and make the
+bigquery-vs-gcp-sdk precedence impossible, so Python `google-cloud-*`
+imports are deliberately unmapped: `infra/gcp-sdk` and `db/bigquery` are
+JS-only in Tier 1 for now. (The collapsed `azure` root is safe to map —
+the PyPI `azure` namespace is Microsoft-owned.) Closing this honestly
+would need Java-style multi-depth candidates for Python, a
+`src/import-detect.ts` mechanism change with its own review.
+
 **C#.** `using [global] [static] [Alias =] a.b.C;`, same multi-depth
 candidate emission as Java/Kotlin (`System.Text.Json` needs 3 segments to
 stay distinct from `System.Linq`/`System.Net`; `Microsoft.AspNetCore.Mvc`

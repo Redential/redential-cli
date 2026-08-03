@@ -1,0 +1,31 @@
+{
+  "slug": "infra/puppet",
+  "importPatterns": [],
+  "apiPatterns": [],
+  "configFilePatterns": [
+    "(^|/)manifests/.*\\.pp$",
+    "(^|/)Puppetfile$"
+  ],
+  "fixtures": {
+    "positive": [
+      {
+        "path": "manifests/site.pp",
+        "diff": "class site {\n  package { 'nginx':\n    ensure => installed,\n  }\n\n  service { 'nginx':\n    ensure => running,\n    enable => true,\n  }\n}\n"
+      },
+      {
+        "path": "Puppetfile",
+        "diff": "forge 'https://forge.puppet.com'\n\nmod 'puppetlabs-stdlib', '9.0.0'\nmod 'puppetlabs-apt', '9.2.0'\n"
+      }
+    ],
+    "negative": [
+      {
+        "path": "README.md",
+        "diff": "Server configuration is managed with Puppet: manifests/site.pp declares the desired package/service state, and the Puppetfile pins module versions."
+      },
+      {
+        "path": "src/Utils.pp",
+        "diff": "unit Utils;\n\ninterface\n\nfunction DoubleValue(x: Integer): Integer;\n\nimplementation\n\nfunction DoubleValue(x: Integer): Integer;\nbegin\n  Result := x * 2;\nend;\n\nend.\n"
+      }
+    ]
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "slug": "infra/helm",
+  "importPatterns": [],
+  "apiPatterns": [],
+  "configFilePatterns": [
+    "(^|/)Chart\\.yaml$"
+  ],
+  "fixtures": {
+    "positive": [
+      {
+        "path": "charts/myapp/Chart.yaml",
+        "diff": "apiVersion: v2\nname: myapp\ndescription: A Helm chart for myapp\nversion: 0.1.0\nappVersion: \"1.0.0\"\n"
+      }
+    ],
+    "negative": [
+      {
+        "path": "README.md",
+        "diff": "Deployment is packaged as a Helm chart; its Chart.yaml declares the chart name, version, and dependencies."
+      },
+      {
+        "path": "docs/chart-yaml-guide.md",
+        "diff": "This page walks through the fields expected in a Helm chart's Chart.yaml file, using charts/myapp/Chart.yaml as the running example."
+      }
+    ]
+  }
+}

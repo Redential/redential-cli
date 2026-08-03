@@ -1,0 +1,26 @@
+{
+  "slug": "data/azure-data-factory",
+  "importPatterns": [],
+  "apiPatterns": [
+    "Microsoft\\.DataFactory"
+  ],
+  "configFilePatterns": [],
+  "fixtures": {
+    "positive": [
+      {
+        "path": "infra/adf/pipeline-ingest-sales.json",
+        "diff": "{\n  \"name\": \"pipeline-ingest-sales\",\n  \"properties\": {\n    \"activities\": [\n      {\n        \"name\": \"CopySalesData\",\n        \"type\": \"Copy\"\n      }\n    ]\n  },\n  \"type\": \"Microsoft.DataFactory/factories/pipelines\"\n}\n"
+      }
+    ],
+    "negative": [
+      {
+        "path": "README.md",
+        "diff": "We orchestrate ETL with Azure Data Factory pipelines, though this repo only holds the application code, not the ADF pipeline definitions themselves."
+      },
+      {
+        "path": "infra/adf/notes.ts",
+        "diff": "// Reminder: every ADF pipeline resource declares \"type\": \"Microsoft.DataFactory/factories/pipelines\" — see the ARM template docs.\nexport const ADF_DOCS_URL = \"https://example.com/adf\";\n"
+      }
+    ]
+  }
+}
