@@ -7,6 +7,21 @@ always bump at least minor; breaking schema changes bump major.
 
 ## [Unreleased]
 
+### Added
+- Add 34 slugs to the closed skill taxonomy (1.10.0), spanning two new
+  categories, `ml/` (6 slugs: PyTorch, TensorFlow, scikit-learn, XGBoost,
+  LightGBM, statsmodels) and `security/` (2 slugs: HashiCorp Vault,
+  OPA / Rego), plus 26 more under existing categories: `data/` (14:
+  NumPy, SciPy, Polars, Matplotlib, seaborn, Jupyter notebooks, Snowflake,
+  dbt, Apache Airflow, Databricks, Azure Data Factory, IBM DataStage,
+  Apache Flink, Apache Hadoop), `infra/` (5: Azure SDK, Google Cloud SDK,
+  Helm, CloudFormation, Puppet), `db/` (3: SQL Server, Oracle Database,
+  BigQuery), `ai/` (2: AWS Bedrock, CrewAI), `queues/` (1: MQTT), and
+  `auth/` (1: SAML). Closes real coverage gaps for hiring-demand profiles
+  this taxonomy didn't reach before: data science / ML, data engineering,
+  cloud security, and enterprise data platforms. Detection for these
+  slugs lands in a follow-up PR.
+
 ## [0.8.0] - 2026-08-02
 
 ### Added
