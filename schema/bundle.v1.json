@@ -11,7 +11,7 @@
     "categories", "detected_skills", "ownership", "integrity", "attestation"
   ],
   "properties": {
-    "schema_version": { "const": "1.2.0" },
+    "schema_version": { "const": "1.3.0" },
     "runner": { "enum": ["local", "ci"] },
     "tool_version": { "type": "string" },
     "created_at": { "type": "string", "format": "date-time" },
@@ -159,7 +159,10 @@
           "type": "string",
           "description": "Merkle root over the user's commit shas. Enables future re-verification and consistency checks without revealing the shas."
         },
-        "algorithm": { "const": "sha256" },
+        "algorithm": {
+          "enum": ["sha256", "rfc6962-sha256"],
+          "description": "Merkle construction used for merkle_root. \"sha256\" (every bundle before schema 1.3.0, and still valid) is plain pairwise SHA-256 with a duplicated node on odd levels. \"rfc6962-sha256\" is the RFC 6962 Merkle Tree Hash (leaf prefix 0x00, node prefix 0x01, power-of-two split), which fixes two weaknesses of the old construction: an internal node can never be replayed as a leaf, and odd-sized commit lists no longer collide with their last element duplicated (CVE-2012-2459-style). No new data leaves the machine either way; only the label changes. Verifiers must branch on this field, not assume one construction. See docs/schema.md."
+        },
         "date_forensics": {
           "type": "object",
           "additionalProperties": false,

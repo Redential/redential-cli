@@ -102,10 +102,10 @@ describe("scan continues after a known-public-host warning (never blocks)", () =
     const bundleLine = logs.find((line) => line.trim().startsWith("{"));
     expect(bundleLine).toBeDefined();
     const bundle = JSON.parse(bundleLine!);
-    // H7 (docs/schema-change-h7.md): schema_version bumped 1.1.0 -> 1.2.0
-    // (additive fields on detected_skills[] entries; unrelated to this
-    // guardrail's own behavior, which this test otherwise leaves untouched).
-    expect(bundle.schema_version).toBe("1.2.0");
+    // Schema 1.3.0 (docs/schema.md's "Version note (1.2.0 -> 1.3.0)"):
+    // integrity.algorithm widened to an enum for RFC 6962; unrelated to this
+    // guardrail's own behavior, which this test otherwise leaves untouched.
+    expect(bundle.schema_version).toBe("1.3.0");
     expect(bundle.commits.user_total).toBe(1);
   });
 

@@ -147,8 +147,8 @@ describe("structural signal (H7, docs/schema-change-h7.md)", () => {
     const schema = JSON.parse(readFileSync(schemaUrl, "utf8"));
     const item = schema.properties.detected_skills.items;
 
-    it("schema_version is the const 1.2.0", () => {
-      expect(schema.properties.schema_version.const).toBe("1.2.0");
+    it("schema_version is the const 1.3.0", () => {
+      expect(schema.properties.schema_version.const).toBe("1.3.0");
     });
 
     it("evidence/confidence are NOT in detected_skills[] items' required[] (additive, optional)", () => {
@@ -166,12 +166,13 @@ describe("structural signal (H7, docs/schema-change-h7.md)", () => {
       expect(item.properties.confidence.enum).toEqual(["direct", "inferred"]);
     });
 
-    // The additive-compat property in practice: a 1.2.0 bundle with no
+    // The additive-compat property in practice: a bundle with no
     // structural findings emits entries shaped exactly like a 1.1.0 bundle's
     // entries would have been (no evidence/confidence keys anywhere), while
-    // still declaring schema_version 1.2.0.
-    it("a scan of a repo with no structural pattern emits entries with no new fields, under schema_version 1.2.0", () => {
-      expect(noStructuralBundle.schema_version).toBe("1.2.0");
+    // still declaring the current schema_version (1.3.0 as of the
+    // integrity.algorithm enum change; unrelated to evidence/confidence).
+    it("a scan of a repo with no structural pattern emits entries with no new fields, under the current schema_version", () => {
+      expect(noStructuralBundle.schema_version).toBe("1.3.0");
       for (const entry of noStructuralBundle.detected_skills) {
         expect("evidence" in entry).toBe(false);
         expect("confidence" in entry).toBe(false);

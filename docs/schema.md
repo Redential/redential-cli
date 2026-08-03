@@ -9,7 +9,7 @@ false` everywhere — unknown fields are invalid by design).
 
 | Field | What | Why |
 |---|---|---|
-| `schema_version` | `"1.2.0"` | The schema is the trust contract; the version pins it |
+| `schema_version` | `"1.3.0"` | The schema is the trust contract; the version pins it |
 | `runner` | `local` \| `ci` | Local scans are user-controlled (weakest tier). CI scans (future) run in employer infrastructure and can carry an OIDC anchor |
 | `tool_version` | CLI version | Reproducibility of the analysis |
 | `created_at` | Scan timestamp | Freshness |
@@ -27,6 +27,26 @@ validator pinned to the literal 1.1.0 schema: `schema_version` is a JSON
 Schema `const`, so that mismatch is rejected on the version string alone,
 by design. Full rationale and the exact field contract:
 [docs/schema-change-h7.md](schema-change-h7.md).
+
+### Version note (1.2.0 → 1.3.0)
+
+`1.3.0` widens `integrity.algorithm` from the single-value `const "sha256"`
+to an `enum: ["sha256", "rfc6962-sha256"]`. Nothing new travels: it is
+the same field, describing the same `merkle_root`, just naming which
+Merkle construction produced it. Discussed and agreed in #62, riding
+#61's fix to two weaknesses of the old plain-pairwise-SHA-256 root (see
+[`integrity`](#integrity) below for what those weaknesses were and how
+RFC 6962 closes them). A bundle emitted before this change (`algorithm:
+"sha256"`) stays fully valid — the CLI never rewrites old bundles, and
+a `1.3.0`-pinned validator still accepts the old label because it is
+still a member of the enum. New bundles emit `algorithm:
+"rfc6962-sha256"`. The one thing this bump changes for consumers:
+anything that re-verifies `merkle_root` must branch on `algorithm`
+instead of assuming one construction — the two labels are not
+interchangeable, only the newer one is RFC 6962. As with the 1.2.0 bump,
+what does NOT carry over is validating a `1.3.0` bundle against a
+validator pinned to the literal `1.2.0` schema: `schema_version` is a
+JSON Schema `const`, rejected on the version string alone, by design.
 
 ## `repo`
 
@@ -219,6 +239,40 @@ above), same as `identity.other_contributors_count`.
 `merkle_root` over the user's commit shas (sha256). Enables future
 re-verification ("does today's repo state still contain the commits you
 attested last year?") without revealing a single sha.
+
+### `algorithm` (since schema 1.3.0, enum)
+
+Names the Merkle construction `merkle_root` was built with:
+
+- `"sha256"` — every bundle from before this change. Plain pairwise
+  SHA-256, with a lone node on an odd level carried up by hashing it
+  against a duplicate of itself.
+- `"rfc6962-sha256"` — the RFC 6962 (Certificate Transparency) Merkle
+  Tree Hash: leaves are `SHA256(0x00 || leaf)`, internal nodes are
+  `SHA256(0x01 || left || right)`, and the tree always splits at the
+  largest power of two, so a lone node is carried up unhashed rather
+  than duplicated.
+
+The switch (#61, discussed in #62) closes two weaknesses the old
+construction had: without a leaf/node domain-separation prefix, an
+internal node's hash could in principle be replayed as if it were a
+leaf; and duplicating the lone node on an odd level meant an odd-sized
+commit list and that same list with its last commit sha duplicated
+produced the *same* root (the CVE-2012-2459 class of bug). Neither
+weakness let any new data leave the machine — both constructions only
+ever hash the user's own commit shas locally — but a root a verifier
+can trust to represent one and only one commit set needs both
+properties.
+
+Old bundles are not rewritten or invalidated: `"sha256"` stays a valid
+enum member forever, so anything submitted before this change keeps
+verifying under the construction it actually used. The CLI itself only
+ever emits `"rfc6962-sha256"` going forward. Any code that
+re-verifies `merkle_root` against a stored bundle must read
+`algorithm` first and use the matching construction — the two hash the
+same input differently, so treating an old bundle as if it were
+`"rfc6962-sha256"` (or vice versa) produces a mismatched root, not an
+error.
 
 ### `date_forensics` (measurement contract)
 

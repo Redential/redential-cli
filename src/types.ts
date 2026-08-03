@@ -80,7 +80,7 @@ export interface DateForensicsInfo {
 
 export interface IntegrityInfo {
   merkle_root: string;
-  algorithm: "sha256";
+  algorithm: "sha256" | "rfc6962-sha256";
   date_forensics: DateForensicsInfo;
 }
 
@@ -90,7 +90,7 @@ export interface AttestationInfo {
 }
 
 export interface Bundle {
-  schema_version: "1.2.0";
+  schema_version: "1.3.0";
   runner: "local" | "ci";
   tool_version: string;
   created_at: string;

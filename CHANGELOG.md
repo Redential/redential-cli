@@ -7,6 +7,25 @@ always bump at least minor; breaking schema changes bump major.
 
 ## [Unreleased]
 
+### Added
+- **RFC 6962 Merkle Tree Hash for `integrity.merkle_root`, with a new
+  `integrity.algorithm` enum value — bundle schema `1.2.0` → `1.3.0`
+  (minor, additive).** `algorithm` widens from the single-value `const
+  "sha256"` to `enum: ["sha256", "rfc6962-sha256"]`. Nothing new travels;
+  it is the same field, naming which Merkle construction produced
+  `merkle_root`. The new construction (leaf prefix `0x00`, node prefix
+  `0x01`, power-of-two split) fixes two weaknesses of the old plain
+  pairwise-SHA-256 root: an internal node could in principle be replayed
+  as a leaf without domain separation, and duplicating a lone node on an
+  odd level meant an odd-sized commit list and that list with its last
+  sha duplicated hashed to the same root (the CVE-2012-2459 class of
+  bug). Old bundles stay fully valid under the `"sha256"` label — the CLI
+  never rewrites them — and new bundles emit `"rfc6962-sha256"`; anything
+  that re-verifies `merkle_root` must branch on `algorithm` rather than
+  assume one construction. Merkle fix by PR #61; schema change discussed
+  and agreed in #62. Field docs:
+  [docs/schema.md](docs/schema.md#algorithm-since-schema-130-enum).
+
 ## [0.8.1] - 2026-08-03
 
 ### Added

@@ -187,7 +187,7 @@ export async function runScan(opts: ScanOptions): Promise<Bundle> {
   const dateForensics = computeDateForensics(userCommits);
 
   const bundle: Bundle = {
-    schema_version: "1.2.0",
+    schema_version: "1.3.0",
     runner: "local",
     tool_version: opts.toolVersion,
     created_at: now.toISOString(),
@@ -211,7 +211,7 @@ export async function runScan(opts: ScanOptions): Promise<Bundle> {
     ownership: { user_commit_ratio: userCommits.length / allCommits.length },
     integrity: {
       merkle_root: merkleRoot(userCommits.map((c) => c.sha)),
-      algorithm: "sha256",
+      algorithm: "rfc6962-sha256",
       date_forensics: dateForensics,
     },
     attestation: { authorized_confirmation: true, confirmed_at: now.toISOString() },
