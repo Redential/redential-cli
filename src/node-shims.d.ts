@@ -27,6 +27,9 @@ declare class Buffer {
   readonly length: number;
   static alloc(size: number): Buffer;
   static concat(list: Buffer[]): Buffer;
+  // `from(string, "hex")` builds the raw bytes merkle.ts needs: the 0x00/0x01
+  // RFC 6962 domain-separation prefixes and the raw child digests it hashes.
+  static from(data: string, encoding?: string): Buffer;
   indexOf(value: string): number;
   slice(start?: number, end?: number): Buffer;
   toString(encoding?: string): string;
@@ -82,7 +85,9 @@ declare module "node:os" {
 
 declare module "node:crypto" {
   export interface Hash {
-    update(data: string): Hash;
+    // Accepts Buffer as well as string so merkle.ts can feed raw byte
+    // prefixes and digests through the hash, not just UTF-8 strings.
+    update(data: string | Buffer): Hash;
     digest(encoding: "hex"): string;
   }
   export function createHash(algorithm: string): Hash;
