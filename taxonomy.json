@@ -1,11 +1,12 @@
 {
   "$comment": "Closed public vocabulary of skill slugs. This file is the ONLY source of valid values for detected_skills[].slug in the bundle: a slug not listed here makes the bundle invalid. Detection maps signatures/*.json matches to these slugs — deterministically, locally, with zero network calls. Adding a slug requires a PR to this file (and a signature definition); slugs are never hardcoded in the CLI. Placeholder set, to be expanded.",
-  "version": "1.11.0",
+  "version": "1.12.0",
   "skills": [
     { "slug": "auth/supabase-auth", "label": "Supabase Auth" },
     { "slug": "auth/nextauth", "label": "NextAuth / Auth.js" },
     { "slug": "auth/auth0", "label": "Auth0" },
     { "slug": "auth/clerk", "label": "Clerk" },
+    { "slug": "auth/better-auth", "label": "Better Auth" },
     { "slug": "auth/oauth-oidc", "label": "OAuth 2.0 / OIDC" },
     { "slug": "auth/jwt", "label": "JWT session handling" },
     { "slug": "auth/lucia", "label": "Lucia Auth" },
