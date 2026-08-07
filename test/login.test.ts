@@ -93,6 +93,60 @@ describe("runLogin (device flow against a mocked local server)", () => {
     }
   });
 
+  it("stores account_label when the token endpoint returns one", async () => {
+    const server = await startMockServer((req) => {
+      if (req.url === "/api/cli/device/authorize") {
+        return {
+          status: 200,
+          body: { device_code: "dc-label", user_code: "X", verification_uri: "http://x", expires_in: 600, interval: 0 },
+        };
+      }
+      return { status: 200, body: { access_token: "tok", account_label: "jane@example.com" } };
+    });
+    servers.push(server);
+    process.env.REDENTIAL_SITE_URL = server.url;
+
+    const configDir = tempConfigDir();
+    await runLogin({
+      configDir,
+      log: () => {},
+      sleepFn: instantSleep,
+      openFn: noOpen,
+      checkForUpdateFn: noCheckForUpdate,
+    });
+
+    const credPath = join(configDir, "credentials.json");
+    const stored = JSON.parse(readFileSync(credPath, "utf8"));
+    expect(stored.account_label).toBe("jane@example.com");
+  });
+
+  it("stores no account_label field when the token endpoint doesn't send one", async () => {
+    const server = await startMockServer((req) => {
+      if (req.url === "/api/cli/device/authorize") {
+        return {
+          status: 200,
+          body: { device_code: "dc-nolabel", user_code: "X", verification_uri: "http://x", expires_in: 600, interval: 0 },
+        };
+      }
+      return { status: 200, body: { access_token: "tok" } };
+    });
+    servers.push(server);
+    process.env.REDENTIAL_SITE_URL = server.url;
+
+    const configDir = tempConfigDir();
+    await runLogin({
+      configDir,
+      log: () => {},
+      sleepFn: instantSleep,
+      openFn: noOpen,
+      checkForUpdateFn: noCheckForUpdate,
+    });
+
+    const credPath = join(configDir, "credentials.json");
+    const stored = JSON.parse(readFileSync(credPath, "utf8"));
+    expect(stored.account_label).toBeUndefined();
+  });
+
   it("honors slow_down by backing off, without failing", async () => {
     let pollCount = 0;
     const server = await startMockServer((req) => {

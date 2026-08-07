@@ -9,6 +9,12 @@ export interface Credentials {
    * silently sending a bearer token to a different host. */
   site_url: string;
   obtained_at: string;
+  /** Display identity of the logged-in account (handle or masked email),
+   * as returned by the device token endpoint at login time. Optional: a
+   * session stored by an older CLI version, or a server that doesn't send
+   * it, simply has no such field — `status` falls back to today's output
+   * rather than erroring or migrating the file. */
+  account_label?: string;
 }
 
 function credentialsPath(configDir: string = DEFAULT_CONFIG_DIR): string {

@@ -15,6 +15,11 @@ interface DeviceAuthorization {
 
 interface DeviceTokenResponse {
   access_token?: string;
+  // Display identity of the account the token belongs to (handle or
+  // masked email) — optional, since nothing on the server side of this
+  // exists yet (see runLogin's doc comment). Absent, `status` degrades to
+  // its today's output rather than erroring.
+  account_label?: string;
   error?: "authorization_pending" | "slow_down" | "expired_token" | "access_denied";
 }
 
@@ -139,7 +144,12 @@ export async function runLogin(opts: LoginOptions = {}): Promise<void> {
     const result = await pollDeviceToken(siteUrl, auth.device_code);
     if (result.access_token) {
       saveCredentials(
-        { access_token: result.access_token, site_url: siteUrl, obtained_at: new Date().toISOString() },
+        {
+          access_token: result.access_token,
+          site_url: siteUrl,
+          obtained_at: new Date().toISOString(),
+          ...(result.account_label ? { account_label: result.account_label } : {}),
+        },
         opts.configDir
       );
       log("Logged in.");
