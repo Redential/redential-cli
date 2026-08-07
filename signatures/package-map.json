@@ -52,6 +52,9 @@
     "@lemonsqueezy/lemonsqueezy.js": "payments/lemonsqueezy",
     "@paddle/paddle-js": "payments/paddle",
     "@paddle/paddle-node-sdk": "payments/paddle",
+    "braintree": "payments/braintree",
+    "braintree-web": "payments/braintree",
+    "braintree-web-drop-in": "payments/braintree",
 
     "openai": "ai/openai-api",
     "@azure/openai": "ai/openai-api",

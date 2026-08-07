@@ -9,6 +9,7 @@ always bump at least minor; breaking schema changes bump major.
 
 ### Added
 - Add `payments/braintree` to the closed skill taxonomy (#14).
+- Detect Braintree via `braintree`, `braintree-web`, and `braintree-web-drop-in` imports, mapped to `payments/braintree` (#14).
 
 ## [0.10.0] - 2026-08-05
 
