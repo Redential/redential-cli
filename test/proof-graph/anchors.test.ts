@@ -804,7 +804,7 @@ describe("findAnchors — IAP (RevenueCat)", () => {
     expect(gate[0].reason).toContain('"entitlements" segment');
   });
 
-  it("near-miss (documented gap): a bare 'if (customerInfo.entitlements.active[...])' condition produces no ParsedCall, hence no hit", () => {
+  it("iap-entitlement-gate: a bare 'if (customerInfo.entitlements.active[...])' condition (no call at all) is now recognized", () => {
     const hits = anchorsOf({
       "a.ts": [
         "function isPro(customerInfo) {",
@@ -816,6 +816,37 @@ describe("findAnchors — IAP (RevenueCat)", () => {
       ].join("\n"),
     });
 
-    expect(only(hits, "iap-entitlement-gate")).toEqual([]);
+    const gate = only(hits, "iap-entitlement-gate");
+    expect(gate).toHaveLength(1);
+    expect(gate[0]).toMatchObject({ enclosingFunction: "isPro", line: 2 });
+    expect(gate[0].reason).toContain('"entitlements" segment');
+    expect(gate[0].reason).toContain("not a call");
+  });
+
+  it("iap-entitlement-gate: assigning the bare access to a const first is also recognized", () => {
+    const hits = anchorsOf({
+      "a.ts": [
+        "function isPro(customerInfo) {",
+        "  const entitlement = customerInfo.entitlements.active['pro'];",
+        "  return Boolean(entitlement);",
+        "}",
+      ].join("\n"),
+    });
+
+    const gate = only(hits, "iap-entitlement-gate");
+    expect(gate).toHaveLength(1);
+    expect(gate[0]).toMatchObject({ enclosingFunction: "isPro", line: 2 });
+  });
+
+  it("iap-entitlement-gate: a call on an entitlements chain still produces exactly one hit, not two", () => {
+    const hits = anchorsOf({
+      "a.ts": [
+        "function isPro(customerInfo) {",
+        "  return customerInfo.entitlements.active.hasOwnProperty('pro');",
+        "}",
+      ].join("\n"),
+    });
+
+    expect(only(hits, "iap-entitlement-gate")).toHaveLength(1);
   });
 });

@@ -885,22 +885,9 @@ those functions ever inspect `AnchorHit.kind`, only `path`/
 to the search functions themselves, only a second table entry naming its
 own 3 kinds.
 
-Two documented, accepted gaps, carried over honestly rather than fixed
-under this milestone's timebox:
+One documented, accepted gap remains, carried over honestly rather than
+fixed under this milestone's timebox:
 
-- **Entitlement-gate is call-shape only.** `iapEntitlementGateHits` only
-  recognizes a CALL whose chain contains an `"entitlements"` segment
-  (e.g. `customerInfo.entitlements.active.get('pro')`). The single most
-  common real-world RevenueCat shape,
-  `if (customerInfo.entitlements.active['pro'])`, is a bare property/
-  element-access expression — not a `CallExpression` — so it produces no
-  `ParsedCall` at all and this rule can't see it. Assigning it to a
-  `const` first is captured as a `ParsedBinding`, but `ParsedBinding`
-  carries no line/`enclosingFunction` (deliberately kept off this
-  milestone's scope), so there is no `AnchorHit` this rule could honestly
-  construct from a binding alone. Fixtures use a made-up CALL-shaped
-  entitlement check specifically to exercise the rule despite this gap
-  (see `test/proof-graph/fixtures.ts`'s IAP section comment).
 - **Paddle's construction-only gap.** A bare `new Paddle(...)` /
   `new Preference(...)` (Mercado Pago has the same gap) that's never
   followed by the actual verify/creation call produces no hit at all —
@@ -912,6 +899,18 @@ under this milestone's timebox:
   call, so this gap is expected to be invisible on real repos — the same
   reasoning `WebhookProviderDescriptor.creationChainSuffixes`' own comment
   already applies to Mercado Pago specifically.
+
+(Issue #10: the call-shape-only gap that used to be documented here — the
+single most common real-world RevenueCat shape,
+`if (customerInfo.entitlements.active['pro'])`, being a bare
+property/element-access expression that produced no `ParsedCall` at all —
+is now closed. `parser-adapter.ts` tracks a new `ParsedAccess` node kind,
+parallel to `ParsedCall`, for the outermost property/element-access chain
+of each maximal read expression that isn't itself a call's own callee.
+`iapEntitlementGateHits` scans `file.accesses` the same way it scans
+`file.calls`, so a bare `if`, a `const` assignment, or a call argument all
+now produce an honest `iap-entitlement-gate` hit with a reason string that
+says "not a call" rather than claiming it's one.)
 
 ### The `x-signature` collision
 
