@@ -377,6 +377,49 @@ describe("TscParserAdapter — bindings", () => {
   });
 });
 
+describe("TscParserAdapter — accesses", () => {
+  it("records a bare property-access chain used as an if-condition", () => {
+    const file = adapter.parse("a.ts", "function f(x) {\n  if (x.a.b) {\n    return true;\n  }\n}\n");
+    expect(file.accesses).toEqual([{ chain: ["x", "a", "b"], line: 2, enclosingFunction: "f" }]);
+  });
+
+  it("folds a computed element access to '*', same convention as chainOf for calls", () => {
+    const file = adapter.parse("a.ts", "const x = a.b['c'];\n");
+    expect(file.accesses).toEqual([{ chain: ["a", "b", "*"], line: 1, enclosingFunction: null }]);
+  });
+
+  it("records only the OUTERMOST node of a chain, not one entry per sub-expression", () => {
+    const file = adapter.parse("a.ts", "const x = a.b.c.d;\n");
+    expect(file.accesses).toHaveLength(1);
+    expect(file.accesses[0].chain).toEqual(["a", "b", "c", "d"]);
+  });
+
+  it("does not record an access that is a call's own callee (already covered by ParsedCall)", () => {
+    const file = adapter.parse("a.ts", "stripe.webhooks.constructEvent();\n");
+    expect(file.accesses).toEqual([]);
+    expect(file.calls).toEqual([
+      {
+        chain: ["stripe", "webhooks", "constructEvent"],
+        line: 1,
+        enclosingFunction: null,
+        stringArgs: [],
+        argPropertyNames: [],
+        numberArgs: [],
+      },
+    ]);
+  });
+
+  it("does not record an access that is a 'new' expression's own callee", () => {
+    const file = adapter.parse("a.ts", "const x = new a.B();\n");
+    expect(file.accesses).toEqual([]);
+  });
+
+  it("still records an access passed as a call argument (not itself the callee)", () => {
+    const file = adapter.parse("a.ts", "foo(customerInfo.entitlements.active['pro']);\n");
+    expect(file.accesses).toEqual([{ chain: ["customerInfo", "entitlements", "active", "*"], line: 1, enclosingFunction: null }]);
+  });
+});
+
 describe("TscParserAdapter — .tsx parsing", () => {
   it("parses JSX syntax in a .tsx file without throwing and still extracts calls", () => {
     const source =
@@ -398,7 +441,7 @@ describe("TscParserAdapter — .tsx parsing", () => {
     // that TscParserAdapter picks ScriptKind by file extension.
     const source = "function Widget() {\n  return <div>hi</div>;\n}\n";
     const file = adapter.parse("a.ts", source);
-    expect(file).toEqual({ path: "a.ts", imports: [], functions: [], calls: [], bindings: [], literals: [] });
+    expect(file).toEqual({ path: "a.ts", imports: [], functions: [], calls: [], bindings: [], accesses: [], literals: [] });
   });
 });
 
@@ -406,12 +449,12 @@ describe("TscParserAdapter — malformed source", () => {
   it("returns an empty ParsedFile for unparseable source, without throwing", () => {
     expect(() => adapter.parse("a.ts", "function foo( { [[[ ===")).not.toThrow();
     const file = adapter.parse("a.ts", "function foo( { [[[ ===");
-    expect(file).toEqual({ path: "a.ts", imports: [], functions: [], calls: [], bindings: [], literals: [] });
+    expect(file).toEqual({ path: "a.ts", imports: [], functions: [], calls: [], bindings: [], accesses: [], literals: [] });
   });
 
   it("returns an empty ParsedFile for an unclosed block", () => {
     const file = adapter.parse("a.ts", "function foo() {\n  const x = 1;\n");
-    expect(file).toEqual({ path: "a.ts", imports: [], functions: [], calls: [], bindings: [], literals: [] });
+    expect(file).toEqual({ path: "a.ts", imports: [], functions: [], calls: [], bindings: [], accesses: [], literals: [] });
   });
 
   it("is deterministic: the same malformed input returns an equal (empty) result every time", () => {

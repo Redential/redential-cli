@@ -12,6 +12,15 @@ always bump at least minor; breaking schema changes bump major.
 - Add `auth/better-auth` to the closed skill taxonomy (#2).
 - Detect Better Auth via the `better-auth` import, mapped to `auth/better-auth` (#2).
 
+### Fixed
+- `iap-entitlement-gate` detection (`payments/iap-subscription-flow`) now
+  recognizes a bare RevenueCat entitlement read, e.g.
+  `if (customerInfo.entitlements.active['pro'])` — previously only a CALL
+  containing an `"entitlements"` chain segment was seen, so this common
+  shape (no call at all) produced no hit. `parser-adapter.ts` gains a new
+  `ParsedAccess` node kind for outermost property/element-access chains
+  (#10).
+
 ## [0.10.0] - 2026-08-05
 
 ### Added

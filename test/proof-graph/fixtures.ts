@@ -957,12 +957,11 @@ export function fixturePaddleOtherAuthor(): string {
 // -----------------------------------------------------------------------
 // RevenueCat / IAP (payments/iap-subscription-flow) — its own 3-anchor
 // shape (configure / purchase / entitlement-gate), no webhook node at all.
-// The entitlement-gate check is deliberately CALL-ONLY (see
-// iapEntitlementGateHits' own comment in anchors.ts): the real-world
-// RevenueCat shape (`customerInfo.entitlements.active['pro']`) is a bare
-// property/element access, not a CallExpression, so the fixtures below use
-// a made-up CALL-shaped entitlement check instead — the documented,
-// accepted gap, not a fixture mistake.
+// The fixtures below use a CALL-shaped entitlement check
+// (`customerInfo.entitlements.get(...)`) rather than the more idiomatic
+// bare `customerInfo.entitlements.active['pro']` access — both are
+// recognized by iapEntitlementGateHits (see its own comment in anchors.ts),
+// this is just a fixture-authoring choice, not a gap.
 // -----------------------------------------------------------------------
 
 /**
@@ -983,11 +982,9 @@ export function fixtureIapDirect(): string {
         "export async function setupAndPurchase(offering) {",
         '  Purchases.configure({ apiKey: "xxx-EXAMPLE-xxx" });',
         "  const { customerInfo } = await Purchases.purchasePackage(offering.availablePackages[0]);",
-        "  // NOTE: the real-world RevenueCat shape here is a bare property/element",
-        "  // access (`customerInfo.entitlements.active['pro']`), which the anchor",
-        "  // recognizer can't see (not a CallExpression — see anchors.ts's",
-        "  // iapEntitlementGateHits' own documented gap). Using a CALL-shaped",
-        "  // entitlement check instead so this fixture actually exercises the rule.",
+        "  // NOTE: using a CALL-shaped entitlement check here; the more idiomatic",
+        "  // bare access (`customerInfo.entitlements.active['pro']`) is recognized",
+        "  // too — see iapEntitlementGateHits' own comment in anchors.ts.",
         '  const isPro = customerInfo.entitlements.get("pro");',
         '  if (!isPro) throw new Error("not entitled");',
         "  return customerInfo;",
@@ -1033,7 +1030,8 @@ export function fixtureIapLayered(): string {
       ].join("\n"),
       "src/gate.ts": [
         "// See fixtureIapDirect's own comment: a CALL-shaped entitlement check,",
-        "// not the real-world bare property/element-access shape (documented gap).",
+        "// just a fixture-authoring choice — see iapEntitlementGateHits' own",
+        "// comment in anchors.ts for what shapes it recognizes.",
         "export async function checkEntitlement(customerInfo) {",
         '  const isPro = customerInfo.entitlements.get("pro");',
         '  if (!isPro) throw new Error("not entitled");',

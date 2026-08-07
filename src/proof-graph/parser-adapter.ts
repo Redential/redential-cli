@@ -116,12 +116,33 @@ export interface ParsedLiteral {
   enclosingFunction: string | null; // same convention as ParsedCall.enclosingFunction
 }
 
+// A bare property/element-access chain that is neither a call's callee (see
+// ParsedCall) nor nested inside a larger access chain — e.g. the
+// `customerInfo.entitlements.active['pro']` in
+// `if (customerInfo.entitlements.active['pro']) { ... }`, chain
+// ["customerInfo","entitlements","active","*"]. Added to close a gap
+// iapEntitlementGateHits' own comment (anchors.ts) used to document as
+// accepted spike scope: a call-only recognizer can't see the single most
+// idiomatic RevenueCat read shape, since it's a MemberExpression/
+// ElementAccessExpression, not a CallExpression, and never reaches
+// ParsedCall at all. Deliberately only the OUTERMOST access node of each
+// chain is recorded (see collectNodes' isMaximalAccessNode) — walking every
+// nested sub-expression too would produce one redundant entry per segment
+// (`a.b`, `a.b.c`, `a.b.c.d` for a single `a.b.c.d` read) with no consumer
+// that wants the partial chains.
+export interface ParsedAccess {
+  chain: string[]; // same chainOf() convention as ParsedCall.chain
+  line: number; // 1-based
+  enclosingFunction: string | null; // same convention as ParsedCall.enclosingFunction
+}
+
 export interface ParsedFile {
   path: string;
   imports: ParsedImport[];
   functions: ParsedFunction[];
   calls: ParsedCall[];
   bindings: ParsedBinding[];
+  accesses: ParsedAccess[];
   // Every string literal (plain or no-substitution template) in the file
   // whose text is at most FILE_LITERAL_MAX_CHARS long. Added for H2: a
   // recognizer like "the Stripe webhook signature header is read somewhere
@@ -137,7 +158,7 @@ export interface ParserAdapter {
 }
 
 function emptyParsedFile(path: string): ParsedFile {
-  return { path, imports: [], functions: [], calls: [], bindings: [], literals: [] };
+  return { path, imports: [], functions: [], calls: [], bindings: [], accesses: [], literals: [] };
 }
 
 // The four syntax kinds the spike treats as a "declared function" — the
@@ -360,6 +381,39 @@ function toCall(node: ts.CallExpression, sourceFile: ts.SourceFile): ParsedCall 
   };
 }
 
+type AccessNode = ts.PropertyAccessExpression | ts.ElementAccessExpression;
+
+function isAccessNode(node: ts.Node): node is AccessNode {
+  return ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node);
+}
+
+// True for the OUTERMOST node of an access chain only — the same
+// "record once per logical read, not once per sub-expression" posture
+// ParsedCall gets for free (a call node's callee is a single expression, no
+// sub-node walk needed). An access node is maximal when its parent is
+// neither (a) another access node reading further INTO it (`.expression ===
+// node`, e.g. the `a.b` inside `a.b.c`), nor (b) a CallExpression/
+// NewExpression using it as the CALLEE (`.expression === node`, e.g. the
+// `stripe.webhooks` inside `stripe.webhooks.constructEvent()`) — that shape
+// is already ParsedCall's job via chainOf, and double-recording it here
+// would make every existing call also produce a spurious ParsedAccess with
+// the same chain minus the final segment.
+function isMaximalAccessNode(node: AccessNode): boolean {
+  const parent = node.parent;
+  if (!parent) return true;
+  if (isAccessNode(parent) && parent.expression === node) return false;
+  if ((ts.isCallExpression(parent) || ts.isNewExpression(parent)) && parent.expression === node) return false;
+  return true;
+}
+
+function toAccess(node: AccessNode, sourceFile: ts.SourceFile): ParsedAccess {
+  return {
+    chain: chainOf(node),
+    line: lineOf(sourceFile, node.getStart(sourceFile)),
+    enclosingFunction: enclosingFunctionName(node, sourceFile),
+  };
+}
+
 function toLiteral(node: ts.StringLiteralLike, sourceFile: ts.SourceFile): ParsedLiteral {
   return {
     value: node.text,
@@ -391,12 +445,14 @@ function collectNodes(sourceFile: ts.SourceFile): {
   functionNodes: FunctionLikeNode[];
   callNodes: ts.CallExpression[];
   varDecls: ts.VariableDeclaration[];
+  accessNodes: AccessNode[];
   literalNodes: ts.StringLiteralLike[];
 } {
   const importNodes: ts.ImportDeclaration[] = [];
   const functionNodes: FunctionLikeNode[] = [];
   const callNodes: ts.CallExpression[] = [];
   const varDecls: ts.VariableDeclaration[] = [];
+  const accessNodes: AccessNode[] = [];
   const literalNodes: ts.StringLiteralLike[] = [];
 
   function visit(node: ts.Node): void {
@@ -411,6 +467,13 @@ function collectNodes(sourceFile: ts.SourceFile): {
     // independently for clarity about why it isn't "the same kind of thing"
     // as the other four.
     if (ts.isStringLiteralLike(node)) literalNodes.push(node);
+    // Also independent of the else-if chain above, same reasoning: an access
+    // node IS a CallExpression's `.expression` in the call-callee case (e.g.
+    // `stripe.webhooks.constructEvent` inside a CallExpression), so this
+    // can't be folded into the `else if` without losing calls that also
+    // start with an access chain. isMaximalAccessNode is what filters those
+    // (and any other non-outermost access node) back out.
+    if (isAccessNode(node) && isMaximalAccessNode(node)) accessNodes.push(node);
     // Recurse into every node's children regardless of which branch above
     // matched — e.g. a function-like node's own body still needs walking for
     // nested calls/functions, and a call expression's arguments can contain
@@ -418,7 +481,7 @@ function collectNodes(sourceFile: ts.SourceFile): {
     ts.forEachChild(node, visit);
   }
   visit(sourceFile);
-  return { importNodes, functionNodes, callNodes, varDecls, literalNodes };
+  return { importNodes, functionNodes, callNodes, varDecls, accessNodes, literalNodes };
 }
 
 // `ts.forEachChild` already visits children in source order, so the arrays
@@ -431,7 +494,7 @@ function bySourcePosition<T extends ts.Node>(nodes: T[], sourceFile: ts.SourceFi
 }
 
 function buildParsedFile(path: string, sourceFile: ts.SourceFile): ParsedFile {
-  const { importNodes, functionNodes, callNodes, varDecls, literalNodes } = collectNodes(sourceFile);
+  const { importNodes, functionNodes, callNodes, varDecls, accessNodes, literalNodes } = collectNodes(sourceFile);
   const imports = bySourcePosition(importNodes, sourceFile)
     .map(toImport)
     .filter((x): x is ParsedImport => x !== null);
@@ -440,12 +503,13 @@ function buildParsedFile(path: string, sourceFile: ts.SourceFile): ParsedFile {
   const bindings = bySourcePosition(varDecls, sourceFile)
     .map(toBinding)
     .filter((x): x is ParsedBinding => x !== null);
+  const accesses = bySourcePosition(accessNodes, sourceFile).map((n) => toAccess(n, sourceFile));
   // Longer literals are skipped entirely here (not truncated) — see
   // FILE_LITERAL_MAX_CHARS' own comment for why.
   const literals = bySourcePosition(literalNodes, sourceFile)
     .filter((n) => n.text.length <= FILE_LITERAL_MAX_CHARS)
     .map((n) => toLiteral(n, sourceFile));
-  return { path, imports, functions, calls, bindings, literals };
+  return { path, imports, functions, calls, bindings, accesses, literals };
 }
 
 export class TscParserAdapter implements ParserAdapter {
