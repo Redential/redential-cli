@@ -1,6 +1,6 @@
 {
   "$comment": "Closed public vocabulary of skill slugs. This file is the ONLY source of valid values for detected_skills[].slug in the bundle: a slug not listed here makes the bundle invalid. Detection maps signatures/*.json matches to these slugs — deterministically, locally, with zero network calls. Adding a slug requires a PR to this file (and a signature definition); slugs are never hardcoded in the CLI. Placeholder set, to be expanded.",
-  "version": "1.10.0",
+  "version": "1.11.0",
   "skills": [
     { "slug": "auth/supabase-auth", "label": "Supabase Auth" },
     { "slug": "auth/nextauth", "label": "NextAuth / Auth.js" },
@@ -21,6 +21,7 @@
     { "slug": "payments/mercadopago", "label": "Mercado Pago" },
     { "slug": "payments/lemonsqueezy", "label": "Lemon Squeezy" },
     { "slug": "payments/paddle", "label": "Paddle" },
+    { "slug": "payments/braintree", "label": "Braintree" },
     { "slug": "ai/openai-api", "label": "OpenAI API" },
     { "slug": "ai/anthropic-api", "label": "Anthropic API" },
     { "slug": "ai/mcp", "label": "Model Context Protocol (MCP)" },
