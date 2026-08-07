@@ -1,4 +1,4 @@
-import { listHeadTreeBlobs, readHeadBlobContents } from "../git.js";
+import { listHeadTreeBlobs, readBlobContents } from "../git.js";
 import { isExcludedPath } from "../churn-exclusions.js";
 import { debugLog } from "../debug.js";
 
@@ -31,11 +31,18 @@ const DEFAULT_MAX_FILES = 5000;
 
 // Content for this many surviving paths is fetched (and held) at once, via
 // a single batched `git cat-file --batch` process (git.ts's
-// readHeadBlobContents), instead of one process per file — same
+// readBlobContents), instead of one process per file — same
 // "subprocess spawn count is the dominant cost at scale" rationale as
-// skill-detect.ts's DIFF_BATCH_SIZE, and it bounds how much file content is
-// ever in memory simultaneously to one batch's worth, not the whole
-// snapshot's.
+// skill-detect.ts's DIFF_BATCH_SIZE.
+//
+// `readBlobContents` reads files from a requested git revision rather than
+// only from HEAD. HEAD represents the currently checked-out snapshot, but
+// callers may need historical snapshots as well (for example, a commit and
+// its parent when comparing manifest changes). The batching behavior remains
+// identical regardless of which revision is being read.
+//
+// This bounds how much file content is ever in memory simultaneously to one
+// batch's worth, not the whole repository snapshot.
 //
 // Raised from 200 to 1000 (measured): at 2000 files, 200 meant 10 batches —
 // each batch pays a fixed `git cat-file --batch` process-spawn cost on top
@@ -130,7 +137,7 @@ export async function readHeadSnapshot(repoPath: string, opts: SnapshotOptions =
     if (isExcludedPath(entry.path)) continue;
     if (isSnapshotLocalExcludedPath(entry.path)) continue;
     if (entry.size > maxFileBytes) {
-      // The path itself is never logged (see readHeadBlobContents' doc
+      // The path itself is never logged (see readBlobContents' doc
       // comment on src/debug.ts's paste-safety invariant) — only the
       // reason and the size that triggered it.
       debugLog(`snapshot: excluded a file over the size cap (${entry.size} bytes > ${maxFileBytes} bytes)`);
@@ -158,13 +165,23 @@ export async function readHeadSnapshot(repoPath: string, opts: SnapshotOptions =
   const files: SnapshotFile[] = [];
   for (let i = 0; i < selectedPaths.length; i += CONTENT_BATCH_SIZE) {
     const batch = selectedPaths.slice(i, i + CONTENT_BATCH_SIZE);
-    const contentByPath = await readHeadBlobContents(repoPath, batch);
+    // Fetch each batch in a single git invocation rather than spawning one
+    // process per file.
+    const requests = batch.map((path) => ({
+    revision: "HEAD",
+    path,
+    }));
+    const contentByRevision = await readBlobContents(repoPath, requests);
+    const headContent = contentByRevision.get("HEAD");
+
+    if (!headContent) continue;
+
     for (const path of batch) {
-      const content = contentByPath.get(path);
-      // Missing only if readHeadBlobContents' fail-quiet path was hit
-      // (e.g. a concurrent history rewrite mid-read) — skip rather than
-      // include a file with no content.
-      if (content !== undefined) files.push({ path, content });
+      const content = headContent.get(path);
+
+      if (content !== undefined) {
+        files.push({ path, content });
+      }
     }
     opts.onProgress?.(Math.min(i + CONTENT_BATCH_SIZE, selectedPaths.length), selectedPaths.length);
   }

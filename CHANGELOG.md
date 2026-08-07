@@ -5,6 +5,21 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: strict [semver](https://semver.org/) — bundle schema changes
 always bump at least minor; breaking schema changes bump major.
 
+## [Unreleased]
+
+### Fixed
+- Improve manifest dependency detection by comparing parent and child
+  revision snapshots instead of relying only on added diff lines. This now
+  correctly detects dependencies added inside existing blocks in
+  `package.json`, `composer.json`, and `Cargo.toml` while ignoring existing
+  dependencies and version-only changes.
+- Add safer manifest parsing behavior by failing closed when a child or parent
+  manifest cannot be parsed, preventing malformed files from causing
+  over-attribution of dependencies.
+- Batch manifest snapshot reads across commits to reduce repeated Git blob
+  lookups during dependency detection.
+
+
 ## [0.10.1] - 2026-08-07
 
 ### Added

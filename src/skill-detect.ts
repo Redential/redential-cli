@@ -1,12 +1,13 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
-import { getCommitsAddedLines, type RawCommit } from "./git.js";
+import { getCommitsAddedLines, type RawCommit, readBlobContents } from "./git.js";
 import { isExcludedPath, heuristicallyGeneratedPaths } from "./churn-exclusions.js";
-import { extractImportedPackages, sanitizeForPatternMatching } from "./import-detect.js";
+import { extractImportedPackages, sanitizeForPatternMatching, extractAddedManifestDependencies } from "./import-detect.js";
 import { ScanError } from "./errors.js";
 import { debugLog } from "./debug.js";
 import type { DetectedSkill } from "./types.js";
+
 
 export interface FixtureCase {
   path: string;
@@ -29,6 +30,14 @@ interface CompiledSignature {
   importRegexes: RegExp[];
   apiRegexes: RegExp[];
   configFileRegexes: RegExp[];
+}
+
+function needsFullFileContent(filePath: string): boolean {
+  return (
+    /package\.json$/i.test(filePath) ||
+    /composer\.json$/i.test(filePath) ||
+    /cargo\.toml$/i.test(filePath)
+  );
 }
 
 // Default locations ship alongside dist/ in the published package (see
@@ -265,6 +274,34 @@ export async function detectSkills(
       batch.map((c) => c.sha)
     );
 
+    const childRequests: { revision: string; path: string }[] = [];
+    const parentRequests: { revision: string; path: string }[] = [];
+    for (const commit of batch) {
+      const files = (addedLinesBySha.get(commit.sha) ?? []).filter(
+        (f) => !isExcludedPath(f.path) && !generatedPaths.has(f.path)
+      );
+      if (files.length === 0) continue;
+
+      // Only manifest files require full-file snapshots. Source files continue to
+      // use added diff lines for import-based detection.
+      const manifestPaths = files
+        .filter((f) => needsFullFileContent(f.path))
+        .map((f) => f.path);
+
+      for(const manifest of manifestPaths) {
+       // Queue both child and parent revisions. Root commits have no parent, so only
+       // the child snapshot is requested.
+       childRequests.push({ revision: commit.sha, path: manifest });
+       if (commit.parentSha !== undefined) {
+          parentRequests.push({ revision: commit.parentSha, path: manifest });
+        }
+      }
+    }
+    // Fetch all requested blobs in two batched git invocations rather than one
+    // process per file.
+    const childContentByRevision = await readBlobContents(repoPath, childRequests);
+    const parentContentByRevision = await readBlobContents(repoPath, parentRequests);
+
     for (const commit of batch) {
       const files = (addedLinesBySha.get(commit.sha) ?? []).filter(
         (f) => !isExcludedPath(f.path) && !generatedPaths.has(f.path)
@@ -272,10 +309,32 @@ export async function detectSkills(
       if (files.length === 0) continue;
 
       for (const file of files) {
-        // Tier 1: generic import detection against the flat package map.
-        for (const pkg of extractImportedPackages(file.addedLines, file.path)) {
-          const slug = packageMap.get(pkg);
-          if (slug) recordMatch(slug, commit);
+        const addedLines = file.addedLines;
+         if (needsFullFileContent(file.path)) {
+          // Manifest files are compared as complete snapshots. This detects newly
+          // added dependencies while ignoring version bumps and avoiding diff-format
+          // edge cases.
+          const parentText =  commit.parentSha !== undefined
+          ? parentContentByRevision.get(commit.parentSha)?.get(file.path)
+          : undefined;
+          const childText = childContentByRevision.get(commit.sha)?.get(file.path);
+          if (childText === undefined) {
+            continue;
+          }
+          for (const pkg of extractAddedManifestDependencies(
+            parentText,
+            childText,
+            file.path
+          )) {
+            const slug = packageMap.get(pkg);
+            if (slug) recordMatch(slug, commit);
+          }
+        } else {
+           // Tier 1: generic import detection against the flat package map.
+          for (const pkg of extractImportedPackages(addedLines, file.path)) {
+            const slug = packageMap.get(pkg);
+            if (slug) recordMatch(slug, commit);
+          }
         }
       }
       // Tier 2: config-file/API-usage signatures.

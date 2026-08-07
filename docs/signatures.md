@@ -27,12 +27,18 @@ scope" below), normalizes each to a package name (`stripe/webhooks` →
 stripped, …), and looks it up in `signatures/package-map.json` — a flat
 `{"package-name": "taxonomy-slug"}` map, 600+ entries.
 
-`package.json` dependency detection is intentionally conservative:
-dependency entries are only attributed when the relevant dependency block
-header (`dependencies`, `devDependencies`, or `peerDependencies`) is
-present in the added diff lines. Without that context, a standalone
-`"package": "version"` entry cannot be safely attributed and is treated
-as a documented miss rather than guessed evidence.
+Manifest dependency detection (`package.json`, `composer.json`, and
+`Cargo.toml`) compares the parent and child manifest snapshots 
+rather than relying only on dependency block headers appearing in
+the added diff lines. This allows dependencies added inside an existing
+`dependencies`, `devDependencies`, or `peerDependencies` block to be
+attributed safely because the evidence comes from the actual manifest state
+before and after the commit.
+
+Only dependencies newly present in the child manifest are emitted; unchanged
+dependencies are ignored. This avoids attributing existing dependencies from
+previous commits while still detecting additions where the diff context does
+not include the dependency block header.
 
 Deliberately regex-based, not a real parser per language (a dependency per
 language is a supply-chain surface CLAUDE.md's policy doesn't allow without
@@ -75,10 +81,14 @@ body's `key = ...` lines are read as crate names, and a dotted
 `[dependencies.tokio]` header, whose crate name is the header itself (its
 body is NOT key-scanned — `version`/`features`/... are Cargo.toml keys,
 not crate names, and scanning them would be a real false-positive class).
-Anything else — `[target.'cfg(...)'.dependencies]`, a dependency added
-under an already-existing header not itself re-shown in the diff — is a
-documented miss, same tradeoff class as composer.json's "only reliable
-when the diff has enough context." Crate names with a hyphen
+Anything else — `[target.'cfg(...)'.dependencies]` sections, or dependency
+changes that cannot be safely attributed from the supported manifest shapes —
+is not interpreted as a dependency source by this extractor. Supported
+`Cargo.toml` dependency sections are evaluated by comparing the parent and
+child manifest snapshots, allowing dependencies added inside an existing
+`[dependencies]` section to be detected safely. This removes the previous
+limitation where a dependency could only be detected when the dependency
+section header appeared in the added diff context. Crate names with a hyphen
 (`actix-web`, crates.io convention) are normalized to the underscore form
 Rust identifiers actually use (`actix_web`) at BOTH extraction sites, so a
 Cargo.toml addition and the `use` statement consuming it resolve to the
