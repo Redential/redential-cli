@@ -20,6 +20,7 @@
     "@clerk/clerk-js": "auth/clerk",
     "@clerk/backend": "auth/clerk",
     "@clerk/express": "auth/clerk",
+    "better-auth": "auth/better-auth",
     "openid-client": "auth/oauth-oidc",
     "oauth4webapi": "auth/oauth-oidc",
     "simple-oauth2": "auth/oauth-oidc",
