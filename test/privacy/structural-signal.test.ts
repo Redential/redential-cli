@@ -182,8 +182,9 @@ describe("structural signal (H7, docs/schema-change-h7.md)", () => {
 
   // (e) Exact-JSON parity (principle 4: scan's printed JSON equals the
   // submitted payload byte-for-byte). Already covered generically — not
-  // fixture-specific — by test/scan-command.test.ts ("consent summary block"
-  // TTY tests asserting `logs[1]`/`logs[2]` parse as the exact bundle JSON)
+  // fixture-specific — by test/scan-command.test.ts ("--json output on a
+  // TTY is byte-identical to piped (non-TTY) output", plus the "--json
+  // forces JSON-only output" test validating that JSON against the schema)
   // and test/submit.test.ts ("executeSubmitCommand — consent summary": the
   // uploaded request body equals the logged JSON byte-for-byte). Those
   // assertions operate on whatever bundle runScan produces, so they already
