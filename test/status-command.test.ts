@@ -46,6 +46,32 @@ describe("executeStatusCommand", () => {
     expect(logs[0]).not.toContain("super-secret-token-value");
   });
 
+  it("shows the account label when login stored one", () => {
+    const configDir = tempConfigDir();
+    const siteUrl = getSiteUrl();
+    saveCredentials(
+      { access_token: "t", site_url: siteUrl, obtained_at: "now", account_label: "jane@example.com" },
+      configDir
+    );
+
+    const logs: string[] = [];
+    executeStatusCommand({ toolVersion: "1.2.3", configDir, log: (m) => logs.push(m) });
+
+    expect(logs[0]).toMatch(/Logged in: yes \(as jane@example\.com, /);
+  });
+
+  it("degrades cleanly when a stored session has no account_label (older CLI version)", () => {
+    const configDir = tempConfigDir();
+    const siteUrl = getSiteUrl();
+    saveCredentials({ access_token: "t", site_url: siteUrl, obtained_at: "now" }, configDir);
+
+    const logs: string[] = [];
+    executeStatusCommand({ toolVersion: "1.2.3", configDir, log: (m) => logs.push(m) });
+
+    expect(logs[0]).toMatch(/Logged in: yes \(https?:\/\//);
+    expect(logs[0]).not.toContain("as ");
+  });
+
   it("flags a stored session for a different site as not usable here, without discarding the info", () => {
     const configDir = tempConfigDir();
     saveCredentials(
