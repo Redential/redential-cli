@@ -9,6 +9,9 @@ always bump at least minor; breaking schema changes bump major.
 
 ### Added
 - Add `auth/okta` to the closed skill taxonomy (#2).
+- Detect Okta via the `@okta/okta-auth-js`, `@okta/okta-react`,
+  `@okta/okta-angular`, `@okta/okta-vue`, `@okta/jwt-verifier`, and
+  `@okta/okta-sdk-nodejs` imports, mapped to `auth/okta` (#2).
 
 ### Fixed
 - Improve manifest dependency detection by comparing parent and child
