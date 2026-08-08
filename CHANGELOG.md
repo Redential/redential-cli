@@ -7,6 +7,10 @@ always bump at least minor; breaking schema changes bump major.
 
 ## [Unreleased]
 
+### Added
+- Add `payments/razorpay` to the closed skill taxonomy (#14).
+- Detect Razorpay via `razorpay` and `react-native-razorpay` imports, mapped to `payments/razorpay` (#14).
+
 ### Fixed
 - Improve manifest dependency detection by comparing parent and child
   revision snapshots instead of relying only on added diff lines. This now
