@@ -8,6 +8,7 @@ always bump at least minor; breaking schema changes bump major.
 ## [Unreleased]
 
 ### Added
+- Add `payments/razorpay` to the closed skill taxonomy (#14).
 - Add `auth/okta` to the closed skill taxonomy (#2).
 
 ### Fixed
