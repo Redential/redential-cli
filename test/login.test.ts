@@ -120,6 +120,95 @@ describe("runLogin (device flow against a mocked local server)", () => {
     expect(stored.account_label).toBe("jane@example.com");
   });
 
+  it("drops a hostile account_label instead of storing it raw", async () => {
+    const server = await startMockServer((req) => {
+      if (req.url === "/api/cli/device/authorize") {
+        return {
+          status: 200,
+          body: { device_code: "dc-hostile", user_code: "X", verification_uri: "http://x", expires_in: 600, interval: 0 },
+        };
+      }
+      return {
+        status: 200,
+        body: {
+          access_token: "tok",
+          // Newline + ANSI escape (\x1b), crafted to spoof a `status` line
+          // if it ever reached the terminal raw.
+          account_label: "jane@example.com\n\x1b[31mLogged in: yes (as admin@evil.test)",
+        },
+      };
+    });
+    servers.push(server);
+    process.env.REDENTIAL_SITE_URL = server.url;
+
+    const configDir = tempConfigDir();
+    await runLogin({
+      configDir,
+      log: () => {},
+      sleepFn: instantSleep,
+      openFn: noOpen,
+      checkForUpdateFn: noCheckForUpdate,
+    });
+
+    const credPath = join(configDir, "credentials.json");
+    const stored = JSON.parse(readFileSync(credPath, "utf8"));
+    expect(stored.account_label).toBeUndefined();
+  });
+
+  it("drops an account_label over the length cap", async () => {
+    const server = await startMockServer((req) => {
+      if (req.url === "/api/cli/device/authorize") {
+        return {
+          status: 200,
+          body: { device_code: "dc-long", user_code: "X", verification_uri: "http://x", expires_in: 600, interval: 0 },
+        };
+      }
+      return { status: 200, body: { access_token: "tok", account_label: "a".repeat(65) } };
+    });
+    servers.push(server);
+    process.env.REDENTIAL_SITE_URL = server.url;
+
+    const configDir = tempConfigDir();
+    await runLogin({
+      configDir,
+      log: () => {},
+      sleepFn: instantSleep,
+      openFn: noOpen,
+      checkForUpdateFn: noCheckForUpdate,
+    });
+
+    const credPath = join(configDir, "credentials.json");
+    const stored = JSON.parse(readFileSync(credPath, "utf8"));
+    expect(stored.account_label).toBeUndefined();
+  });
+
+  it("trims whitespace around an otherwise valid account_label", async () => {
+    const server = await startMockServer((req) => {
+      if (req.url === "/api/cli/device/authorize") {
+        return {
+          status: 200,
+          body: { device_code: "dc-trim", user_code: "X", verification_uri: "http://x", expires_in: 600, interval: 0 },
+        };
+      }
+      return { status: 200, body: { access_token: "tok", account_label: "  jane@example.com  " } };
+    });
+    servers.push(server);
+    process.env.REDENTIAL_SITE_URL = server.url;
+
+    const configDir = tempConfigDir();
+    await runLogin({
+      configDir,
+      log: () => {},
+      sleepFn: instantSleep,
+      openFn: noOpen,
+      checkForUpdateFn: noCheckForUpdate,
+    });
+
+    const credPath = join(configDir, "credentials.json");
+    const stored = JSON.parse(readFileSync(credPath, "utf8"));
+    expect(stored.account_label).toBe("jane@example.com");
+  });
+
   it("stores no account_label field when the token endpoint doesn't send one", async () => {
     const server = await startMockServer((req) => {
       if (req.url === "/api/cli/device/authorize") {

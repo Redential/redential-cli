@@ -4,6 +4,7 @@ import { getSiteUrl } from "./config.js";
 import { saveCredentials } from "./credentials.js";
 import { postJson, pollJson } from "./http-client.js";
 import { checkForUpdate } from "./version-check.js";
+import { CONTROL_CHAR_PATTERN, PRIVATE_LABEL_MAX_LENGTH } from "./private-label.js";
 
 interface DeviceAuthorization {
   device_code: string;
@@ -21,6 +22,25 @@ interface DeviceTokenResponse {
   // its today's output rather than erroring.
   account_label?: string;
   error?: "authorization_pending" | "slow_down" | "expired_token" | "access_denied";
+}
+
+/**
+ * `account_label` comes straight from the device-token response — a
+ * hostile or MITM'd server could hand back a value with newlines or ANSI
+ * escapes to spoof `status`'s output, which would defeat the wrong-identity
+ * protection this field exists for. Same bar as the private label
+ * (src/private-label.ts): trim, cap length, drop on control characters
+ * (0x00-0x1f and 0x7f — that range already covers ESC, so an ANSI escape
+ * sequence is rejected the same way a raw newline is). Unlike the private
+ * label this never throws: the field is optional and a bad value is simply
+ * dropped, same as if the server hadn't sent one at all.
+ */
+function sanitizeAccountLabel(raw: unknown): string | undefined {
+  if (typeof raw !== "string") return undefined;
+  const trimmed = raw.trim();
+  if (trimmed.length === 0 || trimmed.length > PRIVATE_LABEL_MAX_LENGTH) return undefined;
+  if (CONTROL_CHAR_PATTERN.test(trimmed)) return undefined;
+  return trimmed;
 }
 
 function requestDeviceAuthorization(siteUrl: string): Promise<DeviceAuthorization> {
@@ -143,12 +163,13 @@ export async function runLogin(opts: LoginOptions = {}): Promise<void> {
 
     const result = await pollDeviceToken(siteUrl, auth.device_code);
     if (result.access_token) {
+      const accountLabel = sanitizeAccountLabel(result.account_label);
       saveCredentials(
         {
           access_token: result.access_token,
           site_url: siteUrl,
           obtained_at: new Date().toISOString(),
-          ...(result.account_label ? { account_label: result.account_label } : {}),
+          ...(accountLabel ? { account_label: accountLabel } : {}),
         },
         opts.configDir
       );
