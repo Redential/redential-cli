@@ -9,6 +9,7 @@ always bump at least minor; breaking schema changes bump major.
 
 ### Added
 - Add `payments/razorpay` to the closed skill taxonomy (#14).
+- Detect Razorpay via `razorpay` and `react-native-razorpay` imports, mapped to `payments/razorpay` (#14).
 - Add `auth/okta` to the closed skill taxonomy (#2).
 
 ### Fixed
