@@ -7,6 +7,9 @@ always bump at least minor; breaking schema changes bump major.
 
 ## [Unreleased]
 
+### Added
+- Add `infra/gitlab-ci` to the closed skill taxonomy (#24).
+
 ### Fixed
 - Improve manifest dependency detection by comparing parent and child
   revision snapshots instead of relying only on added diff lines. This now
