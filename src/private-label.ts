@@ -7,7 +7,7 @@ import { assertNoSecrets } from "./secret-scan.js";
 export const PRIVATE_LABEL_MAX_LENGTH = 64;
 
 // eslint-disable-next-line no-control-regex
-const CONTROL_CHAR_PATTERN = /[\x00-\x1f\x7f]/;
+export const CONTROL_CHAR_PATTERN = /[\x00-\x1f\x7f]/;
 
 /**
  * Shared validation for the private label — used identically whether it

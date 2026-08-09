@@ -40,6 +40,12 @@ for local development/testing against a mock server).
 3. The CLI polls `POST {SITE_URL}/api/cli/device/token` with
    `{device_code}` every `interval` seconds until:
    - `{access_token}`, **HTTP 200** — success, stored locally (see below).
+     The response may also include `account_label` (a display identity for
+     the account the token belongs to — handle or masked email, whatever
+     the server can provide): if present, it's stored alongside the token
+     so `status` can later show which account is logged in. Optional on
+     purpose — a server that doesn't send it, or a session stored by an
+     older CLI version, simply has no such field.
    - `{error: "authorization_pending"}`, **HTTP 400** — keep polling.
    - `{error: "slow_down"}`, **HTTP 400** — keep polling, backing off by 5s.
    - `{error: "access_denied"}` or `{error: "expired_token"}`, **HTTP 400**
@@ -71,11 +77,14 @@ no env var reads, no dependency):
 | Windows | `%USERPROFILE%\AppData\Roaming\redential\credentials.json` |
 
 Same directory as the device salt (`salt.ts`), written with mode `0600`.
-Contents: `{access_token, site_url, obtained_at}`. `site_url` records which
-`SITE_URL` issued the token: `submit` refuses (and asks you to log in
-again) if the CLI's current `SITE_URL` doesn't match, so a
-`REDENTIAL_SITE_URL` change can never silently send a stored token to a
-different host.
+Contents: `{access_token, site_url, obtained_at, account_label?}`.
+`site_url` records which `SITE_URL` issued the token: `submit` refuses
+(and asks you to log in again) if the CLI's current `SITE_URL` doesn't
+match, so a `REDENTIAL_SITE_URL` change can never silently send a stored
+token to a different host. `account_label`, when the token endpoint sent
+one, is what `status` shows so a machine that's been logged in for a
+while — a second account created later, a company workspace invitation —
+doesn't silently `submit` to the wrong identity without you noticing.
 
 **0600 on Windows.** NTFS has no POSIX permission bits, so the `mode: 0o600`
 passed to `writeFileSync` is a no-op there — it restricts nothing and
@@ -122,8 +131,12 @@ you're logged in:
 - CLI version and the config dir path (from `DEFAULT_CONFIG_DIR`, above).
 - Login state: logged in and to which `SITE_URL`, a stored session for a
   *different* `SITE_URL` (told apart explicitly, same check `submit`
-  itself makes), or not logged in at all. **Never prints `access_token`**
-  — same "never log the token" rule as every error path in this CLI.
+  itself makes), or not logged in at all. When the stored session has an
+  `account_label`, it's shown too: `Logged in: yes (as <handle>,
+  <SITE_URL>)`; a session stored before this field existed (or by a
+  server that never sent one) just shows `Logged in: yes (<SITE_URL>)`,
+  no error, no migration. **Never prints `access_token`** — same "never
+  log the token" rule as every error path in this CLI.
 - The last submission on record (if any): timestamp, plus **prefixes**
   (12 hex characters) of the bundle hash and repo fingerprint — enough to
   eyeball "is this the record I think it is" without printing the full

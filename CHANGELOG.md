@@ -35,6 +35,12 @@ always bump at least minor; breaking schema changes bump major.
 - Detect Braintree via `braintree`, `braintree-web`, and `braintree-web-drop-in` imports, mapped to `payments/braintree` (#14).
 - Add `auth/better-auth` to the closed skill taxonomy (#2).
 - Detect Better Auth via the `better-auth` import, mapped to `auth/better-auth` (#2).
+- `status` now shows which account a stored session belongs to, when
+  `login`'s device token response includes an `account_label` (handle or
+  masked email). Stored in `credentials.json` alongside the token at
+  login time; sessions from an older CLI version or a server that
+  doesn't send it fall back to today's output, no error, no migration
+  (#63).
 
 ### Fixed
 - `iap-entitlement-gate` detection (`payments/iap-subscription-flow`) now
