@@ -44,7 +44,10 @@ function walk(dir: string): string[] {
 // any form: not printed, not in the request body sent onward, and never
 // written to disk. Only the two integers in the corroboration header (see
 // identity-corroboration.ts) are allowed to leave this function's scope.
-describe("identity-corroboration never leaks fetched verified emails", () => {
+// 30s timeout: this describe builds a real git fixture repo and runs the
+// full submit flow against a mock server, which can exceed vitest's 5s
+// default on loaded CI runners (same fix as test/submit.test.ts).
+describe("identity-corroboration never leaks fetched verified emails", { timeout: 30_000 }, () => {
   it("emails fetched from /api/cli/identity/emails never appear in logs, the bundle request body, or on disk", async () => {
     const SECRET_EMAIL = "secret-mailbox-EXAMPLE@corp-example.com";
     const server = await startMockServer((req) => {

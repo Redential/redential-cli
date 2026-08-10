@@ -38,7 +38,10 @@ function repoWithOneCommit(remote?: string): string {
   return dir;
 }
 
-describe("submit never leaks the token or the bundle through an error message", () => {
+// 30s timeout: these describes build real git fixture repos and run the
+// full submit flow, which can exceed vitest's 5s default on loaded CI
+// runners (same fix as test/submit.test.ts).
+describe("submit never leaks the token or the bundle through an error message", { timeout: 30_000 }, () => {
   it("a failed upload's error message names the host and status, never the token or bundle", async () => {
     const server = await startMockServer(() => ({ status: 500, body: { error: "boom" } }));
     servers.push(server);
@@ -100,7 +103,7 @@ describe("the visibility probe never fires against a credentialed remote URL", (
   });
 });
 
-describe("what submit prints is byte-for-byte what it uploads", () => {
+describe("what submit prints is byte-for-byte what it uploads", { timeout: 30_000 }, () => {
   it("the request body equals the exact string logged before the upload confirmation", async () => {
     const server = await startMockServer((req) => {
       if (req.url === "/api/cli/bundles") return { status: 200, body: { id: "ok" } };

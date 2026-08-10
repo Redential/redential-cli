@@ -14,9 +14,11 @@ always bump at least minor; breaking schema changes bump major.
 - Detect Okta via the `@okta/okta-auth-js`, `@okta/okta-react`,
   `@okta/okta-angular`, `@okta/okta-vue`, `@okta/jwt-verifier`, and
   `@okta/okta-sdk-nodejs` imports, mapped to `auth/okta` (#2).
+- Add `infra/gitlab-ci` to the closed skill taxonomy (#24).
 - Add `payments/adyen` to the closed skill taxonomy (#14).
 
 ### Fixed
+- Go (`foo_test.go`), Python (`test_foo.py`) and Ruby (`foo_spec.rb`) test files are now categorised as `testing` instead of falling through to `backend`.
 - Improve manifest dependency detection by comparing parent and child
   revision snapshots instead of relying only on added diff lines. This now
   correctly detects dependencies added inside existing blocks in

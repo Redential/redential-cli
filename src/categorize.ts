@@ -8,7 +8,15 @@ import type { CategoryName } from "./types.js";
 //
 // Order matters: first matching rule wins.
 const RULES: Array<[RegExp, CategoryName]> = [
-  [/(^|\/)(__tests__|tests?|specs?)(\/|$)|\.(test|spec)\.[jt]sx?$/i, "testing"],
+  // Recognise test files across languages: a `test/` or `spec/` directory, the
+  // JS/TS `.test.`/`.spec.` infix, the `_test.`/`_spec.` suffix used by Go
+  // (`foo_test.go`), Ruby (`foo_spec.rb`) and others, and the Python `test_`
+  // prefix (`test_foo.py`). Previously only the JS/TS forms were matched, so
+  // `foo_test.go` and `test_foo.py` fell through to "backend".
+  [
+    /(^|\/)(__tests__|tests?|specs?)(\/|$)|[._](test|spec)\.[a-z0-9]+$|(^|\/)test_[^/]+\.[a-z0-9]+$/i,
+    "testing",
+  ],
   [/(^|\/)(claude\.md|agents\.md|\.cursor|\.aider|copilot)/i, "ai-workflow"],
   [
     /(^|\/)(\.github\/workflows|dockerfile|docker-compose|terraform|k8s|kubernetes|infra)(\/|$|\.)/i,
