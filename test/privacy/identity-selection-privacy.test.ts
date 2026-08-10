@@ -58,7 +58,11 @@ function normalizeForComparison(bundle: Bundle): unknown {
   };
 }
 
-describe("identity-selection memory never leaks into the scanned repo or the network", () => {
+// 30s timeout: this describe builds real git fixture repos and one of its
+// tests runs the full submit flow against a mock server, which can exceed
+// vitest's 5s default on loaded CI runners (same fix as
+// test/submit.test.ts).
+describe("identity-selection memory never leaks into the scanned repo or the network", { timeout: 30_000 }, () => {
   it("(a) an interactive scan reusing a stored selection adds no file anywhere under the scanned repo", async () => {
     const dir = repoWithTwoAuthors();
     const configDir = tempConfigDir();

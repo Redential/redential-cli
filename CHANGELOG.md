@@ -7,8 +7,45 @@ always bump at least minor; breaking schema changes bump major.
 
 ## [Unreleased]
 
+### Added
+- Add `payments/razorpay` to the closed skill taxonomy (#14).
+- Detect Razorpay via `razorpay` and `react-native-razorpay` imports, mapped to `payments/razorpay` (#14).
+- Add `auth/okta` to the closed skill taxonomy (#2).
+- Detect Okta via the `@okta/okta-auth-js`, `@okta/okta-react`,
+  `@okta/okta-angular`, `@okta/okta-vue`, `@okta/jwt-verifier`, and
+  `@okta/okta-sdk-nodejs` imports, mapped to `auth/okta` (#2).
+- Add `infra/gitlab-ci` to the closed skill taxonomy (#24).
+
 ### Fixed
 - Go (`foo_test.go`), Python (`test_foo.py`) and Ruby (`foo_spec.rb`) test files are now categorised as `testing` instead of falling through to `backend`.
+- Improve manifest dependency detection by comparing parent and child
+  revision snapshots instead of relying only on added diff lines. This now
+  correctly detects dependencies added inside existing blocks in
+  `package.json`, `composer.json`, and `Cargo.toml` while ignoring existing
+  dependencies and version-only changes.
+- Add safer manifest parsing behavior by failing closed when a child or parent
+  manifest cannot be parsed, preventing malformed files from causing
+  over-attribution of dependencies.
+- Batch manifest snapshot reads across commits to reduce repeated Git blob
+  lookups during dependency detection.
+
+
+## [0.10.1] - 2026-08-07
+
+### Added
+- Add `payments/braintree` to the closed skill taxonomy (#14).
+- Detect Braintree via `braintree`, `braintree-web`, and `braintree-web-drop-in` imports, mapped to `payments/braintree` (#14).
+- Add `auth/better-auth` to the closed skill taxonomy (#2).
+- Detect Better Auth via the `better-auth` import, mapped to `auth/better-auth` (#2).
+
+### Fixed
+- `iap-entitlement-gate` detection (`payments/iap-subscription-flow`) now
+  recognizes a bare RevenueCat entitlement read, e.g.
+  `if (customerInfo.entitlements.active['pro'])` — previously only a CALL
+  containing an `"entitlements"` chain segment was seen, so this common
+  shape (no call at all) produced no hit. `parser-adapter.ts` gains a new
+  `ParsedAccess` node kind for outermost property/element-access chains
+  (#10).
 
 ## [0.10.0] - 2026-08-05
 

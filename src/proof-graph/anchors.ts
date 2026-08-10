@@ -760,25 +760,24 @@ function iapConfigureAndPurchaseHits(path: string, file: ParsedFile): AnchorHit[
 const ENTITLEMENT_SEGMENT = "entitlements";
 
 /**
- * Entitlement-gate hits: any CALL whose chain contains an "entitlements"
+ * Entitlement-gate hits: any CALL, or bare property/element-access read (see
+ * parser-adapter.ts's ParsedAccess), whose chain contains an "entitlements"
  * segment anywhere (not just first/last — allows shapes like
  * `customerInfo.entitlements.active.hasOwnProperty('pro')`, chain
  * ["customerInfo","entitlements","active","hasOwnProperty"], or a computed
  * access folded to "*" by chainOf, e.g.
- * `customerInfo.entitlements.active['pro'].someMethod()`). Deliberately
- * conservative and CALL-ONLY, per the milestone's own instruction — a
- * documented, accepted gap: the single most common real-world shape,
+ * `customerInfo.entitlements.active['pro'].someMethod()`).
+ *
+ * The access half closes what used to be this rule's documented, accepted
+ * gap: the single most common real-world shape,
  * `if (customerInfo.entitlements.active['pro']) { ... }`, is a bare
- * property/element-access expression, not a CallExpression, so it produces
- * no ParsedCall at all and this rule can't see it; assigning it to a
- * const first (`const entitlement = customerInfo.entitlements.active['pro']`)
- * DOES get captured by parser-adapter.ts as a ParsedBinding (kind
- * "alias"), but ParsedBinding carries no line/enclosingFunction (see its
- * own interface in parser-adapter.ts, which this milestone's task
- * explicitly keeps off-limits) — there is no AnchorHit this rule could
- * honestly construct from a binding alone. Both gaps are accepted spike
- * scope, not bugs: see anchors.test.ts's near-miss case for the bare-if
- * shape.
+ * property/element-access expression, not a CallExpression, so it never
+ * produced a ParsedCall — and, before ParsedAccess existed, there was no
+ * AnchorHit this rule could honestly construct for it at all (see H6's
+ * original comment here, and issue #10). ParsedAccess already excludes a
+ * call's own callee (see parser-adapter.ts's isMaximalAccessNode), so a call
+ * like `customerInfo.entitlements.active.get('pro')` still produces exactly
+ * one hit — from file.calls, same as before — not two.
  */
 function iapEntitlementGateHits(path: string, file: ParsedFile): AnchorHit[] {
   const hits: AnchorHit[] = [];
@@ -789,7 +788,17 @@ function iapEntitlementGateHits(path: string, file: ParsedFile): AnchorHit[] {
       path,
       enclosingFunction: call.enclosingFunction,
       line: call.line,
-      reason: `call chain contains an "${ENTITLEMENT_SEGMENT}" segment (chain: ${call.chain.join(".")}) — conservative, call-only signal; see iapEntitlementGateHits' own comment on this rule's known gaps`,
+      reason: `call chain contains an "${ENTITLEMENT_SEGMENT}" segment (chain: ${call.chain.join(".")})`,
+    });
+  }
+  for (const access of file.accesses) {
+    if (!access.chain.includes(ENTITLEMENT_SEGMENT)) continue;
+    hits.push({
+      kind: "iap-entitlement-gate",
+      path,
+      enclosingFunction: access.enclosingFunction,
+      line: access.line,
+      reason: `bare property/element access contains an "${ENTITLEMENT_SEGMENT}" segment (chain: ${access.chain.join(".")}) — not a call`,
     });
   }
   return hits;

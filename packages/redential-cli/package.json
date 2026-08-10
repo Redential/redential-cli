@@ -1,6 +1,6 @@
 {
   "name": "redential-cli",
-  "version": "0.10.0",
+  "version": "0.10.1",
   "description": "Official alias for @redential/cli — turn private work into an NDA-safe developer credential. Your code never leaves your machine.",
   "license": "Apache-2.0",
   "type": "module",
@@ -31,6 +31,6 @@
     "privacy"
   ],
   "dependencies": {
-    "@redential/cli": ">=0.10.0"
+    "@redential/cli": ">=0.10.1"
   }
 }

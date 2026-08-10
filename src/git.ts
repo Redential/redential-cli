@@ -11,6 +11,7 @@ export interface FileChurn {
 
 export interface RawCommit {
   sha: string;
+  parentSha: string | undefined;
   email: string;
   authorDate: Date;
   // Distinct from authorDate: the date the commit object was actually
@@ -107,6 +108,7 @@ function parseCommitRecord(record: string): RawCommit {
     signed: signatureStatus === "G",
     churn,
     isMerge: parents.trim().split(/\s+/).filter(Boolean).length > 1,
+    parentSha: parents.trim().split(/\s+/).filter(Boolean)[0],
   };
 }
 
@@ -660,6 +662,18 @@ export function listHeadTreeBlobs(repoPath: string): Promise<HeadTreeEntry[]> {
  * getCommitsAddedLines/skill-detect.ts's DIFF_BATCH_SIZE split, so at most
  * one batch's worth of file content is ever held in memory at once.
  *
+ * Although this helper was originally introduced for HEAD snapshot reads,
+ * it now accepts any git revision. HEAD is simply the current checked-out
+ * revision; callers may also provide historical commit SHAs, such as a
+ * commit being analyzed and its parent commit. This allows callers like
+ * skill detection to compare two repository states:
+ *
+ *   parent revision -> child revision
+ *
+ * instead of relying only on partial diff lines. This is required for
+ * manifest dependency detection, where the full before/after file contents
+ * are needed to identify newly added dependencies safely.
+ *
  * `--batch` was chosen over N calls to `git show HEAD:path` (one process
  * per file — exactly the cost this exists to avoid) or one `git show`
  * given many `HEAD:path` args back to back (which does concatenate blob
@@ -680,11 +694,11 @@ export function listHeadTreeBlobs(repoPath: string): Promise<HeadTreeEntry[]> {
  * matching getCommitsAddedLines' fail-quiet-to-partial-data behavior — a
  * missing snapshot file is not a privacy problem, only a completeness one.
  */
-export function readHeadBlobContents(repoPath: string, paths: string[]): Promise<Map<string, string>> {
-  const result = new Map<string, string>();
-  if (paths.length === 0) return Promise.resolve(result);
+export function readBlobContents(repoPath: string, requests: { revision: string; path: string }[]): Promise<Map<string, Map<string, string>>> {
+  const result = new Map<string, Map<string, string>>();
+  if (requests.length === 0) return Promise.resolve(result);
 
-  debugLog(`git cat-file --batch <${paths.length} paths> (batched content fetch)`);
+  debugLog(`git cat-file --batch <${requests.length} paths> (batched content fetch)`);
 
   return new Promise((resolve) => {
     const child = spawn("git", ["cat-file", "--batch"], {
@@ -693,7 +707,8 @@ export function readHeadBlobContents(repoPath: string, paths: string[]): Promise
     });
 
     let buffer = Buffer.alloc(0);
-    let index = 0; // position in `paths` — cat-file --batch answers strictly in request order
+    let index = 0; // position in `requests` — cat-file --batch answers
+    // strictly in request order.
 
     const tryParse = () => {
       for (;;) {
@@ -714,10 +729,17 @@ export function readHeadBlobContents(repoPath: string, paths: string[]): Promise
         const contentStart = headerEnd + 1;
         const contentEnd = contentStart + size;
         if (buffer.length < contentEnd + 1) return; // content + trailing \n not fully buffered yet
-        const path = paths[index];
-        if (path !== undefined) {
-          result.set(path, buffer.slice(contentStart, contentEnd).toString("utf8"));
+        const content = buffer.slice(contentStart, contentEnd).toString("utf8");
+        const request = requests[index];
+        if (request === undefined) {
+         return;
         }
+        let revisionMap = result.get(request.revision);
+        if (revisionMap === undefined) {
+          revisionMap = new Map<string, string>();
+          result.set(request.revision, revisionMap);
+        }
+        revisionMap.set(request.path, content);
         buffer = buffer.slice(contentEnd + 1);
         index++;
       }
@@ -733,7 +755,7 @@ export function readHeadBlobContents(repoPath: string, paths: string[]): Promise
     child.on("error", () => resolve(result));
     child.on("close", () => resolve(result));
 
-    child.stdin!.write(paths.map((p) => `HEAD:${p}\n`).join(""));
+    child.stdin!.write(requests.map((request) => `${request.revision}:${request.path}\n`).join(""));
     child.stdin!.end();
   });
 }
