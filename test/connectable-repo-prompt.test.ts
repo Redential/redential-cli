@@ -203,7 +203,10 @@ describe("executeScanCommand — --json treats a connectable-repo TTY run as non
   });
 });
 
-describe("executeSubmitCommand — connectable-repo notice (TTY)", () => {
+// 30s timeout: this describe builds a real git fixture repo and runs the
+// full submit flow against a mock server, which can exceed vitest's 5s
+// default on loaded CI runners (same fix as test/submit.test.ts).
+describe("executeSubmitCommand — connectable-repo notice (TTY)", { timeout: 30_000 }, () => {
   it("submit never asks 'Continue locally?' — it still prints the warning, but its real guard is the visibility gate below, not this prompt", async () => {
     const server = await startMockServer(() => ({ status: 200, body: { id: "b1" } }));
     servers.push(server);

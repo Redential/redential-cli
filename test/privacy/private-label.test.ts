@@ -48,7 +48,10 @@ function repoWithOneCommit(): string {
 
 const noCheckForUpdate = async () => {};
 
-describe("private label never enters the bundle", () => {
+// 30s timeout: these describes build real git fixture repos and run the
+// full submit flow, which can exceed vitest's 5s default on loaded CI
+// runners (same fix as test/submit.test.ts).
+describe("private label never enters the bundle", { timeout: 30_000 }, () => {
   it("the uploaded bundle body never contains the label string, TTY or not", async () => {
     const server = await startMockServer((req) => {
       if (req.url === "/api/cli/bundles") return { status: 200, body: { id: "bundle-1" } };
@@ -153,7 +156,7 @@ describe("private label never enters the bundle", () => {
   });
 });
 
-describe("private label consent-surface ordering", () => {
+describe("private label consent-surface ordering", { timeout: 30_000 }, () => {
   it("the label line prints before the upload prompt is invoked", async () => {
     const server = await startMockServer((req) => {
       if (req.url === "/api/cli/bundles") return { status: 200, body: { id: "bundle-order" } };
@@ -195,7 +198,7 @@ describe("private label consent-surface ordering", () => {
   });
 });
 
-describe("non-TTY without --label uploads nothing", () => {
+describe("non-TTY without --label uploads nothing", { timeout: 30_000 }, () => {
   it("throws before any network call — no bundle request, no label request, no request of any kind", async () => {
     const server = await startMockServer(() => ({ status: 200, body: { id: "should-not-be-called" } }));
     servers.push(server);
