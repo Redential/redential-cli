@@ -7,6 +7,9 @@ always bump at least minor; breaking schema changes bump major.
 
 ## [0.11.0] - 2026-08-10
 
+### Fixed
+- Add near-miss negative fixtures for Firebase Auth, OAuth/OIDC, ActiveRecord, GitHub Actions, and Jest signature detection.
+
 ### Added
 - Add `payments/razorpay` to the closed skill taxonomy (#14).
 - Detect Razorpay via `razorpay` and `react-native-razorpay` imports, mapped to `payments/razorpay` (#14).

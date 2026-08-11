@@ -13,7 +13,11 @@
       { "path": ".github/workflows/ci.yml", "diff": "name: CI\non: [push]\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - run: npm test" }
     ],
     "negative": [
-      { "path": "README.md", "diff": "We use github actions for CI, but the workflow file hasn't been checked into the repo yet." }
+      { "path": "README.md", "diff": "We use github actions for CI, but the workflow file hasn't been checked into the repo yet." },
+      {
+        "path": "README.md",
+        "diff": "We use github actions for CI, but the workflow file hasn't been checked into the repo yet."
+      }
     ]
   }
 }

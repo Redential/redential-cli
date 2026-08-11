@@ -35,6 +35,10 @@
       {
         "path": "README.md",
         "diff": "We discussed adding generic OAuth/OIDC support with PKCE and discovery documents but shipped Supabase's built-in provider instead."
+      },
+      {
+        "path": "src/auth/jose-oidc.ts",
+        "diff": "const packageName = \"openid-client\";\nconst discoveryUrl = `${issuer}/.well-known/openid-config`;\nconst response = await fetch(discoveryUrl);"
       }
     ]
   }

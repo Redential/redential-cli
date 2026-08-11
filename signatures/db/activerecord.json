@@ -15,6 +15,10 @@
       {
         "path": "README.md",
         "diff": "We use ActiveRecord for most models but this one talks to an external API instead of a table."
+      },
+      {
+        "path": "app/services/user_importer.rb",
+        "diff": "class UserImporter < ApplicationService\n  def call\n    # import users from the external API\n  end\nend"
       }
     ]
   }
