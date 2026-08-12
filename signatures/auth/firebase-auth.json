@@ -37,6 +37,10 @@
       {
         "path": "src/lib/clerk.ts",
         "diff": "import { getAuth } from \"@clerk/nextjs/server\";\nconst { userId } = getAuth(req);"
+      },
+      {
+        "path": "src/docs/examples.ts",
+        "diff": "// Firebase authentication uses signInWithRedirect(auth, provider) for browser login."
       }
     ]
   }

@@ -19,6 +19,10 @@
       {
         "path": "src/foo.test.ts",
         "diff": "import { describe, it, expect } from \"vitest\";\nit(\"matches the snapshot\", () => {\n  expect(result).toMatchSnapshot();\n});"
+      },
+      {
+        "path": "src/foo.test.ts",
+        "diff": "import { vi } from \"vitest\";\nconst mockFn = vi.fn();\nconst spy = vi.spyOn(console, \"log\");\nvi.mock(\"./foo\");\nconst framework = \"jest\";"
       }
     ]
   }
