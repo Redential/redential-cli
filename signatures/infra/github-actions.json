@@ -15,8 +15,8 @@
     "negative": [
       { "path": "README.md", "diff": "We use github actions for CI, but the workflow file hasn't been checked into the repo yet." },
       {
-        "path": "README.md",
-        "diff": "We use github actions for CI, but the workflow file hasn't been checked into the repo yet."
+      "path": "README.md",
+      "diff": "# Example workflow: uses: actions/checkout@v4\n"
       }
     ]
   }

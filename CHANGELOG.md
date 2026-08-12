@@ -5,10 +5,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: strict [semver](https://semver.org/) — bundle schema changes
 always bump at least minor; breaking schema changes bump major.
 
-## [0.11.0] - 2026-08-10
+## [Unreleased]
 
-### Fixed
+### Added
 - Add near-miss negative fixtures for Firebase Auth, OAuth/OIDC, ActiveRecord, GitHub Actions, and Jest signature detection.
+
+## [0.11.0] - 2026-08-10
 
 ### Added
 - Add `payments/razorpay` to the closed skill taxonomy (#14).

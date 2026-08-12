@@ -40,7 +40,7 @@
       },
       {
         "path": "src/docs/examples.ts",
-        "diff": "Firebase authentication uses signInWithRedirect(auth, provider) for browser login."
+        "diff": "// Firebase authentication uses signInWithRedirect(auth, provider) for browser login."
       }
     ]
   }
