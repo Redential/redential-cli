@@ -95,7 +95,14 @@ describe("cli-smoke — subprocess: the real built CLI, piped (non-TTY) stdin/st
     // CLAUDE.md), so this test builds its own fresh `dist/` up front,
     // exactly what `npm run build` does, self-contained and deterministic
     // regardless of run order.
-    execFileSync("npx", ["tsc", "-p", "tsconfig.json"], { cwd: REPO_ROOT, stdio: "pipe" });
+    // Invoke the TypeScript compiler's JS entrypoint directly via
+    // `process.execPath` rather than shelling out to `npx`/`tsc`: on
+    // Windows those are `.cmd` shims, and `execFileSync` without `shell:
+    // true` can't spawn them (ENOENT). This mirrors how the CLI itself is
+    // spawned below (`process.execPath` + a `dist/cli.js` path), so no new
+    // dependency and no platform-specific lookup is needed.
+    const tscPath = join(REPO_ROOT, "node_modules", "typescript", "lib", "tsc.js");
+    execFileSync(process.execPath, [tscPath, "-p", "tsconfig.json"], { cwd: REPO_ROOT, stdio: "pipe" });
   }, 30_000);
 
   function spawnCli(args: string[], cwd: string): Promise<{ code: number | null; stdout: string; stderr: string }> {
