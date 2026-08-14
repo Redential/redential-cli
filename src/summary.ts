@@ -448,23 +448,10 @@ function capabilitiesSection(bundle: Bundle, theme: Theme): string[] {
 export interface FormatSummaryOptions {
   /** True to render the ASCII/no-color fallback (see `shouldUsePlainOutput`). */
   plain?: boolean;
-  /**
-   * Local CLI state for the closing next-step hint — never repo data.
-   * `false`/omitted is always the safe default (never claims a session or
-   * a prior submission that isn't actually known to exist):
-   * - No session → "redential login && redential submit".
-   * - Session, not yet submitted (or `alreadySubmittedIdentical` omitted)
-   *   → "redential submit" only.
-   * - Session AND this exact bundle content was already uploaded → no
-   *   hint at all; re-submitting would send nothing new.
-   */
-  hasSession?: boolean;
-  alreadySubmittedIdentical?: boolean;
   /** Human label for an active `--since` window ("last 2 years", "since
    * 2024-01-01" — src/since.ts's describeSince), shown next to the
    * span/commit-count line. Undefined/omitted means no window was applied
-   * (the default: full history). Local CLI input, not bundle data — same
-   * category as hasSession/alreadySubmittedIdentical above. */
+   * (the default: full history). Local CLI input, not bundle data. */
   sinceLabel?: string;
   /** True when the scanned repo is a shallow clone (git.ts's
    * isShallowRepository) — same local-state category as the fields above.
@@ -476,8 +463,7 @@ export interface FormatSummaryOptions {
   /** True renders the extra COMMITS BY HOUR/WEEKDAY histogram sections
    * (`redential scan --details`) in addition to the default sections. The
    * default (false/omitted) omits them — see scan-command.ts and
-   * docs/scan.md. Also drops the "More detail..." footer hint (already
-   * showing what it would point to). */
+   * docs/scan.md. */
   details?: boolean;
 }
 
@@ -536,40 +522,22 @@ export function formatSummary(bundle: Bundle, opts: FormatSummaryOptions = {}): 
       colors.RESET
     } of your commits are cryptographically signed`
   );
-  if (bundle.signed.ratio === 0) {
-    lines.push(
-      `  ${colors.DIM}Tip: none of your commits are signed. Signed commits make your future work cryptographically attributable: https://docs.github.com/en/authentication/managing-commit-signature-verification${colors.RESET}`
-    );
-  }
   lines.push("");
 
-  lines.push(`  ${colors.GRAY}${chars.divider.repeat(WIDTH)}${colors.RESET}`);
-  lines.push(`  ${colors.DIM}Nothing left your machine. Nothing is uploaded unless you run${colors.RESET}`);
-  lines.push(`  ${colors.DIM}\`redential submit\` — and only the bounded bundle: aggregates,${colors.RESET}`);
-  lines.push(`  ${colors.DIM}salted fingerprints, and closed-vocabulary capability slugs.${colors.RESET}`);
-  lines.push(`  ${colors.DIM}Never code, file names, commit messages, or other contributors.${colors.RESET}`);
-  lines.push(`  ${colors.DIM}Verify: github.com/Redential/redential-cli${colors.RESET}`);
-  lines.push(`  ${colors.GRAY}${chars.divider.repeat(WIDTH)}${colors.RESET}`);
-  lines.push("");
-
-  lines.push(`  ${colors.DIM}Inspect the exact payload:  redential scan --json${colors.RESET}`);
-  if (!opts.details) {
-    lines.push(`  ${colors.DIM}More detail (hour/weekday histograms):  redential scan --details${colors.RESET}`);
-  }
-
-  // Three states, in order — see FormatSummaryOptions' own doc comment:
-  // no session -> login+submit; session but not yet submitted -> submit
-  // only; session AND already submitted this exact content -> nothing,
-  // since re-submitting would upload nothing new.
-  if (!opts.hasSession) {
-    lines.push("");
-    lines.push(`  ${colors.BOLD}Add this private work to your public Redential profile:${colors.RESET}`);
-    lines.push(`  ${chars.arrow} redential login && redential submit`);
-  } else if (!opts.alreadySubmittedIdentical) {
-    lines.push("");
-    lines.push(`  ${colors.BOLD}Add this private work to your public Redential profile:${colors.RESET}`);
-    lines.push(`  ${chars.arrow} redential submit`);
-  }
+  // Closing block (owner follow-up, 2026-08): a single dim-gray line, no
+  // more, no repeated privacy paragraph and no jargon ("salted
+  // fingerprints", "closed-vocabulary capability slugs" — that detail now
+  // lives in docs/scan.md, see its "How it works"/"The summary" sections).
+  // `redential scan --json` is the actual source of truth for the exact
+  // payload; this line only restates the one fact that matters here.
+  // Never yellow/warning-colored — this is reassurance, not an alert (same
+  // "dim only" rule scan-command.ts's stderr notices follow, see
+  // src/dim.ts — this one uses the theme's own DIM+GRAY pair instead,
+  // since it's part of the plain/rich theme system already gating this
+  // whole function, not a separate stderr call).
+  lines.push(
+    `  ${colors.DIM}${colors.GRAY}Nothing was uploaded. You choose what gets sent. github.com/Redential/redential-cli${colors.RESET}`
+  );
 
   const text = lines.join("\n");
   // Prose copy above uses em dashes for typographic style — harmless on

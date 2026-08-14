@@ -54,41 +54,29 @@ function baseBundle(overrides: Partial<Bundle> = {}): Bundle {
 }
 
 describe("formatSummary", () => {
-  it("includes span, commit count, ownership, and the closing verification block", () => {
+  it("includes span, commit count, ownership, and the single closing line", () => {
     const text = stripAnsi(formatSummary(baseBundle()));
     // Phase 2 header line: "<span> · <commits> authored commits · <ownership>%
     // ownership" — replaces the old "<span>, <commits> commits" line, folding
     // the ownership figure (previously only in the footer block) up top too.
     expect(text).toContain("2 years · 1,847 authored commits · 78% ownership");
-    expect(text).toContain("Nothing left your machine. Nothing is uploaded unless you run");
-    expect(text).toContain("Verify: github.com/Redential/redential-cli");
+    // Owner follow-up (2026-08): the closing block shrank to exactly one
+    // line — no more repeated privacy paragraph/jargon, no --json/--details
+    // footer hints (moved to docs/scan.md), no textual next-step CTA (moved
+    // to a live post-scan prompt in scan-command.ts).
+    expect(text).toContain("Nothing was uploaded. You choose what gets sent. github.com/Redential/redential-cli");
   });
 
-  it("opens with the header title; when there's no next-step hint to show (session + already submitted identical), the summary still ends predictably with the --json/--details hints", () => {
-    // Equal-or-stronger replacement for the old "starts with a divider, ends
-    // with the verification line" assertion: the phase-2 layout starts with
-    // the "PRIVATE WORK, LOCALLY DERIVED" title (no leading divider — the
-    // divider now brackets the "Nothing left your machine" notice further
-    // down) and, with no CTA to show, ends with the --json/--details hints
-    // instead (the CTA, when present, is always the true last content — see
-    // the "closing next-step hint" tests below).
-    const text = formatSummary(baseBundle(), { hasSession: true, alreadySubmittedIdentical: true });
+  it("opens with the header title and ends with the single closing line — nothing else after it", () => {
+    const text = formatSummary(baseBundle());
     const lines = text.split("\n");
     expect(stripAnsi(lines[0])).toContain("PRIVATE WORK, LOCALLY DERIVED");
-    const stripped = stripAnsi(text);
-    expect(stripped).toContain("Nothing left your machine. Nothing is uploaded unless you run");
-    expect(stripped).toContain("Verify: github.com/Redential/redential-cli");
-    const lastLine = stripAnsi(lines[lines.length - 1]);
-    expect(lastLine).toContain("redential scan --details");
+    const lastNonEmptyLine = stripAnsi(lines.filter((l) => l.trim() !== "").at(-1)!);
+    expect(lastNonEmptyLine).toContain("Nothing was uploaded. You choose what gets sent.");
   });
 
-  it("shows the signing tip when signed ratio is 0%", () => {
+  it("does not mention signed commits below the Signed commits line (tip relocated to post-submit — see submit-command.ts)", () => {
     const text = stripAnsi(formatSummary(baseBundle({ signed: { count: 0, ratio: 0 } })));
-    expect(text).toContain("Tip: none of your commits are signed.");
-  });
-
-  it("omits the signing tip when signed ratio is above 0%", () => {
-    const text = stripAnsi(formatSummary(baseBundle({ signed: { count: 1, ratio: 0.5 } })));
     expect(text).not.toContain("Tip: none of your commits are signed.");
   });
 
@@ -249,85 +237,34 @@ describe("formatSummary", () => {
     // eslint-disable-next-line no-control-regex
     expect(text).toMatch(/\x1b\[[0-9;]*m/);
     expect(text).toContain("█");
-    expect(text).toContain("─");
   });
 
-  describe("--json / --details footer hints", () => {
-    it("always points at `redential scan --json` to inspect the exact payload", () => {
-      const text = stripAnsi(formatSummary(baseBundle()));
-      expect(text).toContain("Inspect the exact payload:  redential scan --json");
-    });
-
-    it("points at `redential scan --details` when details is false/omitted", () => {
-      const text = stripAnsi(formatSummary(baseBundle()));
-      expect(text).toContain("More detail (hour/weekday histograms):  redential scan --details");
-    });
-
-    it("omits the --details hint when details is already true (already showing what it points to)", () => {
-      const text = stripAnsi(formatSummary(baseBundle(), { details: true }));
-      expect(text).not.toContain("redential scan --details");
-    });
+  // Owner follow-up (2026-08): the --json/--details footer hints, the
+  // repeated privacy paragraph, and the textual next-step CTA are all gone
+  // from the terminal output — replaced by the single closing line above.
+  // `redential scan --json`/`--details` are documented in `--help` and
+  // docs/scan.md instead (docs/scan.md's "How it works"/"The summary"
+  // sections); the next-step CTA is now a live post-scan prompt
+  // (scan-command.ts), not text inside this function at all — so
+  // `FormatSummaryOptions` no longer has session-state fields to test here.
+  it("never mentions the old --json/--details footer hints or the textual next-step CTA", () => {
+    const text = stripAnsi(formatSummary(baseBundle()));
+    expect(text).not.toContain("Inspect the exact payload");
+    expect(text).not.toContain("More detail (hour/weekday histograms)");
+    expect(text).not.toContain("Add this private work to your public Redential profile");
+    expect(text).not.toContain("redential login && redential submit");
   });
 
-  describe("closing next-step hint — three states", () => {
-    // Phase 2: CTA header text changed from "Want this on a public,
-    // verifiable profile?" (forbidden going forward — must never say
-    // "verifiable profile") to "Add this private work to your public
-    // Redential profile:". Same three-state logic, same guarantee.
-    const CTA_HEADER = "Add this private work to your public Redential profile:";
+  it("never says 'verifiable profile' (forbidden phrasing, historical regression guard)", () => {
+    const text = stripAnsi(formatSummary(baseBundle()));
+    expect(text).not.toContain("verifiable profile");
+  });
 
-    it("CTA header never says 'verifiable profile'", () => {
-      const text = stripAnsi(formatSummary(baseBundle()));
-      expect(text).not.toContain("verifiable profile");
-    });
-
-    it("no session (hasSession omitted/false): shows the login+submit CTA", () => {
-      const text = stripAnsi(formatSummary(baseBundle()));
-      expect(text).toContain(CTA_HEADER);
-      expect(text).toContain("→ redential login && redential submit");
-      const lastLine = text.split("\n").filter(Boolean).at(-1);
-      expect(lastLine).toContain("redential login && redential submit");
-    });
-
-    it("session, not yet submitted (or unknown): shows the submit-only CTA, without a login command", () => {
-      const text = stripAnsi(formatSummary(baseBundle(), { hasSession: true }));
-      expect(text).toContain(CTA_HEADER);
-      expect(text).toContain("→ redential submit");
-      expect(text).not.toContain("redential login");
-    });
-
-    it("session, not yet submitted, explicit alreadySubmittedIdentical: false: same as above", () => {
-      const text = stripAnsi(
-        formatSummary(baseBundle(), { hasSession: true, alreadySubmittedIdentical: false })
-      );
-      expect(text).toContain(CTA_HEADER);
-      expect(text).toContain("→ redential submit");
-      expect(text).not.toContain("redential login");
-    });
-
-    it("session AND already submitted identical: shows no next-step hint at all", () => {
-      const text = stripAnsi(
-        formatSummary(baseBundle(), { hasSession: true, alreadySubmittedIdentical: true })
-      );
-      expect(text).not.toContain(CTA_HEADER);
-      // The fixed disclaimer text ("`redential submit` — and only the
-      // bounded bundle...") legitimately mentions "redential submit" even
-      // with no CTA — the CTA-specific arrow line is what must be absent.
-      expect(text).not.toContain("→ redential submit");
-      expect(text).not.toContain("redential login");
-    });
-
-    it("alreadySubmittedIdentical alone, without hasSession, is treated as no session (safe default)", () => {
-      const text = stripAnsi(formatSummary(baseBundle(), { alreadySubmittedIdentical: true }));
-      expect(text).toContain("→ redential login && redential submit");
-    });
-
-    it("plain mode renders the CTA with an ASCII arrow (\"->\"), still pure printable ASCII", () => {
-      const text = formatSummary(baseBundle(), { plain: true, hasSession: true });
-      expect(text).toContain("-> redential submit");
-      // eslint-disable-next-line no-control-regex
-      expect(text).toMatch(/^[\x20-\x7e\n]*$/);
-    });
+  it("plain mode's closing line stays pure printable ASCII", () => {
+    const text = formatSummary(baseBundle(), { plain: true });
+    // eslint-disable-next-line no-control-regex
+    expect(text).toMatch(/^[\x20-\x7e\n]*$/);
+    expect(text).toContain("Nothing was uploaded. You choose what gets sent.");
   });
 
   // Phase 2 note: the old, separate "STRUCTURAL EVIDENCE (proof graph)"

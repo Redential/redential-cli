@@ -4,8 +4,13 @@ import { describeSince } from "./since.js";
 import { getSiteUrl } from "./config.js";
 import { readCredentials } from "./credentials.js";
 import { bundleContentHash, readLastSubmission } from "./submission-record.js";
-import { isShallowRepository } from "./git.js";
+import { isShallowRepository, getRemoteUrl } from "./git.js";
+import { connectableRepoNotice } from "./public-remote.js";
+import { promptAddToProfile } from "./prompt.js";
+import { AuthError } from "./errors.js";
+import { dim } from "./dim.js";
 import type { Bundle } from "./types.js";
+import type { SubmitCommandOptions } from "./submit-command.js";
 
 // Commits between stderr progress writes — keeps a huge repo's walk from
 // spamming thousands of lines, while still giving visible movement well
@@ -24,12 +29,12 @@ export type ScanCommandOptions = BuildBundleOptions & {
   isTTY?: boolean;
   // Forces JSON-only output even when stdout is a TTY — and, per this
   // option's own "suitable for pipes even on a TTY" contract, also
-  // suppresses the huge-repo progress line and the connectable-repo
-  // "Continue locally?" interactive follow-up (both go through
-  // `interactiveTTY` below), even though both are otherwise gated on
-  // `isTTY` alone. Neither ever touched stdout to begin with (progress is
-  // stderr-only; the follow-up is a stdin/stderr prompt), so this isn't
-  // about stdout purity — it's about `--json` meaning "treat this run as
+  // suppresses the huge-repo progress line and the post-scan "Add this to
+  // your Redential profile?" prompt (both go through `interactiveTTY`
+  // below), even though both are otherwise gated on `isTTY` alone. Neither
+  // ever touched stdout to begin with (progress is stderr-only; the prompt
+  // is a stdin/stdout prompt gated separately), so this isn't about stdout
+  // purity — it's about `--json` meaning "treat this run as
   // non-interactive/scripted," consistently, even when stdout happens to
   // be a real terminal.
   json?: boolean;
@@ -49,6 +54,11 @@ export type ScanCommandOptions = BuildBundleOptions & {
   // instead of a real stream. Only used when `interactiveTTY` is true — see
   // buildProgressReporter below.
   progressWrite?: (message: string) => void;
+  // Injectable for tests; defaults to the real interactive prompt
+  // (prompt.ts's promptAddToProfile). Only ever called on `interactiveTTY`
+  // when there's a stored session and this exact bundle content hasn't
+  // already been uploaded — see `maybeOfferToAddToProfile` below.
+  promptAddToProfileFn?: () => Promise<boolean>;
 };
 
 /**
@@ -102,41 +112,149 @@ function nextStepsState(bundle: Bundle, configDir: string | undefined): {
 }
 
 /**
+ * Console-UX overhaul (2026-08): a one-line, non-blocking connectable-repo
+ * notice (`connectableRepoNotice`, public-remote.ts), printed to stderr in
+ * EVERY mode as the very LAST thing `executeScanCommand` does — moved out
+ * of the pre-scan guardrail this used to be, and never followed by any
+ * question anymore (the old "Continue locally?" prompt is gone entirely;
+ * see docs/scan.md). A cheap, local `getRemoteUrl` re-read rather than
+ * threading the raw remote URL through `Bundle` itself — same
+ * presentation-only-metadata-stays-out-of-the-bundle rationale as
+ * `nextStepsState` below.
+ */
+function printConnectableRepoNotice(opts: ScanCommandOptions, warn: (message: string) => void): void {
+  const note = connectableRepoNotice(getRemoteUrl(opts.repoPath));
+  // Neutral/dim, never warning-colored (owner follow-up, 2026-08) — this is
+  // informational, not an alert; see dim.ts.
+  if (note) warn(dim(note));
+}
+
+/**
+ * Post-scan hand-off to `submit` (console-UX overhaul, 2026-08) — only
+ * offered on `interactiveTTY` when there's an actual stored session and
+ * this exact bundle content hasn't already been uploaded (see
+ * `nextStepsState`'s three states): with no session, `submit` would just
+ * fail with "not logged in", so the existing textual "redential login &&
+ * redential submit" hint already printed in the summary is left as the
+ * only next step; with nothing new to upload, there is nothing to offer.
+ *
+ * On "yes", hands off to `submit`'s own flow IN-PROCESS
+ * (`executeSubmitCommand`) via a DYNAMIC import — not a static one at the
+ * top of this file — so `scan`'s own always-run code path (piped/`--json`
+ * output, and the TTY summary on every run where this step doesn't fire)
+ * never pulls in any network-capable module; only this explicit, freshly
+ * consented action does. `author`/`yes: true` are threaded through from
+ * what the user already confirmed moments ago in THIS SAME scan (the
+ * unified pre-scan confirmation, build-bundle.ts's `promptConfirmScan`) —
+ * so submit's own author-selection/authorization step
+ * (`buildBundleInteractively`, code shared by both commands) is answered
+ * honestly from that same just-given confirmation rather than silently
+ * skipped or asked again. Every other part of submit's own consent
+ * surface — the exact-JSON print, the upload confirmation prompt, the
+ * private-label prompt — fires exactly as it always does on a real
+ * `submit` run; nothing about submit's own invariants is weakened here.
+ *
+ * `AuthError` (the stored session turned out to belong to a different
+ * `SITE_URL`, or was deleted between `nextStepsState`'s read and this
+ * call) is caught and turned into a plain stderr note rather than
+ * propagating: `scan` already fully succeeded and printed everything
+ * above it, so a login hiccup on this optional add-on must never turn a
+ * successful scan into a failed exit code. Every other error still
+ * propagates normally.
+ */
+async function maybeAddToProfile(
+  opts: ScanCommandOptions,
+  authors: string[],
+  log: (message: string) => void,
+  warn: (message: string) => void
+): Promise<void> {
+  const proceed = await (opts.promptAddToProfileFn ?? promptAddToProfile)();
+  if (!proceed) {
+    warn(dim("Run `redential submit` any time to add this to your Redential profile."));
+    return;
+  }
+
+  const { executeSubmitCommand } = await import("./submit-command.js");
+  const submitOptions: SubmitCommandOptions = {
+    repoPath: opts.repoPath,
+    author: authors,
+    yes: true,
+    confirmUpload: false,
+    toolVersion: opts.toolVersion,
+    configDir: opts.configDir,
+    isTTY: true,
+    plain: opts.plain,
+    // Reviewer fix (2026-08): forward the same --since window the scan
+    // just summarized — without this, "Add THIS to your profile?" would
+    // silently rebuild the bundle from FULL history instead of the
+    // since-limited one the user just reviewed. `buildBundleInteractively`
+    // (shared by scan and submit) already threads `since` straight through
+    // to `runScan`, so this is the only place it needed wiring.
+    since: opts.since,
+    log,
+    warn,
+  };
+  try {
+    await executeSubmitCommand(submitOptions);
+  } catch (err) {
+    if (err instanceof AuthError) {
+      warn("Not logged in — run `redential login` then `redential submit` to add this to your profile.");
+      return;
+    }
+    throw err;
+  }
+}
+
+/**
  * The `scan` command's actual behavior, independent of commander wiring —
  * exists mainly so the public-host warning ("warn, never block") is
  * testable without spawning the built CLI.
  *
- * Output contract (phase 2 of the console-UX redesign) — exactly one of:
+ * Output contract (console-UX overhaul) — exactly one of:
  * - `--json` (regardless of `isTTY`), OR piped/redirected stdout with no
  *   flags: ONLY the raw bundle JSON on stdout, byte-identical to every
  *   prior release — the pipe/no-flags case is pinned by tests and MUST
  *   stay byte-for-byte identical; `scan | jq` keeps working unchanged.
  * - A real TTY, no `--json`: ONLY the human-readable summary
- *   (`formatSummary`) — no JSON dump. The summary itself tells the user
- *   how to get the exact payload (`redential scan --json`) and how to see
- *   the hour/weekday histograms (`redential scan --details`).
+ *   (`formatSummary`) — no JSON dump. `redential scan --json` is the
+ *   documented source of truth for the exact payload (docs/scan.md); the
+ *   summary itself only points at it (and at `--details`) via `--help`
+ *   and this doc, not a footer line anymore (owner follow-up, 2026-08).
  * - A real TTY, no `--json`, `--details`: the same summary, with the
  *   histogram sections added (`FormatSummaryOptions.details`).
  * `interactiveTTY` (isTTY AND NOT json) is the single flag deciding both
- * of the above AND whether the connectable-repo "Continue locally?"
- * follow-up / huge-repo progress line are interactive at all — `--json`
- * means "treat this run as scripted," full stop, even on a real terminal.
+ * of the above AND whether the huge-repo progress line / post-scan "Add
+ * this to your Redential profile?" prompt are interactive at all —
+ * `--json` means "treat this run as scripted," full stop, even on a real
+ * terminal.
+ *
+ * Owner-mandated ordering rule (2026-08): on `interactiveTTY`, once the
+ * summary has been logged, the connectable-repo notice (if applicable)
+ * always prints next, and THEN — never before it — whatever comes last:
+ * the interactive "Add this to your Redential profile?" question (state 2
+ * below), a plain login+submit reminder (state 1), or nothing at all
+ * (state 3). The interactive question, when it fires, must be the
+ * genuinely last thing printed before this function returns — nothing may
+ * follow it automatically.
  */
 export async function executeScanCommand(opts: ScanCommandOptions): Promise<void> {
   const log = opts.log ?? console.log;
+  const warn = opts.warn ?? console.error;
   const interactiveTTY = opts.isTTY === true && !opts.json;
+
+  let selectedAuthors: string[] = opts.author;
   const bundle = await buildBundleInteractively({
     ...opts,
     isTTY: interactiveTTY,
     onProgress: buildProgressReporter(opts),
+    onAuthorsSelected: (authors) => {
+      selectedAuthors = authors;
+    },
   });
-  // `null` only happens when a real TTY user declined the connectable-repo
-  // "Continue locally?" follow-up (see build-bundle.ts) — buildBundleInteractively
-  // already printed the "nothing scanned" notice; nothing else to do here.
-  if (bundle === null) return;
 
   if (!interactiveTTY) {
     log(JSON.stringify(bundle, null, 2));
+    printConnectableRepoNotice(opts, warn);
     return;
   }
 
@@ -149,10 +267,22 @@ export async function executeScanCommand(opts: ScanCommandOptions): Promise<void
       // this through buildBundleInteractively's Bundle-shaped return —
       // that return type is load-bearing for principle 4 ("the printed
       // JSON is the bundle"), so presentation-only metadata stays out of
-      // it. Only evaluated when the summary is actually rendered, same
-      // as nextStepsState below.
+      // it. Only evaluated when the summary is actually rendered.
       isShallow: isShallowRepository(opts.repoPath),
-      ...nextStepsState(bundle, opts.configDir),
     })
   );
+
+  printConnectableRepoNotice(opts, warn);
+
+  // Three states — see nextStepsState's own doc comment: no session ->
+  // a plain reminder (no live prompt possible without one); session, not
+  // yet submitted -> the live hand-off prompt; session AND already
+  // submitted this exact content -> nothing, since there's nothing new to
+  // offer. Whichever of these fires is the true last thing printed.
+  const nextSteps = nextStepsState(bundle, opts.configDir);
+  if (nextSteps.hasSession && !nextSteps.alreadySubmittedIdentical) {
+    await maybeAddToProfile(opts, selectedAuthors, log, warn);
+  } else if (!nextSteps.hasSession) {
+    warn(dim("Log in and run `redential submit` to add this to your Redential profile."));
+  }
 }

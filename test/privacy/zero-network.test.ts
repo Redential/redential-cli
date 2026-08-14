@@ -34,6 +34,9 @@ import { runScan, listAuthors } from "../../src/scan.js";
 import { isKnownPublicHost } from "../../src/public-remote.js";
 import { getRemoteUrl } from "../../src/git.js";
 import { executeExplainCommand } from "../../src/explain-command.js";
+import { executeScanCommand } from "../../src/scan-command.js";
+import { saveCredentials } from "../../src/credentials.js";
+import { getSiteUrl } from "../../src/config.js";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 
 const dirs: string[] = [];
@@ -113,6 +116,92 @@ describe("zero network calls during scan", () => {
     expect(mocks.fetch).not.toHaveBeenCalled();
   });
 
+  // Reviewer follow-up (2026-08): `scan`'s post-scan "Add this to your
+  // Redential profile?" hand-off (scan-command.ts's `maybeAddToProfile`)
+  // dynamically imports submit-command.ts, a genuinely network-capable
+  // module — the ONE deliberate exception to "scan never touches the
+  // network" (see docs/scan.md's "Post-scan hand-off to submit" and
+  // CLAUDE.md's zero-network INVIOLABLE bullet). These two paths are the
+  // ones that must stay network-free even with that exception wired in:
+  // declining the hand-off, and never being offered it at all (no stored
+  // session). The "accept" path is deliberately NOT covered here — it's
+  // supposed to reach the network via `submit`'s own already-tested flow
+  // (test/submit.test.ts), so asserting zero network calls on that path
+  // would be asserting the wrong thing.
+  it("never touches http/https when the post-scan hand-off is declined (a stored session exists)", async () => {
+    const dir = createRepo();
+    dirs.push(dir);
+    commit(dir, {
+      message: "x",
+      authorName: "You",
+      authorEmail: "you@example.com",
+      files: { "a.ts": "1\n" },
+    });
+    const configDir = tempConfigDir();
+    saveCredentials({ access_token: "t", site_url: getSiteUrl(), obtained_at: "now" }, configDir);
+
+    let promptCalled = false;
+    await executeScanCommand({
+      repoPath: dir,
+      author: ["you@example.com"],
+      yes: true,
+      toolVersion: "0.1.0",
+      configDir,
+      log: () => {},
+      warn: () => {},
+      isTTY: true,
+      promptAddToProfileFn: async () => {
+        promptCalled = true;
+        return false; // decline — the hand-off must never fire
+      },
+    });
+
+    expect(promptCalled).toBe(true);
+    expect(mocks.httpRequest).not.toHaveBeenCalled();
+    expect(mocks.httpGet).not.toHaveBeenCalled();
+    expect(mocks.httpsRequest).not.toHaveBeenCalled();
+    expect(mocks.httpsGet).not.toHaveBeenCalled();
+    expect(mocks.fetch).not.toHaveBeenCalled();
+  });
+
+  it("never touches http/https, and never offers the hand-off at all, when there's no stored session", async () => {
+    const dir = createRepo();
+    dirs.push(dir);
+    commit(dir, {
+      message: "x",
+      authorName: "You",
+      authorEmail: "you@example.com",
+      files: { "a.ts": "1\n" },
+    });
+    const configDir = tempConfigDir(); // no saveCredentials — no session
+
+    let promptCalled = false;
+    await executeScanCommand({
+      repoPath: dir,
+      author: ["you@example.com"],
+      yes: true,
+      toolVersion: "0.1.0",
+      configDir,
+      log: () => {},
+      warn: () => {},
+      isTTY: true,
+      promptAddToProfileFn: async () => {
+        promptCalled = true;
+        return true;
+      },
+    });
+
+    // No session -> the plain reminder fires instead, never the live
+    // prompt (see scan-command.ts) — asserted here as the reason the
+    // network stays untouched, not just an incidental side effect.
+    expect(promptCalled).toBe(false);
+    expect(mocks.httpRequest).not.toHaveBeenCalled();
+    expect(mocks.httpGet).not.toHaveBeenCalled();
+    expect(mocks.httpsRequest).not.toHaveBeenCalled();
+    expect(mocks.httpsGet).not.toHaveBeenCalled();
+    expect(mocks.fetch).not.toHaveBeenCalled();
+  });
+
   // Only login.ts and submit.ts are allowed to reach the network (principle
   // 1: "the only network calls are login (device flow) and submit"), and
   // only through http-client.ts's fetch wrapper. Every other file in src/ —
@@ -181,5 +270,104 @@ describe("zero network calls during scan", () => {
       const contents = readFileSync(new URL(file, srcUrl), "utf8");
       expect(contents, `${file} should not import version-check.ts`).not.toMatch(importPattern);
     }
+  });
+
+  // Reviewer follow-up (2026-08): the two static checks above only catch a
+  // network-API literal or a `version-check` import string — neither would
+  // catch a future STATIC value-import of submit.ts/submit-command.ts/
+  // http-client.ts into scan's own dependency graph (e.g. scan-command.ts
+  // starting to `import { postBundle } from "./submit.js"` at the top of
+  // the file). That would pass every check above (no `fetch(`/`http`
+  // literal of its own, no `version-check` string) while still smuggling
+  // network-capable code into a module `scan`'s always-run path pulls in
+  // unconditionally. This test closes that gap directly, matching the
+  // recursive-scan style of "has no reference to fetch/http/https..."
+  // above rather than the flat `readdirSync` the version-check test still
+  // uses (that one predates the H5 proof-graph-spike recursion fix and is
+  // deliberately left alone here — not in scope for this change).
+  //
+  // `import type { ... } from "..."` is explicitly allowed (erased at
+  // compile time, never reaches the runtime module graph — scan-command.ts
+  // itself does exactly this for `SubmitCommandOptions`, to type the
+  // dynamic hand-off below without pulling in a real value import). So is
+  // the dynamic `await import("./submit-command.js")` form
+  // (scan-command.ts's `maybeAddToProfile`) — a dynamic import is a
+  // deliberately DIFFERENT construct from a static one: it only ever
+  // executes at runtime, behind that function's own explicit-consent gate,
+  // never merely by virtue of the importing module being loaded. Neither
+  // form has a `from` clause the regex below looks for, so both are
+  // structurally unmatchable by construction, not by a special-cased
+  // exclusion that could bit-rot.
+  const SCAN_TO_SUBMIT_TARGETS = ["submit-command", "submit", "http-client"];
+  // Files allowed to statically value-import one of the targets above —
+  // the network-capable modules themselves (chaining into each other:
+  // submit-command.ts -> submit.ts -> http-client.ts), the two commands
+  // that already touch the network directly (login.ts, submit-command.ts
+  // via program.ts's wiring), and version-check.ts (covered by its own
+  // dedicated test above; also needs to import http-client.ts for real).
+  const SCAN_TO_SUBMIT_ALLOWED_IMPORTERS = new Set([
+    "program.ts",
+    "login.ts",
+    "submit.ts",
+    "submit-command.ts",
+    "version-check.ts",
+  ]);
+
+  /**
+   * True if `contents` contains a STATIC, value-producing `import ... from`
+   * statement naming one of `targets` as its module specifier (a relative
+   * `./<target>` or `./<target>.js` path) — never a pure `import type`
+   * statement (matched and deliberately excluded) and never a dynamic
+   * `import(...)` call.
+   *
+   * Two-step, not one regex: first split the file into individual `import
+   * ...;` statements (`import\s[\s\S]*?;`, non-greedy so each match stops
+   * at ITS OWN terminating semicolon rather than spanning past it into a
+   * later, unrelated import — the bug in an earlier version of this helper,
+   * which let a single `[\s\S]*?` between `import` and `from` backtrack
+   * across several intervening statements to find a match, misattributing a
+   * later legitimate `from "./submit-command.js"` to an earlier, unrelated
+   * `import` keyword). Then, only within each already-bounded statement,
+   * check for the target module and the `type ` prefix.
+   *
+   * `import\s` (a literal space required right after the keyword) is also
+   * what excludes a dynamic call: `await import("./submit-command.js")` has
+   * no space between `import` and `(`, so it never starts a match here at
+   * all — structurally unmatchable, not a special-cased exclusion.
+   */
+  function hasStaticValueImportOf(contents: string, targets: string[]): boolean {
+    const specifierGroup = targets.join("|");
+    const targetPattern = new RegExp(`from\\s+["']\\./(?:${specifierGroup})(?:\\.js)?["']`);
+    for (const stmt of contents.matchAll(/import\s[\s\S]*?;/g)) {
+      const statement = stmt[0];
+      if (!targetPattern.test(statement)) continue;
+      const clause = statement.replace(/^import\s+/, "").trim();
+      if (!clause.startsWith("type ")) return true; // a real value import
+    }
+    return false;
+  }
+
+  it("no file outside the network allowlist statically value-imports submit-command.ts, submit.ts, or http-client.ts", () => {
+    const srcUrl = new URL("../../src/", import.meta.url);
+    const files = listSrcTsFiles(srcUrl).filter((f) => !SCAN_TO_SUBMIT_ALLOWED_IMPORTERS.has(f));
+    for (const file of files) {
+      const contents = readFileSync(new URL(file, srcUrl), "utf8");
+      expect(
+        hasStaticValueImportOf(contents, SCAN_TO_SUBMIT_TARGETS),
+        `${file} should not statically value-import submit-command.ts/submit.ts/http-client.ts ` +
+          `(a \`import type\` or a dynamic \`await import(...)\` is fine)`
+      ).toBe(false);
+    }
+  });
+
+  it("sanity check: scan-command.ts's own type-only import and dynamic import are correctly recognized as allowed by the helper above", () => {
+    const srcUrl = new URL("../../src/", import.meta.url);
+    const contents = readFileSync(new URL("scan-command.ts", srcUrl), "utf8");
+    // Both forms are present in the real file (not hypothetical) — this
+    // pins the helper's behavior against the actual source, not a
+    // synthetic fixture that could drift from it.
+    expect(contents).toContain('import type { SubmitCommandOptions } from "./submit-command.js"');
+    expect(contents).toContain('await import("./submit-command.js")');
+    expect(hasStaticValueImportOf(contents, SCAN_TO_SUBMIT_TARGETS)).toBe(false);
   });
 });

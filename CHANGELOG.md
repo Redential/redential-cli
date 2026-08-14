@@ -5,6 +5,61 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: strict [semver](https://semver.org/) — bundle schema changes
 always bump at least minor; breaking schema changes bump major.
 
+## [Unreleased]
+
+### Changed
+- Console-UX overhaul: the three separate pre-scan questions (the
+  connectable-repo "Continue locally? (Y/n)" guardrail, the per-candidate
+  identity confirmation, and the authorization attestation) are now ONE
+  unified confirmation — "Scan `<N>` commits by `<email>`? This confirms
+  you're authorized to analyze this repository. (y/N)" — shown after the
+  numbered identity list for a multi-identity repo, or standing alone for a
+  single-candidate one. Enter still declines (default N); `--author`/`--yes`
+  non-interactive semantics are unchanged.
+- The connectable-repo guardrail's "Continue locally? (Y/n)" question is
+  gone entirely. `scan` now prints a single, non-blocking, dim/gray
+  informational line instead (never a question, never warning-colored)
+  when the repo's remote looks like it's on a known public host; `submit`
+  no longer prints this line at all — its own network-backed visibility
+  gate is its real, definitive answer.
+- The local-only notice shrinks from three lines to one ("Local scan.
+  Nothing leaves your machine.") at the start of `scan`/`submit`'s output,
+  dim/gray on a real terminal, plain text otherwise; the longer explanation
+  moved to `redential scan --help` and docs/scan.md.
+- A new TTY-only first line sets expectations for the whole credentialing
+  flow: scanning takes seconds, the (separate, browser-based) spoken
+  defense that completes the credential takes about 15 minutes — printed in
+  the terminal's own default (neutral) color, never dimmed.
+- The two explanatory context lines that used to precede the authorization
+  question are gone — the unified confirmation's own text already carries
+  that meaning.
+- `scan`'s summary closing block shrinks from a multi-line privacy
+  paragraph plus `--json`/`--details`/next-step-CTA footer text to exactly
+  one dim/gray line: "Nothing was uploaded. You choose what gets sent.
+  github.com/Redential/redential-cli". The moved-out detail is documented
+  in docs/scan.md instead; the textual next-step CTA is replaced by the
+  live post-scan hand-off below.
+- The signed-commit tip moves out of `scan`'s summary entirely, to a single
+  neutral-toned line in `submit`'s post-upload output (only when the
+  uploaded bundle's signed ratio is 0%).
+- Red/orange/warning colors are now reserved for real errors only; every
+  calm/informational stderr line this milestone touches (the local-only
+  notice, the connectable-repo notice, the post-scan reminder/decline note)
+  is dim/gray instead, gated on whether stderr is a real terminal
+  (`src/dim.ts`).
+- On a TTY, right after the scan summary and the connectable-repo notice
+  (when applicable), `scan` now offers to hand off in-process to `submit`'s
+  own flow — "Add this to your Redential profile? (Y/n)" — reusing the
+  author selection and authorization confirmation already given moments
+  earlier in the same scan, only when there's a stored session and
+  something new to upload; this is always the true last thing printed.
+  With no stored session, a plain dim/gray reminder is printed instead (no
+  live prompt). Every part of `submit`'s own
+  consent surface (the exact-JSON print, the upload confirmation, the
+  private-label prompt) still fires unchanged. Declining prints a reminder
+  to run `redential submit` later. Piped/`--json` output is unaffected —
+  no new prompts, byte-identical stdout.
+
 ## [0.12.0] - 2026-08-14
 
 ### Added

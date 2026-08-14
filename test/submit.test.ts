@@ -863,10 +863,11 @@ describe("executeSubmitCommand — private label", { timeout: 30_000 }, () => {
     // "submit's thin-history / shallow-clone advisory" below) are expected
     // here; nothing else — no guardrail-specific warning leaked in.
     expect(warnings).toEqual([
-      "This scan runs 100% locally. Nothing is read from the network, nothing leaves your machine " +
-        "until you explicitly run `redential submit`.",
+      "Local scan. Nothing leaves your machine.",
       "Note: very little history was found for you in this repo — the resulting credential will be " +
         "weak. Consider scanning a repo with more of your commit history.",
+      "Tip: none of your commits are signed. Signed commits make your future work cryptographically " +
+        "attributable: https://docs.github.com/en/authentication/managing-commit-signature-verification",
     ]);
   });
 

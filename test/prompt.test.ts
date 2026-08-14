@@ -1,16 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Readable, Writable } from "node:stream";
 import {
+  promptAddToProfile,
   promptAuthors,
-  promptConfirmAttestation,
+  promptConfirmScan,
   promptConfirmUpload,
-  promptContinueLocally,
   promptPrivateLabel,
   promptUseGitIdentity,
   promptUseSavedSelection,
 } from "../src/prompt.js";
-import { ScanError } from "../src/scan.js";
-
 // Stdin closed/EOF before an answer (e.g. piped input in a script or CI)
 // must fail loudly, not hang forever and let the process exit 0 silently.
 function endedInput(): Readable {
@@ -76,20 +74,29 @@ function captureOutput(): { stream: Writable; text: () => string } {
 }
 
 describe("prompt EOF handling", () => {
-  it("promptConfirmAttestation rejects when input closes before an answer", async () => {
+  it("promptConfirmScan rejects when input closes before an answer", async () => {
     await expect(
-      promptConfirmAttestation({ input: endedInput(), output: sinkOutput() })
+      promptConfirmScan([{ email: "a@example.com", count: 1 }], ["a@example.com"], {
+        input: endedInput(),
+        output: sinkOutput(),
+      })
     ).rejects.toThrow(
       "Input closed before authorization was confirmed. Use --author <email> and --yes for non-interactive runs."
     );
   });
 
-  it("promptAuthors rejects when input closes before an answer", async () => {
+  it("promptAuthors rejects when input closes before an answer (2+ candidates)", async () => {
     await expect(
-      promptAuthors([{ email: "a@example.com", count: 1 }], {
-        input: endedInput(),
-        output: sinkOutput(),
-      })
+      promptAuthors(
+        [
+          { email: "a@example.com", count: 1 },
+          { email: "b@example.com", count: 1 },
+        ],
+        {
+          input: endedInput(),
+          output: sinkOutput(),
+        }
+      )
     ).rejects.toThrow(
       "Input closed before an author identity was selected. Use --author <email> and --yes for non-interactive runs."
     );
@@ -111,10 +118,10 @@ describe("prompt EOF handling", () => {
     );
   });
 
-  it("promptContinueLocally rejects when input closes before an answer", async () => {
+  it("promptAddToProfile rejects when input closes before an answer", async () => {
     await expect(
-      promptContinueLocally({ input: endedInput(), output: sinkOutput() })
-    ).rejects.toBeInstanceOf(ScanError);
+      promptAddToProfile({ input: endedInput(), output: sinkOutput() })
+    ).rejects.toThrow("Input closed before the profile-upload prompt was answered.");
   });
 
   it("promptUseSavedSelection rejects when input closes before an answer", async () => {
@@ -187,48 +194,81 @@ describe("promptPrivateLabel — mandatory, re-asks up to 2 times on an invalid 
   });
 });
 
-describe("promptContinueLocally — Y/n confirmation, Y default (console-UX milestone)", () => {
-  it("prints exactly 'Continue locally? (Y/n) '", async () => {
+describe("promptConfirmScan — unified identity+authorization confirm, default flips to N (console-UX overhaul)", () => {
+  it("prints exactly 'Scan <N> commits by <email>? This confirms you're authorized to analyze this repository. (y/N) ' for a single author", async () => {
     const out = captureOutput();
-    await promptContinueLocally({ input: lineInput(""), output: out.stream });
-    expect(out.text()).toBe("Continue locally? (Y/n) ");
+    await promptConfirmScan([{ email: "you@example.com", count: 1378 }], ["you@example.com"], {
+      input: lineInput("y"),
+      output: out.stream,
+    });
+    expect(out.text()).toBe(
+      "Scan 1,378 commits by you@example.com? This confirms you're authorized to analyze this repository. (y/N) "
+    );
   });
 
-  it("accepts on Enter (empty answer), defaulting to yes", async () => {
-    const result = await promptContinueLocally({ input: lineInput(""), output: sinkOutput() });
-    expect(result).toBe(true);
-  });
-
-  it("accepts on an explicit y/Y", async () => {
-    const result = await promptContinueLocally({ input: lineInput("Y"), output: sinkOutput() });
-    expect(result).toBe(true);
-  });
-
-  it("declines on an explicit n", async () => {
-    const result = await promptContinueLocally({ input: lineInput("n"), output: sinkOutput() });
-    expect(result).toBe(false);
-  });
-});
-
-describe("promptConfirmAttestation — new copy, default flips to N (console-UX milestone)", () => {
-  it("prints exactly 'Confirm you are authorized to analyze this repository. (y/N) '", async () => {
+  it("prints singular commit wording for one commit", async () => {
     const out = captureOutput();
-    await promptConfirmAttestation({ input: lineInput("y"), output: out.stream });
-    expect(out.text()).toBe("Confirm you are authorized to analyze this repository. (y/N) ");
+    await promptConfirmScan([{ email: "you@example.com", count: 1 }], ["you@example.com"], {
+      input: lineInput("y"),
+      output: out.stream,
+    });
+    expect(out.text()).toBe(
+      "Scan 1 commit by you@example.com? This confirms you're authorized to analyze this repository. (y/N) "
+    );
   });
 
-  it("Enter (empty answer) now DECLINES — the user must type y", async () => {
-    const result = await promptConfirmAttestation({ input: lineInput(""), output: sinkOutput() });
+  it("sums commit counts and lists every selected email for a multi-identity selection", async () => {
+    const out = captureOutput();
+    await promptConfirmScan(
+      [
+        { email: "a@example.com", count: 3 },
+        { email: "b@example.com", count: 5 },
+      ],
+      ["a@example.com", "b@example.com"],
+      { input: lineInput("y"), output: out.stream }
+    );
+    expect(out.text()).toContain("Scan 8 commits by a@example.com, b@example.com?");
+  });
+
+  it("Enter (empty answer) DECLINES — the user must type y", async () => {
+    const result = await promptConfirmScan([{ email: "you@example.com", count: 1 }], ["you@example.com"], {
+      input: lineInput(""),
+      output: sinkOutput(),
+    });
     expect(result).toBe(false);
   });
 
   it("accepts only on an explicit y/Y", async () => {
-    const result = await promptConfirmAttestation({ input: lineInput("y"), output: sinkOutput() });
+    const result = await promptConfirmScan([{ email: "you@example.com", count: 1 }], ["you@example.com"], {
+      input: lineInput("y"),
+      output: sinkOutput(),
+    });
     expect(result).toBe(true);
   });
 
   it("declines on an explicit n", async () => {
-    const result = await promptConfirmAttestation({ input: lineInput("n"), output: sinkOutput() });
+    const result = await promptConfirmScan([{ email: "you@example.com", count: 1 }], ["you@example.com"], {
+      input: lineInput("n"),
+      output: sinkOutput(),
+    });
+    expect(result).toBe(false);
+  });
+});
+
+describe("promptAddToProfile — Y/n confirmation, Y default (console-UX overhaul)", () => {
+  it("prints exactly 'Add this to your Redential profile? (Y/n) '", async () => {
+    const out = captureOutput();
+    await promptAddToProfile({ input: lineInput(""), output: out.stream });
+    expect(out.text()).toBe("Add this to your Redential profile? (Y/n) ");
+  });
+
+  it("accepts on Enter (empty answer), defaulting to yes", async () => {
+    const result = await promptAddToProfile({ input: lineInput(""), output: sinkOutput() });
+    expect(result).toBe(true);
+  });
+
+  it("declines on an explicit n", async () => {
+    const result = await promptAddToProfile({ input: lineInput("n"), output: sinkOutput() });
     expect(result).toBe(false);
   });
 });
@@ -270,34 +310,16 @@ describe("promptUseGitIdentity — Y/n confirmation, Y default", () => {
   });
 });
 
-describe("promptAuthors — single candidate (Y/n confirmation, Y default)", () => {
+describe("promptAuthors — single candidate: taken directly, no prompt at all (console-UX overhaul)", () => {
   const only = { email: "user@example.com", count: 250 };
 
-  it("prints the same new 'Found <n> commits authored by <email>. Use this identity? (Y/n)' copy, thousands-separated", async () => {
+  it("returns the sole candidate's email without asking anything", async () => {
     const out = captureOutput();
-    await promptAuthors([{ email: "user@example.com", count: 1378 }], { input: lineInput(""), output: out.stream });
-    expect(out.text()).toBe("Found 1,378 commits authored by user@example.com. Use this identity? (Y/n) ");
-  });
-
-  it("prints singular commit wording for one commit", async () => {
-    const out = captureOutput();
-    await promptAuthors([{ email: "user@example.com", count: 1 }], { input: lineInput(""), output: out.stream });
-    expect(out.text()).toBe("Found 1 commit authored by user@example.com. Use this identity? (Y/n) ");
-  });
-
-  it("accepts on Enter (empty answer), defaulting to yes", async () => {
-    const result = await promptAuthors([only], { input: lineInput(""), output: sinkOutput() });
+    // No input at all is provided/consumed — if this ever tried to read
+    // from `input`, the test would hang instead of resolving.
+    const result = await promptAuthors([only], { input: endedInput(), output: out.stream });
     expect(result).toEqual(["user@example.com"]);
-  });
-
-  it("accepts on an explicit y/Y", async () => {
-    const result = await promptAuthors([only], { input: lineInput("Y"), output: sinkOutput() });
-    expect(result).toEqual(["user@example.com"]);
-  });
-
-  it("declines on an explicit n, returning no authors", async () => {
-    const result = await promptAuthors([only], { input: lineInput("n"), output: sinkOutput() });
-    expect(result).toEqual([]);
+    expect(out.text()).toBe("");
   });
 });
 

@@ -60,13 +60,15 @@ bump, (3) an entry in docs/schema.md and CHANGELOG.md.
 - If the repo's remote looks like it's on a known public host
   (github.com/gitlab.com/bitbucket.org), `scan` suggests connecting the
   GitHub App as an alternative (anti-cannibalization guardrail) — but
-  WITHOUT blocking the scan: a known host != actually public, and without
-  network access there's no way to tell the difference. On a TTY it asks
-  "Continue locally? (Y/n)" (default yes); piped/non-TTY runs are never
-  prompted or blocked. The CLI's PRIMARY use case is exactly a private
-  employer repo hosted on github.com; blocking there would break the
-  product. Real visibility verification is left to `submit` (which does
-  have network access).
+  WITHOUT blocking the scan and WITHOUT ever asking a question about it: a
+  known host != actually public, and without network access there's no way
+  to tell the difference. The suggestion is a single non-blocking line
+  printed at the very END of `scan`'s output (stderr, both TTY and
+  piped/non-TTY runs, never a prompt). The CLI's PRIMARY use case is
+  exactly a private employer repo hosted on github.com; blocking there, or
+  interrupting the scan with a question about it, would break the product.
+  Real visibility verification is left to `submit` (which does have network
+  access, and refuses outright on a confirmed-public remote).
 - When closing out each milestone or large task, BEFORE the commit: write
   in the chat a short "Explicación para el dueño" (Explanation for the
   owner) — max 10 lines, in simple Spanish, no technical jargon. It must
@@ -89,7 +91,12 @@ bump, (3) an entry in docs/schema.md and CHANGELOG.md.
   whatsoever. Skill detection is deterministic diff matching (read locally
   with `git show`/`git diff`) against `signatures/*.json` (a versioned
   signature database in this repo: imports, config files, per-library API
-  patterns). No LLMs, no remote inference, in any variant.
+  patterns). No LLMs, no remote inference, in any variant. The scan itself
+  never performs network I/O, full stop; the only exception in the whole
+  `scan` command is the post-scan "Add this to your Redential profile?"
+  prompt, which — only on an explicit yes — hands off to `submit`'s own
+  flow, with its own separate network surface and its own separate,
+  unweakened consent surface (see docs/scan.md).
 - INVIOLABLE RULE — closed vocabulary: the bundle only admits skill slugs
   present in `taxonomy.json` (public, in this repo). A slug outside that
   list invalidates the bundle. New slugs come in via PR to `taxonomy.json`,

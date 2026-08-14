@@ -65,12 +65,14 @@ describe("publicHostWarning", () => {
   });
 });
 
-describe("scan continues after a known-public-host warning (never blocks)", () => {
-  it("prints the warning AND still produces a bundle for a github.com remote", async () => {
+describe("scan continues after a known-public-host notice (never blocks, never asks)", () => {
+  it("prints a one-line notice at the END of output AND still produces a bundle for a github.com remote", async () => {
     // Regression test: the CLI's primary use case is a PRIVATE employer
     // repo hosted on github.com — known host != publicly accessible, and
     // `scan` has no network access to tell the difference. Blocking here
-    // would break the main use case, so this must warn without blocking.
+    // (or asking a question about it) would break the main use case, so
+    // this must warn, at the end, without blocking and without a prompt
+    // (console-UX overhaul, 2026-08 — see docs/scan.md).
     const dir = createRepo();
     dirs.push(dir);
     setRemote(dir, "https://github.com/acme/example.git");
@@ -98,6 +100,8 @@ describe("scan continues after a known-public-host warning (never blocks)", () =
     // `scan | jq` (or any bundle consumer reading stdout) never has to
     // skip a leading non-JSON line.
     expect(warnings.some((line) => line.includes("GitHub App"))).toBe(true);
+    // It's the LAST thing printed, not the first.
+    expect(warnings[warnings.length - 1]).toContain("GitHub App");
     expect(logs.some((line) => line.includes("GitHub App"))).toBe(false);
     const bundleLine = logs.find((line) => line.trim().startsWith("{"));
     expect(bundleLine).toBeDefined();
@@ -109,7 +113,7 @@ describe("scan continues after a known-public-host warning (never blocks)", () =
     expect(bundle.commits.user_total).toBe(1);
   });
 
-  it("produces a bundle with no warning for a self-hosted remote", async () => {
+  it("produces a bundle with no connectable-repo notice for a self-hosted remote", async () => {
     const dir = createRepo();
     dirs.push(dir);
     setRemote(dir, "https://git.internal.acme-corp.example/team/repo.git");

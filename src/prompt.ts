@@ -32,12 +32,13 @@ function formatCandidate(c: AuthorCandidate): string {
   return `${c.email} (${c.count} commit${c.count === 1 ? "" : "s"})`;
 }
 
-// Console-UX milestone (2026-07): both single-identity confirmations
-// (promptAuthors' one-candidate case and promptUseGitIdentity below) share
-// this exact "Found <n> commits authored by <email>. Use this identity?"
-// phrasing — they're the same interaction (confirm a single candidate
-// identity), just reached from two different code paths. Thousands
-// separator matches scan-command.ts's own commit-count formatting.
+// Console-UX overhaul (2026-08): kept for promptUseGitIdentity below — the
+// git-identity fast-path offer for a 2+-candidate repo. promptAuthors' own
+// one-candidate case used to share this exact phrasing as its own Y/n
+// confirmation; that confirmation is gone now (see promptAuthors' own
+// comment below) — the single unified promptConfirmScan is what asks this
+// question, merged with authorization, for that case. Thousands separator
+// matches scan-command.ts's own commit-count formatting.
 function formatIdentityConfirmationPrompt(c: AuthorCandidate): string {
   return `Found ${c.count.toLocaleString("en-US")} commit${c.count === 1 ? "" : "s"} authored by ${c.email}. Use this identity? (Y/n) `;
 }
@@ -47,23 +48,20 @@ export async function promptAuthors(
   streams: PromptStreams = DEFAULT_STREAMS,
   preselectedEmails?: string[]
 ): Promise<string[]> {
+  // Console-UX overhaul (2026-08): a single candidate is almost always
+  // "you" — rather than asking a standalone "Use this identity?" Y/n here
+  // AND a separate authorization question later, the sole candidate is
+  // taken directly (no prompt, no I/O at all) and the single unified
+  // promptConfirmScan (build-bundle.ts) is what actually asks the user,
+  // showing this exact email + commit count merged with the authorization
+  // question. 2+ candidates still need the numbered list below — there's
+  // no single obvious default to silently pick for them.
+  if (candidates.length === 1) {
+    return [candidates[0].email];
+  }
+
   const rl = createInterface(streams);
   try {
-    // A single candidate is almost always "you" — a Y/n confirmation (Y
-    // default, so pressing Enter accepts) is faster than making the user
-    // type "1" for the only option. 2+ candidates keep the numbered list:
-    // there's no single obvious default to pick for them.
-    if (candidates.length === 1) {
-      const [only] = candidates;
-      const answer = await questionOrThrowOnClose(
-        rl,
-        formatIdentityConfirmationPrompt(only),
-        "Input closed before an author identity was selected. Use --author <email> and --yes for non-interactive runs."
-      );
-      const trimmed = answer.trim().toLowerCase();
-      return trimmed === "" || trimmed.startsWith("y") ? [only.email] : [];
-    }
-
     console.log("Which of these author identities are yours?");
     candidates.forEach((c, i) => {
       console.log(`  ${i + 1}. ${formatCandidate(c)}`);
@@ -106,7 +104,7 @@ export async function promptAuthors(
  * as a fast Y/n confirmation before falling back to the full numbered list —
  * only ever called when the saved selection's author-list hash still
  * matches the repo's current candidates (build-bundle.ts). Y-default, same
- * pattern as promptUseGitIdentity/promptContinueLocally.
+ * pattern as promptUseGitIdentity.
  */
 export async function promptUseSavedSelection(
   authors: string[],
@@ -150,42 +148,41 @@ export async function promptUseGitIdentity(
   }
 }
 
-// Console-UX milestone (2026-07): default flipped from a neutral "(y/n)" to
-// an explicit "(y/N)" — pressing Enter now DECLINES, the user must type
-// "y". This is a copy/default change only: the check below already only
-// ever accepted an explicit answer starting with "y" (an empty answer never
-// matched), so the recorded attestation's *content* (build-bundle.ts passes
-// this boolean straight through to runScan as `confirmed`) is unchanged —
-// only what the prompt now visibly promises about the default matches what
-// the code already did.
-const ATTESTATION_TEXT = "Confirm you are authorized to analyze this repository.";
-
 /**
- * Context lines printed immediately before the attestation question itself
- * — via `console.log`, same as promptAuthors' own "Which of these..."
- * interstitial line, deliberately NOT written to `streams.output` (the
- * injectable stream `rl.question()` writes the prompt string to). Keeping
- * it off `streams.output` is what lets test/prompt.test.ts assert the
- * prompt text is byte-for-byte exactly `ATTESTATION_TEXT` — this context is
- * explanatory framing around that question, not part of it.
+ * Console-UX overhaul (2026-08): the single unified pre-scan confirmation
+ * that replaces the three separate questions this CLI used to ask
+ * (the connectable-repo "Continue locally?" guardrail — now a non-blocking
+ * end-of-scan notice, no question at all, see public-remote.ts; the
+ * per-candidate identity confirmation; and the authorization attestation,
+ * including the two explanatory context lines that used to precede it —
+ * owner follow-up, 2026-08: deleted entirely, since the question's own
+ * text already carries the authorization meaning). One question, covering
+ * identity AND authorization together — default flips to N: pressing
+ * Enter declines, the user must type `y` to proceed. This is the one place
+ * that safety property lives now; unifying the three questions must never
+ * weaken it.
+ *
+ * `authors` is the already-determined selection (from the numbered list,
+ * a fast-path offer, or the sole candidate); `candidates` is the full
+ * enumerated list this repo's history produced, used only to look up each
+ * selected author's own commit count for display — a `--author` flag that
+ * doesn't match any real commit in the repo simply shows 0, exactly as
+ * honest as the numbers `runScan` itself would compute right after.
  */
-function printAttestationContext(): void {
-  console.log("Redential asks this because you may be scanning an employer's repository.");
-  console.log(
-    "The scan reads git history locally; only anonymized metadata (no code, no file names, no commit " +
-      "messages) is ever included in a bundle, and nothing is uploaded without a separate explicit confirmation."
-  );
-}
-
-export async function promptConfirmAttestation(
+export async function promptConfirmScan(
+  candidates: AuthorCandidate[],
+  authors: string[],
   streams: PromptStreams = DEFAULT_STREAMS
 ): Promise<boolean> {
-  printAttestationContext();
+  const countsByEmail = new Map(candidates.map((c) => [c.email, c.count]));
+  const totalCommits = authors.reduce((sum, email) => sum + (countsByEmail.get(email) ?? 0), 0);
+  const emailList = authors.join(", ");
   const rl = createInterface(streams);
   try {
     const answer = await questionOrThrowOnClose(
       rl,
-      `${ATTESTATION_TEXT} (y/N) `,
+      `Scan ${totalCommits.toLocaleString("en-US")} ${commitWord(totalCommits)} by ${emailList}? This confirms ` +
+        "you're authorized to analyze this repository. (y/N) ",
       "Input closed before authorization was confirmed. Use --author <email> and --yes for non-interactive runs."
     );
     return answer.trim().toLowerCase().startsWith("y");
@@ -194,22 +191,29 @@ export async function promptConfirmAttestation(
   }
 }
 
+function commitWord(n: number): string {
+  return n === 1 ? "commit" : "commits";
+}
+
 /**
- * Asked ONLY in a real interactive terminal, right after
- * public-remote.ts's `publicHostWarning` notice has been printed
- * (non-blocking, via `warn()`) — see build-bundle.ts. Y-default: Enter
- * continues with the local scan, matching the other single-candidate Y/n
- * confirmations in this file. Answering "n" is the one path that aborts
- * before anything is scanned; the caller is responsible for exiting
- * cleanly (exit code 0) and pointing at the GitHub App as the alternative.
+ * Post-scan (console-UX overhaul, 2026-08): asked once, right after the
+ * TTY summary, only when there's an actual stored session and this exact
+ * bundle content hasn't already been uploaded (scan-command.ts's
+ * `nextStepsState` — with no session, submitting would just fail with
+ * "not logged in", so the existing textual "redential login && redential
+ * submit" hint in the summary is left as the only next step; nothing new
+ * to add for an already-identical upload either). Y-default: Enter accepts
+ * — this is a deliberately low-friction "yes, wire it up" step, unlike the
+ * scan-authorization question above, since the user already reviewed and
+ * approved everything about to be uploaded in the summary just printed.
  */
-export async function promptContinueLocally(streams: PromptStreams = DEFAULT_STREAMS): Promise<boolean> {
+export async function promptAddToProfile(streams: PromptStreams = DEFAULT_STREAMS): Promise<boolean> {
   const rl = createInterface(streams);
   try {
     const answer = await questionOrThrowOnClose(
       rl,
-      "Continue locally? (Y/n) ",
-      "Input closed before the connectable-repo prompt was answered."
+      "Add this to your Redential profile? (Y/n) ",
+      "Input closed before the profile-upload prompt was answered."
     );
     const trimmed = answer.trim().toLowerCase();
     return trimmed === "" || trimmed.startsWith("y");
@@ -261,8 +265,8 @@ export async function promptPrivateLabel(streams: PromptStreams = DEFAULT_STREAM
   }
 }
 
-/** Separate confirmation from promptConfirmAttestation — "I'm authorized to
- * scan" and "upload this specific bundle" are different questions. */
+/** Separate confirmation from promptConfirmScan — "I'm authorized to scan"
+ * and "upload this specific bundle" are different questions. */
 export async function promptConfirmUpload(streams: PromptStreams = DEFAULT_STREAMS): Promise<boolean> {
   const rl = createInterface(streams);
   try {

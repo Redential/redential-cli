@@ -165,7 +165,10 @@ never a git command, never the network.
 
 `submit` builds the bundle through the **exact same code path** `scan`
 uses (`buildBundleInteractively`, shared by both commands) — same author
-selection, same authorization-confirmation prompt, same `runScan`. It then:
+selection, same unified pre-scan confirmation, same `runScan`. `scan` can
+also hand off to this exact flow IN-PROCESS, right after printing its own
+summary (see [scan.md](scan.md#post-scan-hand-off-to-submit)) — the two
+entry points share every invariant below identically. It then:
 
 1. Requires a stored session whose `site_url` matches the current
    `SITE_URL` (`redential login` first, otherwise it refuses).
@@ -247,12 +250,13 @@ selection, same authorization-confirmation prompt, same `runScan`. It then:
    exactly what is and isn't sent. Never blocks or delays the next step:
    any failure here simply skips the line.
 5. Asks "Upload this bundle? (y/n)" — a **separate** confirmation from the
-   "Confirm you are authorized to analyze this repository. (y/N)"
-   attestation `scan` already requires (note that prompt's default flips to
-   N — pressing Enter declines, you must type `y` to proceed). `--yes`
-   answers the authorization question (same meaning as `scan --yes`);
-   `--confirm-upload` separately answers the upload question. Both are
-   required flags for a fully non-interactive `submit`, on purpose —
+   unified pre-scan confirmation `scan` already requires (console-UX
+   overhaul, 2026-08 — see [scan.md](scan.md#how-it-works)): "Scan `<N>`
+   commits by `<email>`? This confirms you're authorized to analyze this
+   repository. (y/N)", default N — pressing Enter declines, you must type
+   `y` to proceed. `--yes` answers that question (same meaning as `scan
+   --yes`); `--confirm-upload` separately answers the upload question. Both
+   are required flags for a fully non-interactive `submit`, on purpose —
    consenting to be scanned and consenting to upload are different
    decisions; `--label` is a third, separately required flag for that same
    fully non-interactive case (step 2).
@@ -266,7 +270,12 @@ selection, same authorization-confirmation prompt, same `runScan`. It then:
    `X-Redential-Identity-Corroboration` header (below). On success:
    `{id}`. Only the `id` is ever printed back — never the full response
    body, so a change on the server side can't accidentally start echoing
-   sensitive content into the terminal.
+   sensitive content into the terminal. Right after this line, if the
+   uploaded bundle's `signed.ratio` is 0, `submit` prints one neutral-toned
+   stderr tip about signing future commits (owner follow-up, 2026-08 —
+   relocated here from `scan`'s own summary, which used to show it
+   unconditionally before any upload happened; see
+   [scan.md](scan.md#the-summary-default-tty-output)).
 8. `POST {SITE_URL}/api/cli/private-label` with `{bundle_id: <the id from
    step 7>, private_label: <the label resolved in step 2>}` — only after
    step 7 has already succeeded. See
@@ -286,16 +295,20 @@ selection, same authorization-confirmation prompt, same `runScan`. It then:
 
 ## The remote-visibility gate (submit-only)
 
-`scan`'s `publicHostWarning` is a **local heuristic**: it recognizes
-github.com/gitlab.com/bitbucket.org-shaped remote URLs and warns, but
-never blocks, because "known host" isn't the same as "publicly
-accessible" and `scan` has zero network access to tell the difference —
-the CLI's primary use case is a *private* employer repo hosted on
-github.com.
+`isKnownPublicHost` (`src/public-remote.ts`) is a **local heuristic**: it
+recognizes github.com/gitlab.com/bitbucket.org-shaped remote URLs, but
+"known host" isn't the same as "publicly accessible" and `scan` has zero
+network access to tell the difference — the CLI's primary use case is a
+*private* employer repo hosted on github.com. `scan` never blocks on it; it
+only prints a one-line, non-blocking notice at the very end of its own
+output (`connectableRepoNotice` — see
+[scan.md](scan.md#connectable-repo-notice)).
 
 `submit` already makes network calls, so it can do better: an anonymous
 `HEAD` request straight to the remote URL itself (never to
 `SITE_URL` — the remote URL never travels to Redential's servers).
+`submit` never prints `scan`'s own end-of-output notice pre-emptively —
+this gate is its real, definitive answer:
 
 - Only fires for `isKnownPublicHost`-shaped remotes; never probes an
   arbitrary self-hosted URL.
@@ -309,8 +322,8 @@ github.com.
   timeout, or a URL that couldn't be converted to something probeable —
   **does not block**. Absence of proof isn't proof of privacy, but this
   check must never be flakier than `scan`'s own warn-only heuristic: on an
-  inconclusive result, `submit` falls back to printing the exact same
-  `publicHostWarning` message `scan` would have shown, and proceeds.
+  inconclusive result, `submit` falls back to printing
+  `publicHostWarning`'s own (longer) message and proceeds.
 
 ## Identity corroboration (submit-only)
 

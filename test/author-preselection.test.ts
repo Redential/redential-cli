@@ -136,7 +136,7 @@ describe("author pre-selection from git config user.email", () => {
     expect(listPromptedWith.sort()).toEqual(["alice@example.com", "bob@example.com"]);
   });
 
-  it("SINGLE candidate matching git identity: skips the pre-selection prompt (promptAuthors' own Y/n handles it, not asked twice)", async () => {
+  it("SINGLE candidate matching git identity: skips the pre-selection prompt (promptAuthors returns it directly, no prompt fired here either)", async () => {
     const dir = createRepo();
     dirs.push(dir);
     commit(dir, { message: "x", authorName: "Alice", authorEmail: "alice@example.com", files: { "a.ts": "1\n" } });

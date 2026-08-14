@@ -175,16 +175,7 @@ export async function executeSubmitCommand(opts: SubmitCommandOptions): Promise<
     throw new AuthError("Stored session belongs to a different site. Run `redential login` again.");
   }
 
-  // `askContinueLocally: false` — submit's real answer to a public remote is
-  // the network visibility gate below, which actually refuses
-  // confirmed-public repos; asking "Continue locally?" here too was
-  // redundant with scan's own prompt (see build-bundle.ts's own comment on
-  // this option). The `publicHostWarning` line above it is still printed.
-  const bundle = await buildBundleInteractively({ ...opts, askContinueLocally: false });
-  // `null` is unreachable here (see `askContinueLocally: false` above) —
-  // kept only because `buildBundleInteractively`'s return type still
-  // includes it for `scan`'s own path (see build-bundle.ts).
-  if (bundle === null) return;
+  const bundle = await buildBundleInteractively(opts);
   const bundleJson = JSON.stringify(bundle, null, 2);
 
   // Thin-history / shallow-clone advisory — see thinHistoryNotice's own
@@ -303,6 +294,22 @@ export async function executeSubmitCommand(opts: SubmitCommandOptions): Promise<
 
   const result = await postBundle(siteUrl, credentials.access_token, bundleJson, corroboration);
   log(`Uploaded. Bundle id: ${result.id}`);
+
+  // Signed-commit tip (owner follow-up, 2026-08): relocated here from
+  // `scan`'s summary (src/summary.ts), which used to show it unconditionally
+  // near the results, before the upload even happened — after a successful
+  // upload is a calmer, more relevant moment for it, and it's now a single
+  // neutral (uncolored) stderr line rather than a yellow/dim one. Chosen
+  // over gating it behind `scan --details` because a signed-commit ratio of
+  // zero is a genuinely one-time, low-frequency fact worth surfacing once,
+  // right after the credential-relevant action (an upload) actually
+  // happened, rather than every time someone re-runs `--details`.
+  if (bundle.signed.ratio === 0) {
+    warn(
+      "Tip: none of your commits are signed. Signed commits make your future work cryptographically " +
+        "attributable: https://docs.github.com/en/authentication/managing-commit-signature-verification"
+    );
+  }
 
   // The SECOND request — the private label, sent only now, only after the
   // bundle upload above has already fully succeeded (see

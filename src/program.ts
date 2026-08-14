@@ -74,7 +74,11 @@ program
 
 program
   .command("scan")
-  .description("Scan the local git history and print the proof bundle (nothing is uploaded).")
+  .description(
+    "Scan the local git history and print the proof bundle. Runs 100% locally: nothing is read from " +
+      "the network, and nothing you scan ever leaves your machine unless you explicitly run `redential submit` " +
+      "afterwards (or accept the post-scan prompt on a TTY)."
+  )
   .option("--repo <path>", "path to the git repository to scan", ".")
   .option(
     "--author <email>",
@@ -84,7 +88,7 @@ program
   )
   .option(
     "--yes",
-    "answer 'Confirm you are authorized to analyze this repository.' (y) non-interactively",
+    "answer the scan-authorization confirmation (y) non-interactively",
     false
   )
   .option(
@@ -152,7 +156,7 @@ program
   )
   .option(
     "--yes",
-    "answer 'Confirm you are authorized to analyze this repository.' (y) non-interactively",
+    "answer the scan-authorization confirmation (y) non-interactively",
     false
   )
   .option("--confirm-upload", "confirm the upload itself non-interactively (separate from --yes)", false)

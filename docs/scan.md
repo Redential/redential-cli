@@ -1,7 +1,11 @@
 # `redential scan`
 
 Reads git history from a local repository and prints the exact proof bundle
-that `submit` would upload later — nothing is sent anywhere by `scan` itself.
+that `submit` would upload later — nothing is sent anywhere by `scan` itself,
+unless you explicitly accept the post-scan "Add this to your Redential
+profile?" hand-off on a TTY (see [below](#post-scan-hand-off-to-submit)),
+which hands off to `submit`'s own flow and its own separate, unweakened
+consent surface.
 
 ```bash
 redential scan --repo <path>              # interactive author + confirmation
@@ -22,75 +26,61 @@ redential scan --debug --repo <path>      # verbose diagnostics on stderr
 
 `--json` is treated as "this run is scripted," full stop, even when stdout
 happens to be a real terminal: besides forcing JSON-only stdout, it also
-skips the connectable-repo notice's interactive "Continue locally?"
-follow-up (see below) and the huge-repo progress line, exactly as if stdout
-were piped. The connectable-repo *warning* itself (stderr, non-blocking)
-still prints either way — only the interactive follow-up question is
-skipped.
+skips the huge-repo progress line and the post-scan "Add this to your
+Redential profile?" hand-off (below), exactly as if stdout were piped.
 
 ## How it works
 
-0. **Local-only notice.** Before anything else — before the connectable-repo
-   notice below, before any prompt — `scan` prints one line to stderr:
+0. **Expectation-setting first line (TTY only).** On a real TTY, before
+   anything else, `scan` prints one line to stderr, in the terminal's own
+   default (neutral) color, setting expectations for the whole
+   credentialing flow, not just this one command:
    ```
-   This scan runs 100% locally. Nothing is read from the network, nothing leaves your machine until you explicitly run `redential submit`.
+   Scanning takes seconds. Completing your credential afterwards takes a ~15-minute spoken defense in your browser.
+   ```
+   Piped/non-TTY output never shows this line — a script has no use for it.
+1. **Local-only notice.** Right after the line above (or first, on
+   piped/non-TTY output) — before any prompt — `scan` prints one more line
+   to stderr:
+   ```
+   Local scan. Nothing leaves your machine.
    ```
    Non-blocking, printed in every mode (TTY and piped/non-TTY alike); stdout
    is unaffected, so the piped bundle JSON stays byte-identical. `submit`
-   reaches the same line too, since it shares this exact flow.
-1. **Connectable-repo notice.** If the repo's remote looks like it's hosted
-   on a known public host (github.com/gitlab.com/bitbucket.org —
-   `isKnownPublicHost`, `src/public-remote.ts`), `scan` prints an
-   informational notice before anything else — this is a heuristic, never
-   proof the repo is actually public, so it never blocks (the CLI's primary
-   use case is a *private* employer repo hosted on github.com):
-   ```
-   This repo appears connectable through GitHub.
-
-   For repos you own, the GitHub App provides stronger evidence.
-   For employer or NDA-protected repos, continue with the local scan.
-   ```
-   On a real TTY (and no `--json`), a follow-up question appears right after
-   it — `Continue locally? (Y/n)`, Y default. Pressing Enter (or `y`)
-   continues with the local scan exactly as before; answering `n` exits
-   cleanly (exit code 0) without scanning anything, printing a brief note
-   suggesting the GitHub App instead. Piped/non-TTY output — and `--json`,
-   even on a real TTY — is unaffected: the notice still prints (non-blocking,
-   to stderr), but no interactive question is ever asked, the same "warn,
-   never block" behavior every prior release had. For how that choice maps to
-   process exit codes in pipelines, see [exit-codes.md](exit-codes.md).
+   reaches the same lines too, since it shares this exact flow. The longer
+   explanation of what this means lives in `redential scan --help`. Owner
+   follow-up (2026-08): a calm, reassuring privacy statement should never
+   read like an alert, so this line — and the end-of-scan connectable-repo
+   notice below — are rendered dim/gray when stderr is a real terminal
+   (`src/dim.ts`), plain text otherwise. Red/orange/warning colors are
+   reserved for real errors only, never for either of these two lines.
 2. **Enumerate authors.** `git log` is read locally (`git show`/`git diff`
    never leave the machine) to list distinct author emails and their commit
    counts.
-3. **Select identity.** With 2+ candidates, and the repo's own
+3. **Select identity.** With a single candidate, it's taken directly — no
+   prompt at all here; the unified confirmation below shows that same email
+   and asks about it directly. With 2+ candidates, and the repo's own
    `git config user.email` matching one of them, that one is offered FIRST
    as a fast default: "Found 12 commits authored by you@example.com. Use
-   this identity? (Y/n)", Y is the default. Declining — or no match at
-   all — falls through unchanged to the flow below: a single candidate
-   gets the same Y/n confirmation, identical copy ("Found 12 commits
-   authored by you@example.com. Use this identity? (Y/n)"); 2+ candidates
-   get a numbered list instead (skipping the git-identity pre-selection
-   specifically to avoid asking the same yes/no question twice in a row
-   for a repo with exactly one contributor). Declining the git-identity
-   pre-selection shows the FULL list, including the declined entry — "no"
-   often means "that one plus others" for a multi-identity repo, not "not
-   that one at all". Non-interactively, pass `--author <email>` (repeatable)
-   for every email that's yours — this skips identity selection entirely,
-   unaffected by any of the above.
-4. **Confirm authorization.** Interactively, the prompt is preceded by two
-   short context lines explaining why it's asked and what does (and does
-   not) leave the machine:
+   this identity? (Y/n)", Y is the default; declining — or no match at
+   all — falls through to a numbered list instead. Declining the
+   git-identity pre-selection shows the FULL list, including the declined
+   entry — "no" often means "that one plus others" for a multi-identity
+   repo, not "not that one at all". Non-interactively, pass `--author
+   <email>` (repeatable) for every email that's yours — this skips identity
+   selection entirely, unaffected by any of the above.
+4. **Confirm (identity + authorization, unified).** One question covers
+   both at once (console-UX overhaul, 2026-08):
    ```
-   Redential asks this because you may be scanning an employer's repository.
-   The scan reads git history locally; only anonymized metadata (no code, no file names, no commit messages) is ever included in a bundle, and nothing is uploaded without a separate explicit confirmation.
+   Scan 1,378 commits by you@example.com? This confirms you're authorized to analyze this repository. (y/N)
    ```
-   You must then explicitly confirm "Confirm you are
-   authorized to analyze this repository. (y/N)" — interactively via a
-   prompt, or non-interactively via `--yes`. The default flips to N:
-   pressing Enter declines, you must type `y` to proceed. This is a
-   separate step from author selection on purpose: `--author` only answers
-   "which emails are mine", not "I'm allowed to scan this repo". Both are
-   required before a bundle is produced.
+   — interactively via this prompt, or non-interactively via `--yes`. The
+   default is N: pressing Enter declines, you must type `y` to proceed.
+   This single question replaces three separate ones this CLI used to ask
+   (a pre-scan connectable-repo guardrail question, a per-candidate identity
+   confirmation, and a standalone authorization attestation) — the
+   authorization safety property (Enter declines) survives the
+   unification unchanged.
 5. **Compute the bundle.** Every field in `schema/bundle.v1.json` is derived
    from `git log --numstat` filtered to your selected commits: volume, span,
    hourly/weekday cadence, signed-commit ratio, churn share by file
@@ -126,14 +116,34 @@ When stdout is an interactive terminal and `--json` isn't passed, `scan`
 prints ONLY this human-readable summary — no JSON dump. It's a short,
 shareable overview: span/commits/ownership, detected capabilities
 (structural findings first, then grouped by category), top languages and
-categories, ownership and signed-commit ratios, and a closing block
-restating what does (and never) leaves the machine, followed by pointers to
-`--json` (the exact payload) and `--details` (the hour/weekday histograms,
-moved out of the default view in phase 2 to keep this shareable core
-short). It's rendered with ANSI colors and Unicode block/box-drawing
-characters only (no new dependency), and is derived entirely from the
-bundle `scan` already computed: no new data collection, no network,
-nothing beyond what's already in the JSON `--json` would print.
+categories, ownership and signed-commit ratios, and — owner follow-up,
+2026-08 — a single closing line, dim/gray on a real terminal (never
+warning-colored; see `src/dim.ts` and the "Startup and closing line colors"
+note below), pointing at the repo for verification. It's rendered with
+ANSI colors and Unicode block/box-drawing characters only (no new
+dependency), and is derived entirely from the bundle `scan` already
+computed: no new data collection, no network, nothing beyond what's
+already in the JSON `--json` would print.
+
+**What used to be spelled out in the terminal, now documented here
+instead** (owner follow-up, 2026-08 — the summary's closing block shrank
+from a multi-line paragraph plus footer hints to one line, so this is
+where that detail now lives):
+- **Exactly what travels, if you submit.** Only the bounded bundle:
+  aggregates (span, commit counts, language/category shares, hour/weekday
+  cadence), salted fingerprints (`repo.repo_fingerprint`,
+  `identity.author_identity_hashes` — one-way hashes, not reversible to the
+  original repo path or email), and closed-vocabulary capability slugs
+  (`detected_skills[].slug`, always a `taxonomy.json` member). Never source
+  code, file names, commit messages, the repo's name, or other
+  contributors' identities. `redential scan --json` (below) is the literal,
+  byte-for-byte proof of this — read it directly whenever you want the
+  exact payload rather than trusting this description.
+- **Inspecting the exact payload.** `redential scan --json` prints exactly
+  what a `submit` of this same repo/history would upload — nothing more,
+  nothing rendered or summarized.
+- **More detail.** `redential scan --details` adds the COMMITS BY
+  HOUR/WEEKDAY histogram sections (below) to this same summary.
 
 **Plain-terminal fallback.** Plain Windows `conhost` (`cmd.exe` / classic
 PowerShell without Windows Terminal) doesn't reliably render either ANSI
@@ -183,26 +193,20 @@ how it's drawn.
 
   Ownership       100% of this repo's commits are yours
   Signed commits  0% of your commits are cryptographically signed
-  Tip: signing future commits adds a stronger identity anchor to your attestation.
 
-  ────────────────────────────────────────────────────────────
-  Nothing left your machine. Nothing is uploaded unless you run
-  `redential submit` — and only the bounded bundle: aggregates,
-  salted fingerprints, and closed-vocabulary capability slugs.
-  Never code, file names, commit messages, or other contributors.
-  Verify: github.com/Redential/redential-cli
-  ────────────────────────────────────────────────────────────
-
-  Inspect the exact payload:  redential scan --json
-  More detail (hour/weekday histograms):  redential scan --details
-
-  Add this private work to your public Redential profile:
-  → redential login && redential submit
+  Nothing was uploaded. You choose what gets sent. github.com/Redential/redential-cli
 ```
 
-(Generated from a real fixture bundle via `formatSummary` — the trailing
-"More detail..." hint is itself omitted when `--details` is already active,
-since the summary is already showing what it would point to.)
+(Generated from a real fixture bundle via `formatSummary`.) The closing
+line is the ONLY thing after the results (owner-mandated ordering, see
+"Post-scan hand-off to `submit`" below) — dim/gray on a real terminal,
+plain text otherwise, never warning-colored. Everything that used to
+follow it (the repeated privacy paragraph, the `--json`/`--details`
+pointers, the signed-commit tip, the textual next-step CTA) is either
+documented above/below instead, or — for the signed-commit tip
+specifically — relocated to `submit`'s own post-upload output (see
+[login-submit.md](login-submit.md#submit-review-then-upload)), and for the
+next-step CTA, replaced by the live post-scan hand-off described next.
 
 **Capabilities are grouped, not a flat list.** Structural findings
 (`evidence: "structural"` — see [proof-graph-spike.md](proof-graph-spike.md))
@@ -223,8 +227,11 @@ vocabulary) falls back to the bare slug rather than inventing one.
 **TOP CATEGORIES** hides the catch-all `other` bucket entirely and any
 category under 2% churn share, using this same humanization map.
 
-If your signed-commit ratio is above 0%, the "Tip: signing future
-commits..." line is simply omitted — no other change.
+**Signed-commit tip.** No longer shown in `scan`'s own summary at all
+(owner follow-up, 2026-08) — relocated to `submit`'s post-upload output, a
+single neutral-toned line printed only when the ratio is 0%, right after
+"Uploaded. Bundle id: ...". See
+[login-submit.md](login-submit.md#submit-review-then-upload).
 
 ### `--details`
 
@@ -246,27 +253,48 @@ them out of the default view:
 No effect on `--json` or piped output — neither ever rendered histograms,
 JSON or otherwise.
 
-### Closing next-step hint
+### Closing next-step hint and the post-scan hand-off to `submit`
 
-Below the "Inspect the exact payload"/"More detail" hints, the summary
-closes with a next-step hint in one of three states — a plain local-state
-check (`src/scan-command.ts`'s `nextStepsState`), never a network call:
+Owner follow-up (2026-08): the old three-state text ("Add this private
+work to your public Redential profile: → ...") is GONE from the summary
+itself — `formatSummary` now ends in the single closing line shown above,
+full stop. What used to be three flavors of static text is now three
+different runtime behaviors, decided by the same plain local-state check
+as before (`src/scan-command.ts`'s `nextStepsState`, never a network
+call), and — per an explicit owner-mandated ordering rule — whichever of
+them fires is always the true LAST thing `scan` prints:
 
 1. **No stored session** (never logged in, or the stored session is for a
-   different `SITE_URL`):
+   different `SITE_URL`): a single dim/gray stderr reminder, no live
+   prompt (there's nothing to hand off to without a session):
    ```
-     Add this private work to your public Redential profile:
-     → redential login && redential submit
+   Log in and run `redential submit` to add this to your Redential profile.
    ```
 2. **Stored session, but this exact bundle hasn't been uploaded yet**
    (nothing recorded locally yet, or the recorded hash doesn't match this
-   scan's content — e.g. new commits since the last submit):
+   scan's content — e.g. new commits since the last submit): a LIVE
+   prompt —
    ```
-     Add this private work to your public Redential profile:
-     → redential submit
+   Add this to your Redential profile? (Y/n)
    ```
+   Y is the default. Answering yes hands off to `submit`'s own flow
+   IN-PROCESS (`executeSubmitCommand`) — reusing the exact author
+   selection and authorization confirmation you already gave moments
+   earlier in this same scan, so neither is asked again. Every other part
+   of `submit`'s own consent surface still fires exactly as it does on a
+   standalone `redential submit` run: the short summary, the boxed "WHAT
+   GETS UPLOADED" consent box, the private-label prompt, the byte-for-byte
+   exact JSON printed before the upload confirmation, and the "Upload this
+   bundle? (y/n)" prompt itself — none of it is skipped or pre-answered.
+   Declining (or Enter) prints a one-line dim/gray reminder to run
+   `redential submit` later, and `scan` exits normally (exit 0) — the scan
+   itself already fully succeeded either way. If the stored session turns
+   out to be invalid (wrong `SITE_URL`, or deleted since this check ran),
+   this is reported as a plain stderr note rather than turning an
+   otherwise-successful `scan` into a failed exit code.
 3. **Stored session AND this exact bundle content was already uploaded**:
-   no hint at all — re-submitting would send nothing new.
+   nothing at all — re-submitting would send nothing new, so the summary's
+   own closing line really is the last thing printed.
 
 "This exact bundle" is decided by `bundleContentHash`
 (`src/submission-record.ts`): a local, unsalted sha256 over the bundle with
@@ -283,12 +311,63 @@ successful upload; it's not a secret (just a hash of content you already
 reviewed and already chose to upload), so unlike `credentials.json` it
 isn't written with restricted file permissions.
 
+The connectable-repo notice below (when applicable) prints right after the
+summary and BEFORE whichever of the three states above fires — never
+after — so states 1 and 2's own final line (the reminder, or the live
+prompt) is always the genuinely last thing on screen, per the owner's
+ordering rule.
+
 This only happens on a real TTY with no `--json`. `scan | jq` (or any
 redirected/piped stdout) prints **only** the raw JSON, byte-identical to
 before this summary existed — `--json` forces that same JSON-only behavior
 even on a terminal, for scripts that run interactively but still want
-machine output. Exit codes for piped and `--json` runs are documented in
-[exit-codes.md](exit-codes.md).
+machine output; neither the reminder nor the live prompt nor the
+connectable-repo notice ever appear on that path. Exit codes for piped and
+`--json` runs are documented in [exit-codes.md](exit-codes.md).
+
+## Connectable-repo notice
+
+Console-UX overhaul (2026-08): if the repo's remote looks like it's hosted
+on a known public host (github.com/gitlab.com/bitbucket.org —
+`isKnownPublicHost`, `src/public-remote.ts`), `scan` prints ONE line to
+stderr — non-blocking, no question asked, dim/gray on a real terminal
+(never warning-colored; `src/dim.ts`) — right after the summary and before
+the closing next-step behavior above:
+
+```
+This repo's remote is on a public git host — the GitHub App can add server-side attestation on top of this scan.
+```
+
+This is a heuristic, never proof the repo is actually public — "known
+host" isn't "publicly accessible", and `scan` has zero network access to
+tell the difference (the CLI's primary use case is a *private* employer
+repo hosted on github.com), so it never blocks and never asks anything
+(the old pre-scan "Continue locally? (Y/n)" question is gone entirely).
+Printed in every mode, TTY and piped/non-TTY alike. `submit` does NOT print
+this line at all — its own real, definitive answer to a public remote is
+the network visibility gate, described in
+[login-submit.md](login-submit.md#the-remote-visibility-gate-submit-only).
+
+## Startup and closing line colors
+
+Owner follow-up (2026-08): calm, informational, non-alarming lines are
+never rendered in a warning color — red/orange/warning colors are reserved
+for real errors only (`src/program.ts`'s top-level error handler, which
+prints `Error: ...` and never applies color at all today). This applies
+to:
+- The local-only notice ("Local scan. Nothing leaves your machine.",
+  step 1 above) and the connectable-repo notice just above — both rendered
+  dim/gray via `src/dim.ts` when stderr is a real terminal, plain text
+  otherwise (a piped/redirected stderr never receives ANSI codes).
+- The summary's own closing line ("Nothing was uploaded. You choose what
+  gets sent. ..."), rendered dim/gray via `src/summary.ts`'s own
+  plain/rich theme system (the same mechanism gating every other color in
+  the summary), rather than `src/dim.ts` — it's part of the same themed
+  string this whole function already builds, not a separate stderr call.
+- The expectation-setting first line ("Scanning takes seconds. ..."),
+  deliberately printed in the terminal's own default (neutral) color, not
+  dimmed — it's the one line actually meant to be read at a glance, not
+  ambient reassurance text.
 
 ## Huge repositories and `--since`
 

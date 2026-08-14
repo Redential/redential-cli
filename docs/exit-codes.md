@@ -40,7 +40,7 @@ went wrong," even when no bundle was printed or uploaded:
 | Command | Exit 0 when… |
 | ------- | -------------- |
 | `scan` | A bundle was produced (JSON on stdout when piped/`--json`, or the TTY summary otherwise). |
-| `scan` | On a TTY, you answer **n** to "Continue locally?" for a connectable-looking remote — no scan runs ([scan.md](scan.md#how-it-works)). |
+| `scan` | On a TTY, with a stored session and something new to upload, you answer **n** (or Enter) to the post-scan "Add this to your Redential profile?" prompt — nothing new was uploaded, `scan` itself already succeeded ([scan.md](scan.md#closing-next-step-hint)). |
 | `submit` | You decline the upload prompt (`Aborted — nothing was uploaded.`) — bundle may have been built and printed, but nothing was sent. |
 | `submit` | Bundle upload succeeded, even if the follow-up private-label request failed (warning on stderr; see [private-label.md](private-label.md)). |
 | `login` / `logout` | Session stored or removed locally. |

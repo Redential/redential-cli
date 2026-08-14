@@ -32,16 +32,13 @@ export function isKnownPublicHost(remoteUrl: string | null): boolean {
  * CLI's main use case (a private employer repo that happens to be hosted
  * on github.com). The user decides; `scan` always proceeds.
  *
- * This text is shown in EVERY mode (TTY and non-TTY/piped) via `warn()` —
- * always non-blocking on its own. In a real interactive terminal, callers
- * (see build-bundle.ts) additionally ask a follow-up "Continue locally?
- * (Y/n)" question after printing this; that question is a separate,
- * TTY-only interactive prompt (prompt.ts's promptContinueLocally), not part
- * of this string, so a piped `scan`/`submit` never has an unanswerable
- * question sitting in its (non-blocking) warning output. Console-UX
- * milestone (2026-07): CLAUDE.md's "warn, never block" convention wording
- * still needs a follow-up edit to describe this TTY-only confirmation —
- * left for phase 3 (docs alignment), which owns CLAUDE.md.
+ * This is `submit`'s own fallback wording — used only inside
+ * `checkVisibilityGate`'s (submit.ts) inconclusive-result branches, never
+ * printed pre-emptively by `scan`/`submit` before their own flow starts
+ * (see `connectableRepoNotice` below for that). `submit` already has a
+ * network-backed, definitive answer for a known-public-host remote (the
+ * gate itself), so this longer, multi-line message only surfaces there
+ * when the gate genuinely couldn't tell either way.
  */
 export function publicHostWarning(remoteUrl: string | null): string | null {
   if (!isKnownPublicHost(remoteUrl)) return null;
@@ -49,5 +46,25 @@ export function publicHostWarning(remoteUrl: string | null): string | null {
     "This repo appears connectable through GitHub.\n\n" +
     "For repos you own, the GitHub App provides stronger evidence.\n" +
     "For employer or NDA-protected repos, continue with the local scan."
+  );
+}
+
+/**
+ * Console-UX overhaul (2026-08): `scan`'s own connectable-repo notice — a
+ * single, non-blocking line printed at the END of `scan`'s output
+ * (scan-command.ts), never at the start, and never followed by any
+ * question ("Continue locally?" is gone entirely — see docs/scan.md). Same
+ * heuristic and the same "never a reason to skip scanning" stance as
+ * `isKnownPublicHost`/`publicHostWarning` above; deliberately generic about
+ * which known host matched (github.com/gitlab.com/bitbucket.org) rather
+ * than echoing any part of the actual remote URL back, so this can never
+ * leak an org/repo name into the terminal beyond what `isKnownPublicHost`
+ * itself already had to read locally to answer the question.
+ */
+export function connectableRepoNotice(remoteUrl: string | null): string | null {
+  if (!isKnownPublicHost(remoteUrl)) return null;
+  return (
+    "This repo's remote is on a public git host — the GitHub App can add server-side attestation " +
+    "on top of this scan."
   );
 }

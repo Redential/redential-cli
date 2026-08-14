@@ -2,14 +2,13 @@ import { runScan, listAuthors, computeRepoFingerprint, type AuthorCandidate } fr
 import { ScanError } from "./errors.js";
 import {
   promptAuthors,
-  promptConfirmAttestation,
-  promptContinueLocally,
+  promptConfirmScan,
   promptUseGitIdentity,
   promptUseSavedSelection,
 } from "./prompt.js";
-import { getConfiguredUserEmail, getRemoteUrl, isShallowRepository } from "./git.js";
-import { publicHostWarning } from "./public-remote.js";
+import { isShallowRepository, getConfiguredUserEmail } from "./git.js";
 import { shallowRepoWarning } from "./shallow-repo.js";
+import { dim } from "./dim.js";
 import {
   computeAuthorListHash,
   readIdentitySelection,
@@ -30,6 +29,10 @@ export interface BuildBundleOptions {
   // ever passed when a stored selection exists but its author-list hash no
   // longer matches (see the "stale store" branch below).
   promptAuthorsFn?: (candidates: AuthorCandidate[], preselectedEmails?: string[]) => Promise<string[]>;
+  // Injectable for tests; defaults to the real interactive prompt
+  // (prompt.ts's promptConfirmScan). Only ever called when `opts.yes` is
+  // false — the single unified pre-scan confirmation (console-UX overhaul,
+  // 2026-08), covering identity + authorization together.
   promptConfirmFn?: () => Promise<boolean>;
   // Injectable for tests; defaults to the real interactive prompt. Only
   // ever called when `git config user.email` matches one of 2+ candidates
@@ -43,31 +46,25 @@ export interface BuildBundleOptions {
   warn?: (message: string) => void;
   // True when stdout is an interactive terminal (cli.ts passes
   // `process.stdout.isTTY`; scan-command.ts/submit-command.ts forward their
-  // own `isTTY` option straight through). Only used to decide whether the
-  // connectable-repo notice gets an actual interactive "Continue locally?"
-  // follow-up question — see promptContinueLocallyFn below. Undefined
-  // behaves like `false` (no prompt), matching a piped stdout.
+  // own `isTTY` option straight through). Used to decide whether the
+  // identity-selection-memory fast paths (below) and the TTY-only
+  // expectation-setting first line (see EXPECTATION_LINE) apply. Undefined
+  // behaves like `false`, matching a piped stdout.
   isTTY?: boolean;
-  // Injectable for tests; defaults to the real interactive prompt. Only
-  // ever called when `isTTY` is true AND the remote looks connectable (see
-  // public-remote.ts's publicHostWarning) — never in piped/non-TTY mode,
-  // which keeps today's non-blocking "warn and continue" behavior exactly.
-  promptContinueLocallyFn?: () => Promise<boolean>;
-  // Whether the connectable-repo notice's "Continue locally?" follow-up
-  // question is asked at all, when `isTTY` is true and the note fired.
-  // Undefined behaves like `true` (today's exact scan behavior). `submit`
-  // passes `false`: its real answer to a public remote is the network
-  // visibility gate at the end of submit.ts, which actually refuses
-  // confirmed-public repos — asking this question too was redundant with
-  // scan's own prompt. The `publicHostWarning` line is still printed via
-  // `warn` either way; only the interactive question is skipped, so the
-  // `null`-return path below is unreachable when this is `false`.
-  askContinueLocally?: boolean;
   // Raw --since spec, forwarded to runScan (src/since.ts parses it). See
   // scan-command.ts / docs/scan.md for the CLI-facing behavior.
   since?: string;
   // Forwarded to runScan — see ScanOptions.onProgress.
   onProgress?: (scanned: number, total: number) => void;
+  // Console-UX overhaul (2026-08): fires once, right after the final
+  // author selection is known (before the unified confirm below) — lets
+  // scan-command.ts capture the exact emails just confirmed, so an
+  // in-process hand-off to `submit` (the post-scan "Add this to your
+  // Redential profile?" prompt) never has to re-derive or re-ask for an
+  // identity the user already picked moments earlier in the same process.
+  // Never called on the `--author`-flag path (nothing was "selected"
+  // there — the caller already has the emails it passed in).
+  onAuthorsSelected?: (authors: string[]) => void;
 }
 
 /**
@@ -76,52 +73,43 @@ export interface BuildBundleOptions {
  * of re-deriving the bundle another way, so the bundle it uploads is
  * produced by the exact same code path `scan` prints (principle 4,
  * "User-reviewed").
- *
- * Returns `null` — instead of a `Bundle` — only when a real TTY user
- * answered "n" to the connectable-repo "Continue locally?" follow-up (see
- * below): nothing was scanned, and the caller must exit cleanly (exit code
- * 0) without printing anything further. Every other path (including the
- * non-TTY/piped one, which never asks that question at all) still always
- * returns a `Bundle`.
  */
-// Printed before anything else in the flow below — including the
-// connectable-repo guardrail's own notice/prompt — so a user never has to
-// answer any prompt before being told this scan makes zero network calls.
-// stderr-only (via `warn`, same channel every other non-blocking notice in
-// this file uses), in every mode (TTY and piped/non-TTY): this keeps the
-// piped bundle JSON on stdout byte-identical to every prior release (see
-// test/privacy/debug-output.test.ts's stdout-purity test, which the same
-// discipline applies to here). `submit` reaches this line too, since it
-// calls buildBundleInteractively directly — seeing it again there is fine
-// and desirable, not a bug.
-const LOCAL_ONLY_NOTICE =
-  "This scan runs 100% locally. Nothing is read from the network, nothing leaves your machine " +
-  "until you explicitly run `redential submit`.";
+// TTY-only, printed before anything else (console-UX overhaul, 2026-08) —
+// sets the full expectation for the whole credentialing flow, not just this
+// one command: scanning itself takes seconds, the (separate, browser-based)
+// spoken defense that actually completes the credential takes longer.
+// Piped/non-TTY output never shows this — a script has no use for it.
+// Printed in the terminal's own default (neutral) color, deliberately never
+// wrapped in `dim()` — this is the one line meant to actually be read, not
+// ambient text (owner follow-up, 2026-08).
+const EXPECTATION_LINE =
+  "Scanning takes seconds. Completing your credential afterwards takes a ~15-minute spoken defense in your browser.";
 
-export async function buildBundleInteractively(opts: BuildBundleOptions): Promise<Bundle | null> {
+// Printed right after EXPECTATION_LINE (TTY) — or first (non-TTY) — before
+// anything else prompt-worthy. stderr-only (via `warn`, same channel every
+// other non-blocking notice in this file uses), in every mode (TTY and
+// piped/non-TTY): this keeps the piped bundle JSON on stdout byte-identical
+// to every prior release (see test/privacy/debug-output.test.ts's
+// stdout-purity test, which the same discipline applies to here). `submit`
+// reaches this line too, since it calls buildBundleInteractively directly —
+// seeing it again there is fine and desirable, not a bug. Wrapped in
+// `dim()` (owner follow-up, 2026-08): a calm, reassuring privacy statement
+// should never read like an alert — red/orange/warning colors are reserved
+// for real errors only, never for this.
+const LOCAL_ONLY_NOTICE = "Local scan. Nothing leaves your machine.";
+
+export async function buildBundleInteractively(opts: BuildBundleOptions): Promise<Bundle> {
   const warn = opts.warn ?? console.error;
-  warn(LOCAL_ONLY_NOTICE);
+  if (opts.isTTY) warn(EXPECTATION_LINE);
+  warn(dim(LOCAL_ONLY_NOTICE));
 
-  const publicHostNote = publicHostWarning(getRemoteUrl(opts.repoPath));
-  if (publicHostNote) {
-    warn(publicHostNote);
-    // TTY-interactive only — see BuildBundleOptions.isTTY's comment and
-    // public-remote.ts's own comment on why this question lives outside
-    // publicHostWarning's returned string. Piped/non-TTY stdout keeps
-    // today's exact behavior: warn and continue, never blocking.
-    if (opts.isTTY && opts.askContinueLocally !== false) {
-      const proceed = await (opts.promptContinueLocallyFn ?? promptContinueLocally)();
-      if (!proceed) {
-        warn("Nothing scanned. Connect the GitHub App instead for a stronger tier.");
-        return null;
-      }
-    }
-  }
   if (isShallowRepository(opts.repoPath)) warn(shallowRepoWarning());
 
   let authors = opts.author;
+  let enumeratedCandidates: AuthorCandidate[] | undefined;
   if (authors.length === 0) {
     const candidates = await listAuthors(opts.repoPath);
+    enumeratedCandidates = candidates;
     if (candidates.length === 0) {
       throw new ScanError("This repository has no commits yet — nothing to scan.");
     }
@@ -183,6 +171,8 @@ export async function buildBundleInteractively(opts: BuildBundleOptions): Promis
       authors = await selectAuthorsTodaysFlow(opts, candidates);
     }
 
+    opts.onAuthorsSelected?.(authors);
+
     // Save whatever the user just picked, interactively, for next time —
     // never on the non-interactive path (see above) and never an empty
     // selection. A store write failure must never break the scan itself.
@@ -197,7 +187,8 @@ export async function buildBundleInteractively(opts: BuildBundleOptions): Promis
 
   let confirmed = opts.yes;
   if (!confirmed) {
-    confirmed = await (opts.promptConfirmFn ?? promptConfirmAttestation)();
+    const candidatesForConfirm = enumeratedCandidates ?? (await listAuthors(opts.repoPath));
+    confirmed = await (opts.promptConfirmFn ?? (() => promptConfirmScan(candidatesForConfirm, authors)))();
   }
 
   return runScan({
@@ -220,8 +211,9 @@ export async function buildBundleInteractively(opts: BuildBundleOptions): Promis
  *
  * With 2+ candidates, offers the repo's own git identity as a fast default
  * BEFORE the full list — most repos have one obvious "you". A single
- * candidate already gets its own Y/n confirmation inside promptAuthors;
- * asking the same question twice in a row would be redundant, so this only
+ * candidate takes no confirmation of its own at all here (promptAuthors
+ * returns it directly — see that function's own comment); asking a Y/n
+ * "use this identity" question here too would be redundant, so this only
  * fires for 2+. Declining, or no match at all, falls through to the FULL,
  * unmodified list — never silently dropping the matched entry, since "no"
  * often means "that one plus others" for a multi-identity repo.
