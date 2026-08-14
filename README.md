@@ -205,6 +205,7 @@ and what the provenance attestation actually proves.
 - [docs/scan.md](docs/scan.md) — full `scan` command reference
 - [docs/exit-codes.md](docs/exit-codes.md) — exit codes for CI and shell scripts
 - [docs/login-submit.md](docs/login-submit.md) — `login`, `submit`, `logout`
+- [docs/corporate-networks.md](docs/corporate-networks.md) — proxy env vars, `NODE_EXTRA_CA_CERTS`, captive-proxy visibility probe
 - [docs/identity-selection-memory.md](docs/identity-selection-memory.md) — how `scan`/`submit` remember your per-repo identity selection
 - [docs/private-label.md](docs/private-label.md) — the mandatory private label: what it is, why it travels outside the bundle
 - [docs/schema.md](docs/schema.md) — every bundle field, explained

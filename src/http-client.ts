@@ -29,11 +29,65 @@ function cliFetch(url: string, init: RequestInit): Promise<Response> {
   return fetch(url, { ...init, dispatcher: proxyDispatcher() } as RequestInit);
 }
 
+const TLS_CODES = new Set([
+  "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+  "UNABLE_TO_GET_ISSUER_CERT",
+  "UNABLE_TO_GET_ISSUER_CERT_LOCALLY",
+  "CERT_UNTRUSTED",
+  "CERT_HAS_EXPIRED",
+  "CERT_NOT_YET_VALID",
+  "CERT_REVOKED",
+  "DEPTH_ZERO_SELF_SIGNED_CERT",
+  "SELF_SIGNED_CERT_IN_CHAIN",
+  "ERR_TLS_CERT_ALTNAME_INVALID",
+  "ERR_SSL_WRONG_VERSION_NUMBER",
+]);
+
+/** Walk `code` / `cause` / AggregateError `errors` only — never `message`. */
+function collectCodes(err: unknown, seen: Set<object> = new Set()): string[] {
+  if (!err || typeof err !== "object" || seen.has(err)) return [];
+  seen.add(err);
+  const rec = err as { code?: unknown; cause?: unknown; errors?: unknown };
+  const codes: string[] = [];
+  if (typeof rec.code === "string") codes.push(rec.code);
+  if (rec.cause) codes.push(...collectCodes(rec.cause, seen));
+  if (Array.isArray(rec.errors)) {
+    for (const inner of rec.errors) codes.push(...collectCodes(inner, seen));
+  }
+  return codes;
+}
+
+/**
+ * Closed failure-class phrases from `error.code` (and 407). Host is the
+ * only interpolated value — never `error.message`, headers, or body.
+ */
+function reachErrorMessage(host: string, err: unknown): string {
+  const codes = collectCodes(err);
+  if (codes.some((c) => TLS_CODES.has(c))) {
+    return `Could not reach ${host}: could not verify TLS certificate (corporate proxy? see docs/corporate-networks.md).`;
+  }
+  if (codes.some((c) => c === "UND_ERR_PROXY")) {
+    return `Could not reach ${host}: proxy required.`;
+  }
+  if (codes.some((c) => c === "ECONNREFUSED")) {
+    return `Could not reach ${host}: connection refused.`;
+  }
+  return `Could not reach ${host}.`;
+}
+
+function statusErrorMessage(host: string, status: number): string {
+  if (status === 407) {
+    return `Could not reach ${host}: proxy required.`;
+  }
+  return `Request to ${host} failed with status ${status}.`;
+}
+
 /**
  * The only module allowed to call `fetch` for JSON requests (login.ts and
  * submit.ts are the other two — see test/privacy/zero-network.test.ts's
- * allowlist). Error messages are built from the URL's host and the HTTP
- * status only, never from response headers or body, so a failure can never
+ * allowlist). Error messages are built from the URL's host, HTTP status,
+ * and a closed failure-class phrase from `error.code` — never from
+ * response headers, body, or `error.message`, so a failure can never
  * echo a bearer token or bundle content back into a printed error.
  */
 export async function postJson<T>(
@@ -49,11 +103,11 @@ export async function postJson<T>(
       headers: { "content-type": "application/json", ...headers },
       body: JSON.stringify(body),
     });
-  } catch {
-    throw new NetworkError(`Could not reach ${host}.`);
+  } catch (err) {
+    throw new NetworkError(reachErrorMessage(host, err));
   }
   if (!res.ok) {
-    throw new NetworkError(`Request to ${host} failed with status ${res.status}.`);
+    throw new NetworkError(statusErrorMessage(host, res.status));
   }
   try {
     return (await res.json()) as T;
@@ -80,11 +134,11 @@ export async function postRawJson<T>(
       headers: { "content-type": "application/json", ...headers },
       body: rawBody,
     });
-  } catch {
-    throw new NetworkError(`Could not reach ${host}.`);
+  } catch (err) {
+    throw new NetworkError(reachErrorMessage(host, err));
   }
   if (!res.ok) {
-    throw new NetworkError(`Request to ${host} failed with status ${res.status}.`);
+    throw new NetworkError(statusErrorMessage(host, res.status));
   }
   try {
     return (await res.json()) as T;
@@ -100,8 +154,8 @@ export async function postRawJson<T>(
  * polling through — as HTTP 400, reserving 200 for `{access_token}` success
  * (see docs/login-submit.md). Treats 200 and 400 alike as "parse the body";
  * any other status is still a real failure. Same error-message discipline
- * as postJson: built from the host and status only, never from response
- * headers or body, so a failure here can never echo a bearer token.
+ * as postJson: host, status, and a closed failure-class phrase — never
+ * response headers, body, or `error.message`.
  */
 export async function pollJson<T>(url: string, body: unknown): Promise<T> {
   const host = new URL(url).host;
@@ -112,11 +166,11 @@ export async function pollJson<T>(url: string, body: unknown): Promise<T> {
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
     });
-  } catch {
-    throw new NetworkError(`Could not reach ${host}.`);
+  } catch (err) {
+    throw new NetworkError(reachErrorMessage(host, err));
   }
   if (!res.ok && res.status !== 400) {
-    throw new NetworkError(`Request to ${host} failed with status ${res.status}.`);
+    throw new NetworkError(statusErrorMessage(host, res.status));
   }
   try {
     return (await res.json()) as T;
@@ -151,8 +205,8 @@ export async function postJsonStatusOnly(
       body: JSON.stringify(body),
     });
     return res.status;
-  } catch {
-    throw new NetworkError(`Could not reach ${host}.`);
+  } catch (err) {
+    throw new NetworkError(reachErrorMessage(host, err));
   }
 }
 

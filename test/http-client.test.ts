@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { postJson } from "../src/http-client.js";
+import { NetworkError } from "../src/errors.js";
 
 const originalFetch = globalThis.fetch;
 const proxyKeys = ["HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy", "NO_PROXY", "no_proxy"] as const;
@@ -72,5 +73,68 @@ describe("http-client proxy dispatcher (#83 slice 1)", () => {
     const second = (fetchMock.mock.calls[1][1] as Record<string, unknown>).dispatcher;
     expect(first).toBeDefined();
     expect(second).toBe(first);
+  });
+});
+
+describe("http-client reach errors (#83 slice 2)", () => {
+  it("names connection refused from error.code, never error.message", async () => {
+    const leak = "Bearer extremely-secret-token";
+    globalThis.fetch = vi.fn(async () => {
+      throw Object.assign(new Error(`connect failed ${leak}`), { code: "ECONNREFUSED" });
+    }) as unknown as typeof fetch;
+
+    await expect(postJson("https://example.test/api", {})).rejects.toSatisfy((err: unknown) => {
+      expect(err).toBeInstanceOf(NetworkError);
+      const message = (err as Error).message;
+      expect(message).toBe("Could not reach example.test: connection refused.");
+      expect(message).not.toContain(leak);
+      return true;
+    });
+  });
+
+  it("names a TLS failure from cause.code", async () => {
+    const leak = "https://evil.test/callback?token=abc";
+    globalThis.fetch = vi.fn(async () => {
+      const cause = Object.assign(new Error(`unable to verify ${leak}`), {
+        code: "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+      });
+      throw Object.assign(new TypeError("fetch failed"), { cause });
+    }) as unknown as typeof fetch;
+
+    await expect(postJson("https://example.test/api", {})).rejects.toSatisfy((err: unknown) => {
+      expect(err).toBeInstanceOf(NetworkError);
+      const message = (err as Error).message;
+      expect(message).toContain("could not verify TLS certificate");
+      expect(message).toContain("docs/corporate-networks.md");
+      expect(message).not.toContain(leak);
+      return true;
+    });
+  });
+
+  it("names proxy required on HTTP 407", async () => {
+    globalThis.fetch = vi.fn(
+      async () => new Response("Proxy-Authenticate: Basic", { status: 407 })
+    ) as unknown as typeof fetch;
+
+    await expect(postJson("https://example.test/api", {})).rejects.toSatisfy((err: unknown) => {
+      expect(err).toBeInstanceOf(NetworkError);
+      const message = (err as Error).message;
+      expect(message).toBe("Could not reach example.test: proxy required.");
+      expect(message).not.toContain("Proxy-Authenticate");
+      expect(message).not.toContain("Basic");
+      return true;
+    });
+  });
+
+  it("keeps the generic reach message when the code is unknown", async () => {
+    globalThis.fetch = vi.fn(async () => {
+      throw Object.assign(new Error("socket hang up with a token=xyz"), { code: "ECONNRESET" });
+    }) as unknown as typeof fetch;
+
+    await expect(postJson("https://example.test/api", {})).rejects.toSatisfy((err: unknown) => {
+      expect((err as Error).message).toBe("Could not reach example.test.");
+      expect((err as Error).message).not.toContain("token=xyz");
+      return true;
+    });
   });
 });
