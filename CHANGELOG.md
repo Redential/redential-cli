@@ -5,7 +5,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: strict [semver](https://semver.org/) — bundle schema changes
 always bump at least minor; breaking schema changes bump major.
 
-## [Unreleased]
+## [0.13.0] - 2026-08-14
 
 ### Changed
 - Final integration fix (owner directive, 2026-08): `submit`'s own network
