@@ -9,6 +9,7 @@ import {
 import { isShallowRepository, getConfiguredUserEmail } from "./git.js";
 import { shallowRepoWarning } from "./shallow-repo.js";
 import { dim } from "./dim.js";
+import { writeStderrLine } from "./stderr.js";
 import {
   computeAuthorListHash,
   readIdentitySelection,
@@ -65,6 +66,18 @@ export interface BuildBundleOptions {
   // Never called on the `--author`-flag path (nothing was "selected"
   // there — the caller already has the emails it passed in).
   onAuthorsSelected?: (authors: string[]) => void;
+  // Bug fix (owner follow-up, 2026-08 — real-terminal repro): `scan`'s
+  // post-scan hand-off into `submit` (scan-command.ts's
+  // `continueIntoSubmit`) calls `buildBundleInteractively` a SECOND time
+  // in the same process (submit needs its own freshly-built bundle — see
+  // the comment below on why it can't just reuse scan's). Without this
+  // flag, that second call printed the intro lines (the expectation line,
+  // the local-scan line, "Reading git history...") all over again, right
+  // in the middle of the combined output — the exact "banner prints twice"
+  // bug the owner caught. Set ONLY by that one hand-off call site; a
+  // standalone `redential submit` never sets it, since submit's own run
+  // IS the start of its own flow and should print them normally.
+  suppressIntro?: boolean;
 }
 
 /**
@@ -99,15 +112,52 @@ const EXPECTATION_LINE =
 const LOCAL_ONLY_NOTICE = "Local scan. Nothing leaves your machine.";
 
 export async function buildBundleInteractively(opts: BuildBundleOptions): Promise<Bundle> {
-  const warn = opts.warn ?? console.error;
-  if (opts.isTTY) warn(EXPECTATION_LINE);
-  warn(dim(LOCAL_ONLY_NOTICE));
+  const warn = opts.warn ?? writeStderrLine;
+  // Known cost, accepted for now (owner follow-up, 2026-08): the scan→
+  // submit hand-off calls this function a second time in the same
+  // process, re-walking the same repo history instead of reusing scan's
+  // already-computed `Bundle`. This is deliberate, not an oversight — the
+  // bundle carries wall-clock fields (`created_at`,
+  // `attestation.confirmed_at`), and `submit`'s own byte-for-byte-print
+  // invariant must reflect the EXACT bundle it's about to upload, built at
+  // upload time, not a stale one computed moments earlier during `scan`'s
+  // own summary. The rebuild is deterministic otherwise (same repo state,
+  // same `--author`/`--since`), so the only real cost is a second local
+  // `git log` walk — never a second network call, never a second prompt
+  // for the same decision (see `suppressIntro` below and
+  // `onAuthorsSelected`/`selectionAlreadyConfirmed` elsewhere in this
+  // file). `suppressIntro` only silences the REPEATED banner text this
+  // second call would otherwise print; it does not skip the rebuild itself.
+  if (!opts.suppressIntro) {
+    if (opts.isTTY) warn(EXPECTATION_LINE);
+    warn(dim(LOCAL_ONLY_NOTICE));
+  }
 
   if (isShallowRepository(opts.repoPath)) warn(shallowRepoWarning());
 
   let authors = opts.author;
   let enumeratedCandidates: AuthorCandidate[] | undefined;
+  // Bug fix (owner follow-up, 2026-08 — reproduced via pty): true when a
+  // fast-path offer (saved-selection or git-identity) was ACCEPTED — that
+  // accept already asked (and got a "yes" to) the full unified
+  // identity+authorization question via `promptConfirmScan` (see
+  // prompt.ts's `promptUseSavedSelection`/`promptUseGitIdentity`), so the
+  // final confirmation step below must NOT ask a second, redundant
+  // question for the exact same selection. Declining a fast-path offer
+  // always falls through to the numbered list instead, which is a
+  // SELECTION step, not a confirmation of its own — that path still needs
+  // (and gets) exactly one `promptConfirmScan` call below, same as always.
+  let selectionAlreadyConfirmed = false;
   if (authors.length === 0) {
+    // Bug fix (owner follow-up, 2026-08): author enumeration is a full
+    // `git log` walk — on a large repo (the owner's repro: ~1,400 commits)
+    // this can take a few real seconds with zero visible feedback between
+    // the startup lines and the first question, easily read as a hang.
+    // TTY-only (piped/non-TTY stdout must stay untouched — same "no output
+    // beyond the bundle JSON" contract every other stderr notice in this
+    // file already respects), dim (informational, not a warning), no
+    // spinner needed — just proof the process is alive and doing something.
+    if (opts.isTTY && !opts.suppressIntro) warn(dim("Reading git history..."));
     const candidates = await listAuthors(opts.repoPath);
     enumeratedCandidates = candidates;
     if (candidates.length === 0) {
@@ -143,15 +193,24 @@ export async function buildBundleInteractively(opts: BuildBundleOptions): Promis
         authors = stored!.authors;
         warn(`Using saved identity selection: ${authors.join(", ")} (docs/identity-selection-memory.md).`);
       } else {
-        authors = await selectAuthorsTodaysFlow(opts, candidates);
+        const result = await selectAuthorsTodaysFlow(opts, candidates);
+        authors = result.authors;
+        selectionAlreadyConfirmed = result.confirmedViaFastPath;
       }
     } else if (candidates.length > 1 && storedMatches) {
       // 2+ candidates, a matching stored selection: offer it back FIRST,
       // before the git-identity fast path. Declining falls through to
       // today's flow exactly, with no pre-marking — the user just
       // declined that selection, so it shouldn't linger as a default.
-      const useSaved = await (opts.promptUseSavedSelectionFn ?? promptUseSavedSelection)(stored!.authors);
-      authors = useSaved ? stored!.authors : await selectAuthorsTodaysFlow(opts, candidates);
+      const useSaved = await callPromptUseSavedSelection(opts, candidates, stored!.authors);
+      if (useSaved) {
+        authors = stored!.authors;
+        selectionAlreadyConfirmed = true;
+      } else {
+        const result = await selectAuthorsTodaysFlow(opts, candidates);
+        authors = result.authors;
+        selectionAlreadyConfirmed = result.confirmedViaFastPath;
+      }
     } else if (candidates.length > 1 && stored !== null && !storedMatches) {
       // 2+ candidates, a stale stored selection (author list changed since
       // it was saved): skip both the saved-selection offer and the
@@ -159,16 +218,20 @@ export async function buildBundleInteractively(opts: BuildBundleOptions): Promis
       // the still-present stored authors pre-marked as its Enter-default,
       // so "still just those" costs one keystroke without ever silently
       // reusing an answer that no longer matches the history it was
-      // chosen against.
+      // chosen against. The numbered list is a SELECTION step, not a
+      // confirmation, so `selectionAlreadyConfirmed` stays false here —
+      // the usual single `promptConfirmScan` call below still fires.
       const storedStillPresent = stored.authors.filter((email) => candidateEmails.has(email));
       authors =
         storedStillPresent.length > 0
           ? await callPromptAuthors(opts, candidates, storedStillPresent)
-          : await selectAuthorsTodaysFlow(opts, candidates);
+          : (await selectAuthorsTodaysFlow(opts, candidates)).authors;
     } else {
       // Single candidate, or no stored entry at all: today's flow,
       // unchanged.
-      authors = await selectAuthorsTodaysFlow(opts, candidates);
+      const result = await selectAuthorsTodaysFlow(opts, candidates);
+      authors = result.authors;
+      selectionAlreadyConfirmed = result.confirmedViaFastPath;
     }
 
     opts.onAuthorsSelected?.(authors);
@@ -185,7 +248,7 @@ export async function buildBundleInteractively(opts: BuildBundleOptions): Promis
     }
   }
 
-  let confirmed = opts.yes;
+  let confirmed = opts.yes || selectionAlreadyConfirmed;
   if (!confirmed) {
     const candidatesForConfirm = enumeratedCandidates ?? (await listAuthors(opts.repoPath));
     confirmed = await (opts.promptConfirmFn ?? (() => promptConfirmScan(candidatesForConfirm, authors)))();
@@ -205,8 +268,8 @@ export async function buildBundleInteractively(opts: BuildBundleOptions): Promis
 /**
  * The author-selection flow exactly as it existed before the identity-
  * selection-memory milestone (docs/identity-selection-memory.md) — extracted
- * unchanged so every "fall through to today's flow" branch above (declined
- * saved selection, stale store with nothing still present, no store at all)
+ * so every "fall through to today's flow" branch above (declined saved
+ * selection, stale store with nothing still present, no store at all)
  * calls the exact same code, never a near-duplicate that could drift.
  *
  * With 2+ candidates, offers the repo's own git identity as a fast default
@@ -217,18 +280,28 @@ export async function buildBundleInteractively(opts: BuildBundleOptions): Promis
  * fires for 2+. Declining, or no match at all, falls through to the FULL,
  * unmodified list — never silently dropping the matched entry, since "no"
  * often means "that one plus others" for a multi-identity repo.
+ *
+ * Returns `confirmedViaFastPath: true` only when the git-identity offer was
+ * ACCEPTED — that accept already asked the full unified
+ * identity+authorization question (see prompt.ts's `promptUseGitIdentity`,
+ * bug fix owner follow-up 2026-08), so the caller must not ask again. The
+ * numbered-list fallback always returns `false` — a raw multi-way
+ * selection, never a confirmation of its own.
  */
-async function selectAuthorsTodaysFlow(opts: BuildBundleOptions, candidates: AuthorCandidate[]): Promise<string[]> {
+async function selectAuthorsTodaysFlow(
+  opts: BuildBundleOptions,
+  candidates: AuthorCandidate[]
+): Promise<{ authors: string[]; confirmedViaFastPath: boolean }> {
   if (candidates.length > 1) {
     const gitEmail = getConfiguredUserEmail(opts.repoPath);
     const matched = gitEmail ? candidates.find((c) => c.email === gitEmail) : undefined;
     if (matched) {
       const useIt = await (opts.promptUseGitIdentityFn ?? promptUseGitIdentity)(matched);
-      if (useIt) return [matched.email];
+      if (useIt) return { authors: [matched.email], confirmedViaFastPath: true };
     }
   }
 
-  return callPromptAuthors(opts, candidates);
+  return { authors: await callPromptAuthors(opts, candidates), confirmedViaFastPath: false };
 }
 
 /**
@@ -247,4 +320,22 @@ function callPromptAuthors(
 ): Promise<string[]> {
   if (opts.promptAuthorsFn) return opts.promptAuthorsFn(candidates, preselectedEmails);
   return promptAuthors(candidates, undefined, preselectedEmails);
+}
+
+/**
+ * Small adapter over `opts.promptUseSavedSelectionFn` (or the real
+ * `promptUseSavedSelection`) — needed for the same reason `callPromptAuthors`
+ * above exists: the injectable `promptUseSavedSelectionFn` (matching every
+ * existing test fake) is `(authors) => Promise<boolean>`, while the real
+ * function additionally needs `candidates` (bug fix, owner follow-up
+ * 2026-08 — see prompt.ts's own comment) to look up each stored author's
+ * commit count for `promptConfirmScan`'s display text.
+ */
+function callPromptUseSavedSelection(
+  opts: BuildBundleOptions,
+  candidates: AuthorCandidate[],
+  authors: string[]
+): Promise<boolean> {
+  if (opts.promptUseSavedSelectionFn) return opts.promptUseSavedSelectionFn(authors);
+  return promptUseSavedSelection(authors, candidates);
 }

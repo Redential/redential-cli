@@ -54,9 +54,18 @@ bump, (3) an entry in docs/schema.md and CHANGELOG.md.
   + a doc in docs/ explaining how it works.
 - Bundle schema changes = major or minor bump depending on compatibility.
 - `submit` ALWAYS prints the exact byte-for-byte JSON immediately before
-  the upload confirmation — unskippable, on every path. `scan` provides
-  that same exact JSON via `--json` and piped/non-TTY output; its default
-  TTY output is a human summary derived only from bundle fields.
+  the upload confirmation — unskippable, on every path, nothing else may
+  print between the JSON and that question. The upload confirmation is
+  "Upload this to your Redential profile? (Y/n)" (Y-default) — the ONE
+  merged decision both `redential submit` directly and a TTY `scan`
+  hand-off (below) ever ask; there is no separate "Add this to your
+  Redential profile?" question anymore (owner directive, 2026-08: the same
+  decision must never be asked twice). `scan` provides that same exact
+  JSON via `--json` and piped/non-TTY output; its default TTY output is a
+  human summary derived only from bundle fields, and — on a TTY, with a
+  stored session and something new to submit — continues straight into
+  `submit`'s own flow (ending in that one question) instead of asking a
+  question of its own first.
 - If the repo's remote looks like it's on a known public host
   (github.com/gitlab.com/bitbucket.org), `scan` suggests connecting the
   GitHub App as an alternative (anti-cannibalization guardrail) — but
@@ -87,16 +96,20 @@ bump, (3) an entry in docs/schema.md and CHANGELOG.md.
 
 ## Limits for agents
 
-- INVIOLABLE RULE — zero network in scan: `scan` makes NO network calls
-  whatsoever. Skill detection is deterministic diff matching (read locally
-  with `git show`/`git diff`) against `signatures/*.json` (a versioned
-  signature database in this repo: imports, config files, per-library API
-  patterns). No LLMs, no remote inference, in any variant. The scan itself
-  never performs network I/O, full stop; the only exception in the whole
-  `scan` command is the post-scan "Add this to your Redential profile?"
-  prompt, which — only on an explicit yes — hands off to `submit`'s own
-  flow, with its own separate network surface and its own separate,
-  unweakened consent surface (see docs/scan.md).
+- INVIOLABLE RULE — zero network in scan: `scan` performs ZERO network
+  I/O, period. Skill detection is deterministic diff matching (read
+  locally with `git show`/`git diff`) against `signatures/*.json` (a
+  versioned signature database in this repo: imports, config files,
+  per-library API patterns). No LLMs, no remote inference, in any variant.
+  This holds without exception across the whole `scan` command, including
+  its post-scan continuation into `submit`'s own flow on a TTY with a
+  stored session: everything in that entire flow up to and including the
+  single "Upload this to your Redential profile? (Y/n)" confirmation is
+  purely local (short summary, consent box, private-label prompt, the
+  exact byte-for-byte JSON print) — the first network call anywhere in
+  either `scan` or `submit` happens only AFTER the user explicitly answers
+  yes to that one question, or runs `redential login` (see docs/scan.md
+  and docs/login-submit.md).
 - INVIOLABLE RULE — closed vocabulary: the bundle only admits skill slugs
   present in `taxonomy.json` (public, in this repo). A slug outside that
   list invalidates the bundle. New slugs come in via PR to `taxonomy.json`,

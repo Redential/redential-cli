@@ -489,24 +489,26 @@ describe("executeSubmitCommand — consent summary", { timeout: 30_000 }, () => 
       isTTY: true,
     });
 
-    // 6 lines: short summary, consent box, payload header, JSON, the
-    // private-label consent line, then the post-upload "Uploaded. Bundle
-    // id: ..." confirmation (unrelated to this milestone's ordering —
-    // logged only after a successful upload).
+    // 6 lines: short summary, consent box, the private-label consent line,
+    // payload header, JSON, then the post-upload "Uploaded. Bundle id: ..."
+    // confirmation. Owner directive (2026-08): the private-label line moved
+    // BEFORE the payload header/JSON (it used to sit between the JSON and
+    // the upload prompt) so the exact JSON is now ALWAYS the immediate
+    // last thing printed before that single upload confirmation, on every
+    // path — nothing may come between them anymore.
     expect(logs).toHaveLength(6);
     expect(logs[0]).toContain("of private work");
     expect(logs[0]).toContain("1 commit ·");
     expect(logs[0]).toContain("0 capabilities detected");
     expect(logs[1]).toContain("WHAT GETS UPLOADED");
-    expect(logs[2]).toBe("Exact payload (byte-for-byte what gets sent):");
-    expect(() => JSON.parse(logs[3])).not.toThrow();
-    expect(logs[4]).toContain("Plus your private label:");
-    expect(logs[4]).toContain("acme-backend");
-    // The JSON is printed BEFORE the upload prompt — the inviolable
-    // "printed before upload" guarantee — with only the private-label line
-    // (logs[4], part of the same consent surface) coming after it and
-    // before the prompt; logs[5] is the post-upload result line.
-    const bundleLine = logs[3];
+    expect(logs[2]).toContain("Plus your private label:");
+    expect(logs[2]).toContain("acme-backend");
+    expect(logs[3]).toBe("Exact payload (byte-for-byte what gets sent):");
+    expect(() => JSON.parse(logs[4])).not.toThrow();
+    // The JSON (logs[4]) is printed IMMEDIATELY before the upload prompt —
+    // the inviolable "printed before upload" guarantee, now with nothing
+    // at all between them; logs[5] is the post-upload result line.
+    const bundleLine = logs[4];
 
     const requests = bundleRequests(server);
     expect(requests).toHaveLength(1);
@@ -749,7 +751,14 @@ describe("identity corroboration", { timeout: 30_000 }, () => {
     expect(logs.some((l) => l.includes("claimed identities"))).toBe(false);
   });
 
-  it("prints the corroboration notice before the upload confirmation prompt is invoked", async () => {
+  // Owner directive (2026-08, reorder for the zero-network-until-yes
+  // invariant): the corroboration lookup moved to AFTER the upload
+  // confirmation (and after the visibility gate) — it's informational,
+  // not part of the reviewed payload, so it no longer justifies a network
+  // call before the user has said yes. This replaces the old "before the
+  // prompt" test with its exact opposite: the notice must be ABSENT at
+  // prompt time, and present only afterward, before the actual upload.
+  it("prints the corroboration notice AFTER the upload confirmation is answered yes — never before it", async () => {
     const server = await startMockServer((req) => {
       if (req.url === "/api/cli/identity/emails") return { status: 200, body: { emails: ["you@example.com"] } };
       if (req.url === "/api/cli/bundles") return { status: 200, body: { id: "bundle-order" } };
@@ -777,15 +786,48 @@ describe("identity corroboration", { timeout: 30_000 }, () => {
       checkForUpdateFn: noCheckForUpdate,
       promptConfirmUploadFn: async () => {
         // Snapshot at the moment the prompt is invoked — the corroboration
-        // notice must already be among the logs by then (principle 4: the
-        // dev must see it before consenting), regardless of what the user
-        // ends up answering.
+        // lookup must NOT have run yet (it's a network call, and nothing
+        // network-related may happen before this exact question is
+        // answered — owner directive, 2026-08).
         logsAtPromptTime = [...logs];
         return true;
       },
     });
 
-    expect(logsAtPromptTime.some((l) => l.includes("1 of 1 claimed identities match"))).toBe(true);
+    expect(logsAtPromptTime.some((l) => l.includes("claimed identities match"))).toBe(false);
+    expect(logs.some((l) => l.includes("1 of 1 claimed identities match"))).toBe(true);
+    // It still prints before the actual upload result — right after being
+    // computed, before postBundle's own "Uploaded. Bundle id: ..." line.
+    const corroborationIndex = logs.findIndex((l) => l.includes("1 of 1 claimed identities match"));
+    const uploadedIndex = logs.findIndex((l) => l.startsWith("Uploaded. Bundle id:"));
+    expect(corroborationIndex).toBeGreaterThanOrEqual(0);
+    expect(uploadedIndex).toBeGreaterThan(corroborationIndex);
+  });
+
+  it("declining the upload confirmation means ZERO network calls happen anywhere in the run — not even the corroboration lookup", async () => {
+    const server = await startMockServer(() => ({ status: 200, body: {} }));
+    servers.push(server);
+    process.env.REDENTIAL_SITE_URL = server.url;
+
+    const dir = repoWithOneCommit();
+    const configDir = tempConfigDir();
+    saveCredentials({ access_token: "t", site_url: server.url, obtained_at: "now" }, configDir);
+
+    await executeSubmitCommand({
+      repoPath: dir,
+      author: ["you@example.com"],
+      yes: true,
+      confirmUpload: false,
+      label: "acme-backend",
+      toolVersion: "0.1.0",
+      configDir,
+      log: () => {},
+      warn: () => {},
+      checkForUpdateFn: noCheckForUpdate,
+      promptConfirmUploadFn: async () => false,
+    });
+
+    expect(server.requests).toHaveLength(0);
   });
 });
 

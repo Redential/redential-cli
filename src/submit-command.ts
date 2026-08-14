@@ -11,6 +11,7 @@ import { bundleContentHash, saveLastSubmission } from "./submission-record.js";
 import { computeCorroboration, corroborationNotice, type IdentityCorroboration } from "./identity-corroboration.js";
 import { getOrCreateSalt } from "./salt.js";
 import { validatePrivateLabel } from "./private-label.js";
+import { writeStderrLine } from "./stderr.js";
 import type { Bundle } from "./types.js";
 
 export type SubmitCommandOptions = BuildBundleOptions & {
@@ -138,7 +139,7 @@ export function thinHistoryNotice(bundle: Bundle): string | null {
 
 /**
  * The consent-surface line for the private label — printed right after the
- * exact JSON, right before the upload prompt (see the "Output order"
+ * label is resolved, before the exact JSON (see the "Output order"
  * comment below and docs/private-label.md). Deliberately spells out BOTH
  * halves of the trust claim in one line: it travels (so nothing about it
  * is a silent addition to the request) and it travels OUTSIDE the bundle
@@ -164,7 +165,7 @@ export function formatPrivateLabelLine(label: string, plain: boolean | undefined
  */
 export async function executeSubmitCommand(opts: SubmitCommandOptions): Promise<void> {
   const log = opts.log ?? console.log;
-  const warn = opts.warn ?? console.error;
+  const warn = opts.warn ?? writeStderrLine;
 
   const siteUrl = getSiteUrl();
   const credentials = readCredentials(opts.configDir);
@@ -187,8 +188,10 @@ export async function executeSubmitCommand(opts: SubmitCommandOptions): Promise<
 
   // Private label resolution (see docs/private-label.md) — MANDATORY,
   // resolved/validated before any of this function's own network calls
-  // (fetchVerifiedEmails below is the first one). Two of the three cases
-  // resolve right here, before anything is printed:
+  // (every network call in this function now happens strictly AFTER the
+  // single upload confirmation below — owner directive, 2026-08; see the
+  // "Output order" comment right below). Two of the three cases resolve
+  // right here, before anything is printed:
   //   - `--label` given: validated immediately (an invalid one is a hard
   //     error here, TTY or not — no reason to defer a value we already
   //     have).
@@ -210,23 +213,30 @@ export async function executeSubmitCommand(opts: SubmitCommandOptions): Promise<
   }
 
   // Output order (console-UX milestone, 2026-07; private-label prompt
-  // added 2026-07 — see docs/private-label.md):
-  //   1. one-line short summary (TTY only)
-  //   2. identity-corroboration line, when present (both TTY and non-TTY —
-  //      see the comment above its computation below; unchanged from
-  //      before this milestone)
-  //   3. the consent box, "WHAT GETS UPLOADED" (TTY only)
-  //   4. the private-label prompt, TTY only, only when `--label` wasn't
-  //      given (interactive — not a `log()` line, see the block below)
-  //   5. the payload header + the exact JSON (byte-for-byte what gets sent
-  //      — this print IS the guarantee, so nothing may come between the
-  //      header and it; ALWAYS printed before the upload prompt, TTY or
-  //      not — see the non-TTY branch below for the piped-output case)
-  //   6. the private-label consent line (TTY only) — part of the consent
-  //      surface: everything that travels is shown before the y/n, and the
-  //      label travels just as much as the bundle does, even though it's a
-  //      separate request (see postPrivateLabel below).
-  //   7. the upload prompt, immediately after the label line
+  // added 2026-07 — see docs/private-label.md; reordered again, owner
+  // directive, 2026-08):
+  //   1. one-line short summary (TTY only) / raw JSON (non-TTY)
+  //   2. the consent box, "WHAT GETS UPLOADED" (TTY only)
+  //   3. the private-label prompt, TTY only, only when `--label` wasn't
+  //      given (interactive — not a `log()` line), immediately followed by
+  //      its own consent line — part of the consent surface: everything
+  //      that travels is shown before the y/n, and the label travels just
+  //      as much as the bundle does, even though it's a separate request
+  //      (see postPrivateLabel below).
+  //   4. the payload header + the exact JSON (byte-for-byte what gets sent
+  //      — this print IS the guarantee). INVARIANT (owner directive,
+  //      2026-08): the exact JSON is ALWAYS the last thing printed before
+  //      the single upload confirmation below, on every path — nothing may
+  //      come between them.
+  //   5. the single upload prompt — "Upload this to your Redential
+  //      profile? (Y/n)" — immediately after the JSON.
+  // ZERO-NETWORK INVARIANT (owner directive, 2026-08): EVERYTHING above
+  // this prompt is purely local — no identity-corroboration lookup, no
+  // visibility-gate probe, no bundle upload. The "yes" answer to THIS
+  // question IS the network consent for the whole flow (both a standalone
+  // `redential submit` and a `scan` hand-off) — see the block below the
+  // prompt for what only now starts. Declining here means zero network
+  // calls happened anywhere in this run, full stop.
   // Non-TTY/piped stdout keeps its exact pre-existing contract: the raw
   // bundle JSON is the very first thing logged, nothing else surrounding
   // it — `scan`/`submit | jq`-style consumers are unaffected by this
@@ -235,42 +245,17 @@ export async function executeSubmitCommand(opts: SubmitCommandOptions): Promise<
     log(bundleJson);
   } else {
     log(formatShortUploadSummary(bundle, opts.plain));
-  }
-
-  // Identity corroboration (optional X-Redential-Identity-Corroboration
-  // header on postBundle below) must be fetched and its counts printed
-  // HERE — before the upload confirmation prompt, not after. Principle 4
-  // ("no hidden fields, no enrichment after review"): the header is data
-  // that leaves the machine but isn't part of the printed bundle above, so
-  // the dev must see exactly what it says before consenting to upload. A
-  // failed/unreachable emails lookup prints nothing and sends nothing —
-  // fetchVerifiedEmails and computeCorroboration are both fail-open by
-  // contract, never throwing and never blocking the submit. Printed in
-  // BOTH TTY and non-TTY modes, same as before this milestone — only its
-  // position relative to the TTY-only elements around it has moved.
-  const verifiedEmails = await fetchVerifiedEmails(siteUrl, credentials.access_token);
-  let corroboration: IdentityCorroboration | null = null;
-  if (verifiedEmails) {
-    corroboration = computeCorroboration(
-      bundle.identity.author_identity_hashes,
-      verifiedEmails,
-      getOrCreateSalt(opts.configDir)
-    );
-    if (corroboration) log(corroborationNotice(corroboration));
-  }
-
-  if (opts.isTTY) {
     log(formatConsentSummary(bundle, { plain: opts.plain, command: "submit" }));
     // Resolved earlier (from `--label`) unless this is a real TTY without
     // one — in which case this is where the interactive prompt fires, per
     // the "Output order" comment above: after the consent box, before the
-    // exact-payload print.
+    // exact-payload print. Its consent line prints right after.
     if (privateLabel === undefined) {
       privateLabel = await (opts.promptPrivateLabelFn ?? promptPrivateLabel)();
     }
+    log(formatPrivateLabelLine(privateLabel, opts.plain));
     log("Exact payload (byte-for-byte what gets sent):");
     log(bundleJson);
-    log(formatPrivateLabelLine(privateLabel, opts.plain));
   }
 
   // By this point `privateLabel` is always defined: either validated from
@@ -284,12 +269,40 @@ export async function executeSubmitCommand(opts: SubmitCommandOptions): Promise<
     return;
   }
 
+  // ---- Everything below this line is the ONLY place this whole flow ever
+  // touches the network — reachable only after the explicit (or `--yes`/
+  // `--confirm-upload`-default) "yes" answer just above. ----
+
+  // The remote-visibility gate runs FIRST, before any other network call —
+  // it can still refuse the submit outright (confirmed-public repo) before
+  // a single byte of the bundle or an identity lookup ever leaves the
+  // machine.
   const visibility = opts.probeFn
     ? await checkVisibilityGate(getRemoteUrl(opts.repoPath), opts.probeFn)
     : await checkVisibilityGate(getRemoteUrl(opts.repoPath));
   if (visibility.message) warn(visibility.message);
   if (visibility.blocked) {
     throw new SubmitError("Submit refused: see the message above.");
+  }
+
+  // Identity corroboration (optional X-Redential-Identity-Corroboration
+  // header on postBundle below) — moved here, after the visibility gate
+  // and after the upload confirmation (owner directive, 2026-08: this used
+  // to fire before the prompt, which cost a network call even on a
+  // decline; corroboration is informational, not part of the reviewed
+  // payload, so it no longer justifies a pre-consent request). Fail-open
+  // by contract: a failed/unreachable emails lookup prints nothing and
+  // sends nothing — fetchVerifiedEmails and computeCorroboration never
+  // throw and never block the submit.
+  const verifiedEmails = await fetchVerifiedEmails(siteUrl, credentials.access_token);
+  let corroboration: IdentityCorroboration | null = null;
+  if (verifiedEmails) {
+    corroboration = computeCorroboration(
+      bundle.identity.author_identity_hashes,
+      verifiedEmails,
+      getOrCreateSalt(opts.configDir)
+    );
+    if (corroboration) log(corroborationNotice(corroboration));
   }
 
   const result = await postBundle(siteUrl, credentials.access_token, bundleJson, corroboration);

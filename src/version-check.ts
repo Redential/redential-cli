@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { getJson } from "./http-client.js";
+import { writeStderrLine } from "./stderr.js";
 
 /**
  * Best-effort, non-blocking "a newer version exists" notice, checked against
@@ -61,7 +62,10 @@ export interface CheckForUpdateOptions {
 }
 
 export async function checkForUpdate(opts: CheckForUpdateOptions = {}): Promise<void> {
-  const log = opts.log ?? console.error;
+  // Bug fix (owner follow-up, 2026-08): `console.error` auto-colors red on
+  // a TTY (Node built-in) — this is a calm "an update exists" notice, not
+  // an error; see src/stderr.ts.
+  const log = opts.log ?? writeStderrLine;
   const currentVersion = opts.currentVersion ?? getInstalledVersion();
   const registryUrl = opts.registryUrl ?? NPM_REGISTRY_URL;
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;

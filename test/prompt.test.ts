@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Readable, Writable } from "node:stream";
 import {
-  promptAddToProfile,
   promptAuthors,
   promptConfirmScan,
   promptConfirmUpload,
@@ -111,24 +110,29 @@ describe("prompt EOF handling", () => {
   });
 
   it("promptUseGitIdentity rejects when input closes before an answer", async () => {
+    // Bug fix (owner follow-up, 2026-08): promptUseGitIdentity now
+    // delegates straight to promptConfirmScan, so it EOF-rejects with that
+    // function's own message ("... authorization was confirmed ..."), not
+    // the author-selection one — see promptConfirmScan's own EOF test above
+    // for that exact string.
     await expect(
       promptUseGitIdentity({ email: "a@example.com", count: 1 }, { input: endedInput(), output: sinkOutput() })
     ).rejects.toThrow(
-      "Input closed before an author identity was selected. Use --author <email> and --yes for non-interactive runs."
+      "Input closed before authorization was confirmed. Use --author <email> and --yes for non-interactive runs."
     );
   });
 
-  it("promptAddToProfile rejects when input closes before an answer", async () => {
-    await expect(
-      promptAddToProfile({ input: endedInput(), output: sinkOutput() })
-    ).rejects.toThrow("Input closed before the profile-upload prompt was answered.");
-  });
-
   it("promptUseSavedSelection rejects when input closes before an answer", async () => {
+    // Bug fix (owner follow-up, 2026-08): same delegation as
+    // promptUseGitIdentity above — now takes `candidates` too (needed for
+    // promptConfirmScan's commit-count lookup).
     await expect(
-      promptUseSavedSelection(["a@example.com"], { input: endedInput(), output: sinkOutput() })
+      promptUseSavedSelection(["a@example.com"], [{ email: "a@example.com", count: 1 }], {
+        input: endedInput(),
+        output: sinkOutput(),
+      })
     ).rejects.toThrow(
-      "Input closed before an author identity was selected. Use --author <email> and --yes for non-interactive runs."
+      "Input closed before authorization was confirmed. Use --author <email> and --yes for non-interactive runs."
     );
   });
 
@@ -194,15 +198,15 @@ describe("promptPrivateLabel — mandatory, re-asks up to 2 times on an invalid 
   });
 });
 
-describe("promptConfirmScan — unified identity+authorization confirm, default flips to N (console-UX overhaul)", () => {
-  it("prints exactly 'Scan <N> commits by <email>? This confirms you're authorized to analyze this repository. (y/N) ' for a single author", async () => {
+describe("promptConfirmScan — the CLI's ONE true authorization gate: no default, re-asks until explicit y/n (owner directive, 2026-08)", () => {
+  it("prints exactly 'Scan <N> commits by <email>? This confirms you're authorized to analyze this repository. (y/n) ' for a single author", async () => {
     const out = captureOutput();
     await promptConfirmScan([{ email: "you@example.com", count: 1378 }], ["you@example.com"], {
       input: lineInput("y"),
       output: out.stream,
     });
     expect(out.text()).toBe(
-      "Scan 1,378 commits by you@example.com? This confirms you're authorized to analyze this repository. (y/N) "
+      "Scan 1,378 commits by you@example.com? This confirms you're authorized to analyze this repository. (y/n) "
     );
   });
 
@@ -213,7 +217,7 @@ describe("promptConfirmScan — unified identity+authorization confirm, default 
       output: out.stream,
     });
     expect(out.text()).toBe(
-      "Scan 1 commit by you@example.com? This confirms you're authorized to analyze this repository. (y/N) "
+      "Scan 1 commit by you@example.com? This confirms you're authorized to analyze this repository. (y/n) "
     );
   });
 
@@ -230,83 +234,110 @@ describe("promptConfirmScan — unified identity+authorization confirm, default 
     expect(out.text()).toContain("Scan 8 commits by a@example.com, b@example.com?");
   });
 
-  it("Enter (empty answer) DECLINES — the user must type y", async () => {
-    const result = await promptConfirmScan([{ email: "you@example.com", count: 1 }], ["you@example.com"], {
-      input: lineInput(""),
-      output: sinkOutput(),
-    });
-    expect(result).toBe(false);
+  it("accepts only on an explicit y/Y/yes", async () => {
+    for (const answer of ["y", "Y", "yes", "YES"]) {
+      const result = await promptConfirmScan([{ email: "you@example.com", count: 1 }], ["you@example.com"], {
+        input: lineInput(answer),
+        output: sinkOutput(),
+      });
+      expect(result).toBe(true);
+    }
   });
 
-  it("accepts only on an explicit y/Y", async () => {
-    const result = await promptConfirmScan([{ email: "you@example.com", count: 1 }], ["you@example.com"], {
-      input: lineInput("y"),
-      output: sinkOutput(),
-    });
-    expect(result).toBe(true);
+  it("declines on an explicit n/N/no", async () => {
+    for (const answer of ["n", "N", "no", "NO"]) {
+      const result = await promptConfirmScan([{ email: "you@example.com", count: 1 }], ["you@example.com"], {
+        input: lineInput(answer),
+        output: sinkOutput(),
+      });
+      expect(result).toBe(false);
+    }
   });
 
-  it("declines on an explicit n", async () => {
-    const result = await promptConfirmScan([{ email: "you@example.com", count: 1 }], ["you@example.com"], {
-      input: lineInput("n"),
-      output: sinkOutput(),
-    });
-    expect(result).toBe(false);
-  });
-});
-
-describe("promptAddToProfile — Y/n confirmation, Y default (console-UX overhaul)", () => {
-  it("prints exactly 'Add this to your Redential profile? (Y/n) '", async () => {
+  it("Enter (empty answer) RE-ASKS — neither proceeds nor cancels — until an explicit y or n is given", async () => {
     const out = captureOutput();
-    await promptAddToProfile({ input: lineInput(""), output: out.stream });
-    expect(out.text()).toBe("Add this to your Redential profile? (Y/n) ");
-  });
-
-  it("accepts on Enter (empty answer), defaulting to yes", async () => {
-    const result = await promptAddToProfile({ input: lineInput(""), output: sinkOutput() });
+    // Two empty answers, then an explicit "y" — the question must be asked
+    // (and re-asked) exactly 3 times before resolving.
+    const result = await promptConfirmScan([{ email: "you@example.com", count: 1 }], ["you@example.com"], {
+      input: multiLineInput("", "", "y"),
+      output: out.stream,
+    });
     expect(result).toBe(true);
+    const askedCount = (
+      out.text().match(/Scan 1 commit by you@example\.com\? This confirms you're authorized/g) ?? []
+    ).length;
+    expect(askedCount).toBe(3);
   });
 
-  it("declines on an explicit n", async () => {
-    const result = await promptAddToProfile({ input: lineInput("n"), output: sinkOutput() });
+  it("a non-empty, non-y/n answer also re-asks (never inferred as either)", async () => {
+    const result = await promptConfirmScan([{ email: "you@example.com", count: 1 }], ["you@example.com"], {
+      input: multiLineInput("maybe", "n"),
+      output: sinkOutput(),
+    });
     expect(result).toBe(false);
+  });
+
+  it("EOF while looping still throws the same closed-input error as a first-attempt EOF", async () => {
+    // One empty (re-asked) answer, then the stream ends with no further
+    // input — the SAME error as an immediate EOF on the very first ask.
+    await expect(
+      promptConfirmScan([{ email: "you@example.com", count: 1 }], ["you@example.com"], {
+        input: lineInput(""),
+        output: sinkOutput(),
+      })
+    ).rejects.toThrow(
+      "Input closed before authorization was confirmed. Use --author <email> and --yes for non-interactive runs."
+    );
   });
 });
 
-describe("promptUseGitIdentity — Y/n confirmation, Y default", () => {
+describe("promptUseGitIdentity — delegates to promptConfirmScan (bug fix, owner follow-up 2026-08)", () => {
   const candidate = { email: "you@example.com", count: 42 };
 
-  it("prints the new 'Found <n> commits authored by <email>. Use this identity? (Y/n)' copy, thousands-separated", async () => {
+  // Reproduced via pty: this used to print its own separate "Found N
+  // commits authored by X. Use this identity? (Y/n)" line, ALWAYS followed
+  // by a second, redundant promptConfirmScan call from build-bundle.ts —
+  // two questions in a row for the same decision.
+  //
+  // Consistency fix (owner directive, 2026-08): this question's "yes"
+  // GRANTS AUTHORIZATION (same sentence promptConfirmScan itself asks), so
+  // it now shares that function's exact no-default/re-ask behavior too —
+  // "(y/n)", not "(Y/n)". A Y-default here would let a bare Enter silently
+  // grant authorization on the most common repeat-scan path, which is
+  // exactly what the owner's rule forbids: ANY question whose yes grants
+  // authorization uses the no-default re-ask loop, on every path.
+  it("prints the unified 'Scan <N> commits by <email>? ... (y/n)' text, thousands-separated", async () => {
     const out = captureOutput();
     await promptUseGitIdentity(
       { email: "you@example.com", count: 1378 },
-      { input: lineInput(""), output: out.stream }
+      { input: lineInput("y"), output: out.stream }
     );
-    expect(out.text()).toBe("Found 1,378 commits authored by you@example.com. Use this identity? (Y/n) ");
+    expect(out.text()).toBe(
+      "Scan 1,378 commits by you@example.com? This confirms you're authorized to analyze this repository. (y/n) "
+    );
   });
 
-  it("prints singular commit wording for one commit", async () => {
-    const out = captureOutput();
-    await promptUseGitIdentity(
-      { email: "you@example.com", count: 1 },
-      { input: lineInput(""), output: out.stream }
-    );
-    expect(out.text()).toBe("Found 1 commit authored by you@example.com. Use this identity? (Y/n) ");
-  });
-
-  it("accepts on Enter (empty answer), defaulting to yes", async () => {
-    const result = await promptUseGitIdentity(candidate, { input: lineInput(""), output: sinkOutput() });
+  it("accepts only on an explicit y/Y/yes", async () => {
+    const result = await promptUseGitIdentity(candidate, { input: lineInput("y"), output: sinkOutput() });
     expect(result).toBe(true);
   });
 
-  it("accepts on an explicit y/Y", async () => {
-    const result = await promptUseGitIdentity(candidate, { input: lineInput("Y"), output: sinkOutput() });
-    expect(result).toBe(true);
-  });
-
-  it("declines on an explicit n", async () => {
+  it("declines on an explicit n/N/no", async () => {
     const result = await promptUseGitIdentity(candidate, { input: lineInput("n"), output: sinkOutput() });
     expect(result).toBe(false);
+  });
+
+  it("Enter (empty answer) RE-ASKS — neither grants nor declines authorization — until an explicit y or n", async () => {
+    const out = captureOutput();
+    const result = await promptUseGitIdentity(candidate, {
+      input: multiLineInput("", "", "y"),
+      output: out.stream,
+    });
+    expect(result).toBe(true);
+    const askedCount = (
+      out.text().match(/Scan 42 commits by you@example\.com\? This confirms you're authorized/g) ?? []
+    ).length;
+    expect(askedCount).toBe(3);
   });
 });
 
@@ -397,29 +428,81 @@ describe("promptAuthors — 2+ candidates with a preselected saved selection", (
   });
 });
 
-describe("promptUseSavedSelection — Y/n confirmation, Y default", () => {
-  it("prints exactly 'Use your saved identity selection: a@example.com, b@example.com? (Y/n) '", async () => {
+describe("promptUseSavedSelection — delegates to promptConfirmScan (bug fix, owner follow-up 2026-08)", () => {
+  const candidates = [
+    { email: "a@example.com", count: 3 },
+    { email: "b@example.com", count: 5 },
+  ];
+
+  // Same bug/fix as promptUseGitIdentity above — was its own separate
+  // "Use your saved identity selection: ...? (Y/n)" line, always followed
+  // by a redundant second confirmation. Consistency fix (owner directive,
+  // 2026-08): this question's "yes" also grants authorization, so it now
+  // shares promptConfirmScan's exact no-default/re-ask behavior too.
+  it("prints the unified 'Scan <N> commits by <emails>? ... (y/n)' text", async () => {
     const out = captureOutput();
-    await promptUseSavedSelection(["a@example.com", "b@example.com"], {
-      input: lineInput(""),
+    await promptUseSavedSelection(["a@example.com", "b@example.com"], candidates, {
+      input: lineInput("y"),
       output: out.stream,
     });
-    expect(out.text()).toBe("Use your saved identity selection: a@example.com, b@example.com? (Y/n) ");
+    expect(out.text()).toBe(
+      "Scan 8 commits by a@example.com, b@example.com? This confirms you're authorized to analyze this repository. (y/n) "
+    );
   });
 
-  it("accepts on Enter (empty answer), defaulting to yes", async () => {
-    const result = await promptUseSavedSelection(["a@example.com"], {
-      input: lineInput(""),
+  it("declines on an explicit n", async () => {
+    const result = await promptUseSavedSelection(["a@example.com"], [{ email: "a@example.com", count: 1 }], {
+      input: lineInput("n"),
+      output: sinkOutput(),
+    });
+    expect(result).toBe(false);
+  });
+
+  it("accepts on an explicit y", async () => {
+    const result = await promptUseSavedSelection(["a@example.com"], [{ email: "a@example.com", count: 1 }], {
+      input: lineInput("y"),
       output: sinkOutput(),
     });
     expect(result).toBe(true);
   });
 
-  it("declines on an explicit n", async () => {
-    const result = await promptUseSavedSelection(["a@example.com"], {
-      input: lineInput("n"),
-      output: sinkOutput(),
+  it("Enter (empty answer) RE-ASKS — neither grants nor declines authorization — until an explicit y or n", async () => {
+    const out = captureOutput();
+    const result = await promptUseSavedSelection(["a@example.com"], [{ email: "a@example.com", count: 1 }], {
+      input: multiLineInput("", "n"),
+      output: out.stream,
     });
+    expect(result).toBe(false);
+    const askedCount = (
+      out.text().match(/Scan 1 commit by a@example\.com\? This confirms you're authorized/g) ?? []
+    ).length;
+    expect(askedCount).toBe(2);
+  });
+});
+
+describe("promptConfirmUpload — the single merged upload confirmation, Y-default (owner directive, 2026-08)", () => {
+  // Owner directive, 2026-08: this is now THE single upload confirmation
+  // — `scan`'s old separate "Add this to your Redential profile?" prompt
+  // is gone (scan-command.ts continues straight into this same prompt
+  // instead), and this text was retargeted accordingly.
+  it("prints exactly 'Upload this to your Redential profile? (Y/n) '", async () => {
+    const out = captureOutput();
+    await promptConfirmUpload({ input: lineInput(""), output: out.stream });
+    expect(out.text()).toBe("Upload this to your Redential profile? (Y/n) ");
+  });
+
+  it("Enter (empty answer) accepts, defaulting to yes", async () => {
+    const result = await promptConfirmUpload({ input: lineInput(""), output: sinkOutput() });
+    expect(result).toBe(true);
+  });
+
+  it("accepts on an explicit y/Y", async () => {
+    const result = await promptConfirmUpload({ input: lineInput("y"), output: sinkOutput() });
+    expect(result).toBe(true);
+  });
+
+  it("declines on an explicit n", async () => {
+    const result = await promptConfirmUpload({ input: lineInput("n"), output: sinkOutput() });
     expect(result).toBe(false);
   });
 });

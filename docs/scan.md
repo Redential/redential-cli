@@ -2,10 +2,11 @@
 
 Reads git history from a local repository and prints the exact proof bundle
 that `submit` would upload later — nothing is sent anywhere by `scan` itself,
-unless you explicitly accept the post-scan "Add this to your Redential
-profile?" hand-off on a TTY (see [below](#post-scan-hand-off-to-submit)),
-which hands off to `submit`'s own flow and its own separate, unweakened
-consent surface.
+unless a TTY run continues into the post-scan hand-off into `submit`'s own
+flow (see [below](#closing-next-step-hint-and-the-post-scan-hand-off-to-submit)),
+which reuses this scan's own confirmations but keeps `submit`'s own
+separate, unweakened consent surface (including its own single upload
+confirmation) fully intact.
 
 ```bash
 redential scan --repo <path>              # interactive author + confirmation
@@ -26,8 +27,8 @@ redential scan --debug --repo <path>      # verbose diagnostics on stderr
 
 `--json` is treated as "this run is scripted," full stop, even when stdout
 happens to be a real terminal: besides forcing JSON-only stdout, it also
-skips the huge-repo progress line and the post-scan "Add this to your
-Redential profile?" hand-off (below), exactly as if stdout were piped.
+skips the huge-repo progress line and the post-scan hand-off into
+`submit`'s own flow (below), exactly as if stdout were piped.
 
 ## How it works
 
@@ -57,30 +58,62 @@ Redential profile?" hand-off (below), exactly as if stdout were piped.
 2. **Enumerate authors.** `git log` is read locally (`git show`/`git diff`
    never leave the machine) to list distinct author emails and their commit
    counts.
-3. **Select identity.** With a single candidate, it's taken directly — no
-   prompt at all here; the unified confirmation below shows that same email
+3. **Select identity.** A dim `Reading git history...` line (stderr,
+   TTY-only) prints right before the `git log` walk that enumerates authors
+   — bug fix, owner follow-up 2026-08: on a repo with a few thousand
+   commits this walk can take a few real seconds with otherwise zero
+   feedback between the startup lines and the first question, easily read
+   as a hang. With a single candidate, it's taken directly — no prompt at
+   all here; the unified confirmation below (step 4) shows that same email
    and asks about it directly. With 2+ candidates, and the repo's own
    `git config user.email` matching one of them, that one is offered FIRST
-   as a fast default: "Found 12 commits authored by you@example.com. Use
-   this identity? (Y/n)", Y is the default; declining — or no match at
-   all — falls through to a numbered list instead. Declining the
-   git-identity pre-selection shows the FULL list, including the declined
-   entry — "no" often means "that one plus others" for a multi-identity
-   repo, not "not that one at all". Non-interactively, pass `--author
-   <email>` (repeatable) for every email that's yours — this skips identity
-   selection entirely, unaffected by any of the above.
+   as a fast default, sharing step 4's exact wording AND its exact
+   no-default/re-ask behavior (consistency fix, owner directive, 2026-08 —
+   see below):
+   ```
+   Scan 12 commits by you@example.com? This confirms you're authorized to analyze this repository. (y/n)
+   ```
+   Bug fix, owner follow-up 2026-08: this used to be a separate, simpler
+   "Found 12 commits authored by you@example.com. Use this identity?
+   (Y/n)" line, ALWAYS followed by a second, redundant confirmation —
+   accepting it now already fully answers identity AND authorization in
+   one shot, so step 4 is never asked again for that same pick. A follow-up
+   consistency fix then also removed this offer's OWN Y-default: because
+   its "yes" grants authorization (the exact same sentence step 4 asks), a
+   bare Enter here used to silently grant it on the most common
+   repeat-scan path — exactly what the owner's rule (below) forbids, so it
+   now delegates straight to step 4's own prompt function and shares its
+   no-default/re-ask behavior byte for byte. Declining (an explicit `n`)
+   falls through to a numbered list instead, showing the FULL list
+   including the declined entry — "no" often means "that one plus others"
+   for a multi-identity repo, not "not that one at all"; the list itself
+   is never a confirmation of its own, so whatever it yields still gets
+   exactly one confirmation (step 4, in full). Non-interactively, pass
+   `--author <email>` (repeatable) for every email that's yours — this
+   skips identity selection entirely, unaffected by any of the above.
 4. **Confirm (identity + authorization, unified).** One question covers
-   both at once (console-UX overhaul, 2026-08):
+   both at once:
    ```
-   Scan 1,378 commits by you@example.com? This confirms you're authorized to analyze this repository. (y/N)
+   Scan 1,378 commits by you@example.com? This confirms you're authorized to analyze this repository. (y/n)
    ```
-   — interactively via this prompt, or non-interactively via `--yes`. The
-   default is N: pressing Enter declines, you must type `y` to proceed.
-   This single question replaces three separate ones this CLI used to ask
-   (a pre-scan connectable-repo guardrail question, a per-candidate identity
-   confirmation, and a standalone authorization attestation) — the
-   authorization safety property (Enter declines) survives the
-   unification unchanged.
+   — interactively via this prompt, or non-interactively via `--yes`.
+   Owner directive (2026-08): ANY question whose "yes" grants
+   authorization — this one, and step 3's fast-path offer above — uses no
+   implied default at all: lowercase `(y/n)`, not `(Y/n)`/`(y/N)`. Every
+   OTHER y/n prompt in this CLI (the post-scan upload confirmation, the
+   private-label prompt's own retry loop) keeps an ordinary Y-default,
+   since granting upload consent (or entering a label) is a different,
+   lower-stakes decision than granting authorization to analyze a
+   repository. Pressing Enter (or typing anything that isn't an explicit
+   `y`/`yes` or `n`/`no`, case-insensitive) neither proceeds nor cancels:
+   it RE-ASKS the exact same question, looping until you give one of those
+   two explicit answers. Nothing is ever inferred here. This question (or
+   step 3's fast-path offer, which shares its exact wording and behavior)
+   is the ONLY confirmation asked anywhere in this flow — it replaces
+   three separate ones this CLI used to ask (a pre-scan connectable-repo
+   guardrail question, a per-candidate identity confirmation, and a
+   standalone authorization attestation), and it is never asked twice in a
+   row for the same selection.
 5. **Compute the bundle.** Every field in `schema/bundle.v1.json` is derived
    from `git log --numstat` filtered to your selected commits: volume, span,
    hourly/weekday cadence, signed-commit ratio, churn share by file
@@ -272,25 +305,28 @@ them fires is always the true LAST thing `scan` prints:
    ```
 2. **Stored session, but this exact bundle hasn't been uploaded yet**
    (nothing recorded locally yet, or the recorded hash doesn't match this
-   scan's content — e.g. new commits since the last submit): a LIVE
-   prompt —
+   scan's content — e.g. new commits since the last submit): `scan`
+   continues UNCONDITIONALLY, straight into `submit`'s own flow IN-PROCESS
+   (`executeSubmitCommand`) — no question of its own first anymore (owner
+   directive, 2026-08: the old separate "Add this to your Redential
+   profile?" prompt is GONE entirely; it used to ask the same decision
+   `submit`'s own upload prompt asked again moments later, two questions
+   for one). It reuses the exact author selection and authorization
+   confirmation you already gave moments earlier in this same scan, so
+   neither is asked again. Every other part of `submit`'s own consent
+   surface fires exactly as it does on a standalone `redential submit`
+   run: the short summary, the boxed "WHAT GETS UPLOADED" consent box, the
+   private-label prompt, the byte-for-byte exact JSON printed immediately
+   before the single upload confirmation, and that confirmation itself —
    ```
-   Add this to your Redential profile? (Y/n)
+   Upload this to your Redential profile? (Y/n)
    ```
-   Y is the default. Answering yes hands off to `submit`'s own flow
-   IN-PROCESS (`executeSubmitCommand`) — reusing the exact author
-   selection and authorization confirmation you already gave moments
-   earlier in this same scan, so neither is asked again. Every other part
-   of `submit`'s own consent surface still fires exactly as it does on a
-   standalone `redential submit` run: the short summary, the boxed "WHAT
-   GETS UPLOADED" consent box, the private-label prompt, the byte-for-byte
-   exact JSON printed before the upload confirmation, and the "Upload this
-   bundle? (y/n)" prompt itself — none of it is skipped or pre-answered.
-   Declining (or Enter) prints a one-line dim/gray reminder to run
-   `redential submit` later, and `scan` exits normally (exit 0) — the scan
-   itself already fully succeeded either way. If the stored session turns
-   out to be invalid (wrong `SITE_URL`, or deleted since this check ran),
-   this is reported as a plain stderr note rather than turning an
+   Y is the default (Enter accepts) — this is the ONE decision the whole
+   hand-off asks. Declining (an explicit `n`) prints "Aborted — nothing
+   was uploaded." and `scan` exits normally (exit 0) — the scan itself
+   already fully succeeded either way. If the stored session turns out to
+   be invalid (wrong `SITE_URL`, or deleted since this check ran), this is
+   reported as a plain stderr note rather than turning an
    otherwise-successful `scan` into a failed exit code.
 3. **Stored session AND this exact bundle content was already uploaded**:
    nothing at all — re-submitting would send nothing new, so the summary's
@@ -313,15 +349,15 @@ isn't written with restricted file permissions.
 
 The connectable-repo notice below (when applicable) prints right after the
 summary and BEFORE whichever of the three states above fires — never
-after — so states 1 and 2's own final line (the reminder, or the live
-prompt) is always the genuinely last thing on screen, per the owner's
-ordering rule.
+after — so state 1's reminder, or state 2's continuation into `submit`
+ending in its one upload confirmation, is always the genuinely last thing
+on screen, per the owner's ordering rule.
 
 This only happens on a real TTY with no `--json`. `scan | jq` (or any
 redirected/piped stdout) prints **only** the raw JSON, byte-identical to
 before this summary existed — `--json` forces that same JSON-only behavior
 even on a terminal, for scripts that run interactively but still want
-machine output; neither the reminder nor the live prompt nor the
+machine output; neither the reminder, the hand-off into `submit`, nor the
 connectable-repo notice ever appear on that path. Exit codes for piped and
 `--json` runs are documented in [exit-codes.md](exit-codes.md).
 
@@ -350,11 +386,26 @@ the network visibility gate, described in
 
 ## Startup and closing line colors
 
-Owner follow-up (2026-08): calm, informational, non-alarming lines are
-never rendered in a warning color — red/orange/warning colors are reserved
-for real errors only (`src/program.ts`'s top-level error handler, which
-prints `Error: ...` and never applies color at all today). This applies
-to:
+Owner follow-up (2026-08, reproduced via a real pty): calm, informational,
+non-alarming lines are never rendered in a warning color — red/orange/
+warning colors are reserved for real errors only.
+
+**Root cause of the bug this fixed.** Node.js automatically wraps
+`console.error`/`console.warn` output in red/yellow ANSI codes
+(`\x1b[31m...\x1b[39m`) whenever the destination stream is a color-capable
+TTY — a Node built-in, not something this codebase ever asked for. Every
+informational stderr line in this CLI defaulted to `console.error` as its
+`warn` implementation, so EVERY one of them (the local-only notice, the
+expectation line, the connectable-repo notice, the shallow-repo/thin-
+history notices, ...) rendered in red regardless of any `dim()` wrapping —
+wrapping a line in `dim()` only nested those codes INSIDE Node's own red
+wrapper, never removed it. The fix (`src/stderr.ts`'s `writeStderrLine`,
+a plain `process.stderr.write`, never `console.error`) is now the default
+`warn`/`log` implementation everywhere EXCEPT `src/program.ts`'s actual
+`Error: ...` path, which keeps using `console.error` on purpose — that red
+IS correct there, it's a real error.
+
+This applies to:
 - The local-only notice ("Local scan. Nothing leaves your machine.",
   step 1 above) and the connectable-repo notice just above — both rendered
   dim/gray via `src/dim.ts` when stderr is a real terminal, plain text
@@ -368,6 +419,13 @@ to:
   deliberately printed in the terminal's own default (neutral) color, not
   dimmed — it's the one line actually meant to be read at a glance, not
   ambient reassurance text.
+- The "Reading git history..." interstitial (step 3 above) and the
+  no-session post-scan reminder ("Log in and run `redential submit`...",
+  scan-command.ts) — both dim/gray via `src/dim.ts`, same rule. There is no
+  separate decline note anymore: when there's a session and new content,
+  `scan` continues straight into `submit`'s own flow, and any decline
+  happens there, inside `submit`'s own output (see "Closing next-step hint
+  and the post-scan hand-off to `submit`" below).
 
 ## Huge repositories and `--since`
 

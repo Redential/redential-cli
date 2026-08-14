@@ -6,9 +6,9 @@ import { readCredentials } from "./credentials.js";
 import { bundleContentHash, readLastSubmission } from "./submission-record.js";
 import { isShallowRepository, getRemoteUrl } from "./git.js";
 import { connectableRepoNotice } from "./public-remote.js";
-import { promptAddToProfile } from "./prompt.js";
 import { AuthError } from "./errors.js";
 import { dim } from "./dim.js";
+import { writeStderrLine } from "./stderr.js";
 import type { Bundle } from "./types.js";
 import type { SubmitCommandOptions } from "./submit-command.js";
 
@@ -29,14 +29,14 @@ export type ScanCommandOptions = BuildBundleOptions & {
   isTTY?: boolean;
   // Forces JSON-only output even when stdout is a TTY — and, per this
   // option's own "suitable for pipes even on a TTY" contract, also
-  // suppresses the huge-repo progress line and the post-scan "Add this to
-  // your Redential profile?" prompt (both go through `interactiveTTY`
-  // below), even though both are otherwise gated on `isTTY` alone. Neither
-  // ever touched stdout to begin with (progress is stderr-only; the prompt
-  // is a stdin/stdout prompt gated separately), so this isn't about stdout
-  // purity — it's about `--json` meaning "treat this run as
-  // non-interactive/scripted," consistently, even when stdout happens to
-  // be a real terminal.
+  // suppresses the huge-repo progress line and the post-scan hand-off into
+  // `submit` (both go through `interactiveTTY` below), even though both
+  // are otherwise gated on `isTTY` alone. Neither ever touched stdout to
+  // begin with (progress is stderr-only; the hand-off is a stdin/stdout
+  // interaction gated separately), so this isn't about stdout purity —
+  // it's about `--json` meaning "treat this run as non-interactive/
+  // scripted," consistently, even when stdout happens to be a real
+  // terminal.
   json?: boolean;
   // True to render the summary with the ASCII/no-color fallback theme
   // (see summary.ts's shouldUsePlainOutput) instead of ANSI + Unicode
@@ -54,11 +54,6 @@ export type ScanCommandOptions = BuildBundleOptions & {
   // instead of a real stream. Only used when `interactiveTTY` is true — see
   // buildProgressReporter below.
   progressWrite?: (message: string) => void;
-  // Injectable for tests; defaults to the real interactive prompt
-  // (prompt.ts's promptAddToProfile). Only ever called on `interactiveTTY`
-  // when there's a stored session and this exact bundle content hasn't
-  // already been uploaded — see `maybeOfferToAddToProfile` below.
-  promptAddToProfileFn?: () => Promise<boolean>;
 };
 
 /**
@@ -130,50 +125,52 @@ function printConnectableRepoNotice(opts: ScanCommandOptions, warn: (message: st
 }
 
 /**
- * Post-scan hand-off to `submit` (console-UX overhaul, 2026-08) — only
- * offered on `interactiveTTY` when there's an actual stored session and
- * this exact bundle content hasn't already been uploaded (see
- * `nextStepsState`'s three states): with no session, `submit` would just
- * fail with "not logged in", so the existing textual "redential login &&
- * redential submit" hint already printed in the summary is left as the
- * only next step; with nothing new to upload, there is nothing to offer.
+ * Post-scan hand-off to `submit` (console-UX overhaul, 2026-08 — merged
+ * into a single confirmation per owner directive, 2026-08). Only reached
+ * on `interactiveTTY` when there's an actual stored session and this exact
+ * bundle content hasn't already been uploaded (see `nextStepsState`'s
+ * three states): with no session, `submit` would just fail with "not
+ * logged in", so the existing textual "redential login && redential
+ * submit" hint already printed in the summary is left as the only next
+ * step; with nothing new to upload, there is nothing to offer.
  *
- * On "yes", hands off to `submit`'s own flow IN-PROCESS
- * (`executeSubmitCommand`) via a DYNAMIC import — not a static one at the
- * top of this file — so `scan`'s own always-run code path (piped/`--json`
- * output, and the TTY summary on every run where this step doesn't fire)
- * never pulls in any network-capable module; only this explicit, freshly
- * consented action does. `author`/`yes: true` are threaded through from
- * what the user already confirmed moments ago in THIS SAME scan (the
+ * UNCONDITIONAL — no "Add this to your Redential profile?" question of its
+ * own anymore (that separate prompt is gone; it used to ask the same
+ * upload decision `submit`'s own "Upload this bundle?" prompt asked again
+ * moments later — two questions for one decision). `scan` now continues
+ * straight into `submit`'s own flow IN-PROCESS (`executeSubmitCommand`)
+ * via a DYNAMIC import — not a static one at the top of this file — so
+ * `scan`'s own always-run code path (piped/`--json` output, and the TTY
+ * summary on every run where this state doesn't apply) never pulls in any
+ * network-capable module; only this explicit continuation, gated on
+ * session + new content, does. `author`/`yes: true` are threaded through
+ * from what the user already confirmed moments ago in THIS SAME scan (the
  * unified pre-scan confirmation, build-bundle.ts's `promptConfirmScan`) —
  * so submit's own author-selection/authorization step
  * (`buildBundleInteractively`, code shared by both commands) is answered
  * honestly from that same just-given confirmation rather than silently
  * skipped or asked again. Every other part of submit's own consent
- * surface — the exact-JSON print, the upload confirmation prompt, the
- * private-label prompt — fires exactly as it always does on a real
- * `submit` run; nothing about submit's own invariants is weakened here.
+ * surface — the short summary, the consent box, the private-label prompt,
+ * the exact-JSON print, and the SINGLE "Upload this to your Redential
+ * profile? (Y/n)" confirmation at the very end — fires exactly as it does
+ * on a standalone `submit` run; nothing about submit's own invariants is
+ * weakened here, and the exact JSON is still always printed immediately
+ * before that one question.
  *
  * `AuthError` (the stored session turned out to belong to a different
  * `SITE_URL`, or was deleted between `nextStepsState`'s read and this
  * call) is caught and turned into a plain stderr note rather than
  * propagating: `scan` already fully succeeded and printed everything
- * above it, so a login hiccup on this optional add-on must never turn a
- * successful scan into a failed exit code. Every other error still
+ * above it, so a login hiccup on this optional continuation must never
+ * turn a successful scan into a failed exit code. Every other error still
  * propagates normally.
  */
-async function maybeAddToProfile(
+async function continueIntoSubmit(
   opts: ScanCommandOptions,
   authors: string[],
   log: (message: string) => void,
   warn: (message: string) => void
 ): Promise<void> {
-  const proceed = await (opts.promptAddToProfileFn ?? promptAddToProfile)();
-  if (!proceed) {
-    warn(dim("Run `redential submit` any time to add this to your Redential profile."));
-    return;
-  }
-
   const { executeSubmitCommand } = await import("./submit-command.js");
   const submitOptions: SubmitCommandOptions = {
     repoPath: opts.repoPath,
@@ -184,13 +181,22 @@ async function maybeAddToProfile(
     configDir: opts.configDir,
     isTTY: true,
     plain: opts.plain,
-    // Reviewer fix (2026-08): forward the same --since window the scan
-    // just summarized — without this, "Add THIS to your profile?" would
-    // silently rebuild the bundle from FULL history instead of the
-    // since-limited one the user just reviewed. `buildBundleInteractively`
-    // (shared by scan and submit) already threads `since` straight through
-    // to `runScan`, so this is the only place it needed wiring.
+    // Forward the same --since window the scan just summarized — without
+    // this, continuing into submit would silently rebuild the bundle from
+    // FULL history instead of the since-limited one just reviewed.
+    // `buildBundleInteractively` (shared by scan and submit) already
+    // threads `since` straight through to `runScan`, so this is the only
+    // place it needed wiring.
     since: opts.since,
+    // Bug fix (owner follow-up, 2026-08 — real-terminal repro): this call
+    // re-runs `buildBundleInteractively` a second time in the same
+    // process (see that function's own comment on why the rebuild itself
+    // is intentional) — without this, its intro lines (the expectation
+    // line, the local-scan line, "Reading git history...") printed AGAIN
+    // right in the middle of the combined output, immediately after the
+    // connectable-repo notice. Set ONLY here, never by a standalone
+    // `redential submit` run (that run IS the start of its own flow).
+    suppressIntro: true,
     log,
     warn,
   };
@@ -223,23 +229,25 @@ async function maybeAddToProfile(
  * - A real TTY, no `--json`, `--details`: the same summary, with the
  *   histogram sections added (`FormatSummaryOptions.details`).
  * `interactiveTTY` (isTTY AND NOT json) is the single flag deciding both
- * of the above AND whether the huge-repo progress line / post-scan "Add
- * this to your Redential profile?" prompt are interactive at all —
- * `--json` means "treat this run as scripted," full stop, even on a real
- * terminal.
+ * of the above AND whether the huge-repo progress line / post-scan
+ * hand-off into `submit` are interactive at all — `--json` means "treat
+ * this run as scripted," full stop, even on a real terminal.
  *
  * Owner-mandated ordering rule (2026-08): on `interactiveTTY`, once the
  * summary has been logged, the connectable-repo notice (if applicable)
  * always prints next, and THEN — never before it — whatever comes last:
- * the interactive "Add this to your Redential profile?" question (state 2
- * below), a plain login+submit reminder (state 1), or nothing at all
- * (state 3). The interactive question, when it fires, must be the
- * genuinely last thing printed before this function returns — nothing may
- * follow it automatically.
+ * an unconditional continuation into `submit`'s own flow, ending in ITS
+ * single upload confirmation (state 2 below), a plain login+submit
+ * reminder (state 1), or nothing at all (state 3). Whichever fires must be
+ * the genuinely last thing printed before this function returns — nothing
+ * may follow it automatically. There is no longer a separate "Add this to
+ * your Redential profile?" question at this layer at all (owner directive,
+ * 2026-08: merged into `submit`'s own single upload confirmation, so the
+ * same decision is never asked twice).
  */
 export async function executeScanCommand(opts: ScanCommandOptions): Promise<void> {
   const log = opts.log ?? console.log;
-  const warn = opts.warn ?? console.error;
+  const warn = opts.warn ?? writeStderrLine;
   const interactiveTTY = opts.isTTY === true && !opts.json;
 
   let selectedAuthors: string[] = opts.author;
@@ -275,13 +283,14 @@ export async function executeScanCommand(opts: ScanCommandOptions): Promise<void
   printConnectableRepoNotice(opts, warn);
 
   // Three states — see nextStepsState's own doc comment: no session ->
-  // a plain reminder (no live prompt possible without one); session, not
-  // yet submitted -> the live hand-off prompt; session AND already
-  // submitted this exact content -> nothing, since there's nothing new to
-  // offer. Whichever of these fires is the true last thing printed.
+  // a plain reminder (nothing to continue into without one); session, not
+  // yet submitted -> continue straight into submit's own flow,
+  // unconditionally, ending in its single upload confirmation; session AND
+  // already submitted this exact content -> nothing, since there's nothing
+  // new to offer. Whichever of these fires is the true last thing printed.
   const nextSteps = nextStepsState(bundle, opts.configDir);
   if (nextSteps.hasSession && !nextSteps.alreadySubmittedIdentical) {
-    await maybeAddToProfile(opts, selectedAuthors, log, warn);
+    await continueIntoSubmit(opts, selectedAuthors, log, warn);
   } else if (!nextSteps.hasSession) {
     warn(dim("Log in and run `redential submit` to add this to your Redential profile."));
   }

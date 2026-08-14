@@ -8,14 +8,40 @@ always bump at least minor; breaking schema changes bump major.
 ## [Unreleased]
 
 ### Changed
+- Final integration fix (owner directive, 2026-08): `submit`'s own network
+  calls (identity-corroboration lookup, remote-visibility gate probe,
+  bundle upload) are now reachable ONLY after the single "Upload this to
+  your Redential profile? (Y/n)" confirmation is answered yes — the
+  identity-corroboration lookup used to fire before that question, costing
+  a network call even on a decline. Everything before the question
+  (short summary, consent box, private-label prompt + consent line, the
+  exact byte-for-byte JSON print) is now purely local, on both entry
+  points (`redential submit` directly, and a `scan` hand-off). This makes
+  `scan`'s zero-network guarantee unconditional again — no exception left
+  to document — since a `scan` hand-off that reaches the upload question
+  and gets declined now makes zero network calls in the entire run, not
+  "zero except one lookup." CLAUDE.md's zero-network bullet is rewritten
+  accordingly.
+
 - Console-UX overhaul: the three separate pre-scan questions (the
   connectable-repo "Continue locally? (Y/n)" guardrail, the per-candidate
   identity confirmation, and the authorization attestation) are now ONE
   unified confirmation — "Scan `<N>` commits by `<email>`? This confirms
-  you're authorized to analyze this repository. (y/N)" — shown after the
+  you're authorized to analyze this repository. (y/n)" — shown after the
   numbered identity list for a multi-identity repo, or standing alone for a
-  single-candidate one. Enter still declines (default N); `--author`/`--yes`
-  non-interactive semantics are unchanged.
+  single-candidate one. `--author`/`--yes` non-interactive semantics are
+  unchanged.
+- Owner directive: ANY question whose "yes" grants authorization uses no
+  implied default — plain `(y/n)`, not `(Y/n)`/`(y/N)`. An empty answer
+  (bare Enter), or anything that isn't an explicit `y`/`yes`/`n`/`no`
+  (case-insensitive), neither proceeds nor cancels: it RE-ASKS the same
+  question, looping until an explicit answer is given. This covers
+  `promptConfirmScan` itself AND the git-identity/saved-selection
+  fast-path offers (consistency fix below — their own "yes" also grants
+  authorization, so a Y-default there would let a bare Enter silently
+  grant it on the most common repeat-scan path). The merged upload
+  confirmation is the one exception, since it grants upload consent, not
+  authorization, and keeps an ordinary Y-default.
 - The connectable-repo guardrail's "Continue locally? (Y/n)" question is
   gone entirely. `scan` now prints a single, non-blocking, dim/gray
   informational line instead (never a question, never warning-colored)
@@ -48,17 +74,80 @@ always bump at least minor; breaking schema changes bump major.
   is dim/gray instead, gated on whether stderr is a real terminal
   (`src/dim.ts`).
 - On a TTY, right after the scan summary and the connectable-repo notice
-  (when applicable), `scan` now offers to hand off in-process to `submit`'s
-  own flow — "Add this to your Redential profile? (Y/n)" — reusing the
-  author selection and authorization confirmation already given moments
-  earlier in the same scan, only when there's a stored session and
-  something new to upload; this is always the true last thing printed.
-  With no stored session, a plain dim/gray reminder is printed instead (no
-  live prompt). Every part of `submit`'s own
-  consent surface (the exact-JSON print, the upload confirmation, the
-  private-label prompt) still fires unchanged. Declining prints a reminder
-  to run `redential submit` later. Piped/`--json` output is unaffected —
-  no new prompts, byte-identical stdout.
+  (when applicable), `scan` now continues UNCONDITIONALLY into `submit`'s
+  own flow in-process whenever there's a stored session and something new
+  to upload — reusing the author selection and authorization confirmation
+  already given moments earlier in the same scan, so neither is asked
+  again. With no stored session, a plain dim/gray reminder is printed
+  instead. Piped/`--json` output is unaffected — no new prompts,
+  byte-identical stdout.
+- Owner directive: the two separate upload confirmations ("Add this to
+  your Redential profile?" after a scan hand-off, and `submit`'s own
+  "Upload this bundle? (y/n)") are now ONE merged question —
+  "Upload this to your Redential profile? (Y/n)", Y-default — asked only
+  once, at the very end of `submit`'s own PURELY LOCAL sequence (short
+  summary → consent box → private-label prompt+consent line → the exact
+  byte-for-byte JSON → this one question), on both entry points
+  (`redential submit` directly, or a `scan` hand-off). The private-label
+  consent line moved to right after the label is resolved (before the
+  JSON) so the exact JSON is now ALWAYS the immediate last thing printed
+  before that one question, on every path — no exceptions. (Identity
+  corroboration no longer appears in that pre-question sequence at all —
+  see the reorder entry below: it now fires only after the question is
+  answered yes.)
+
+### Fixed
+- Bugs found by the owner testing the real built binary via a pty, missed
+  by the existing test suite (which only ever injects fake prompt/stream
+  functions — see the new `test/cli-smoke.test.ts`):
+  - The console-UX unification above was incomplete: on a 2+-candidate
+    repo whose `git config user.email` (or a matching saved selection)
+    matched one of them, the OLD separate identity question ("Found N
+    commits authored by X. Use this identity? (Y/n)" / "Use your saved
+    identity selection: ...? (Y/n)") still fired, immediately followed by
+    the new unified confirmation — two questions in a row for the same
+    decision. Both fast-path offers now delegate straight to
+    `promptConfirmScan` for this exact wording; accepting fully answers
+    identity AND authorization in one shot, declining still falls through
+    to the full numbered list exactly as before.
+  - Consistency follow-up: the first fix above initially kept the
+    fast-path offers' own Y-default — meaning a bare Enter could grant
+    authorization on the most common repeat-scan path, which the owner's
+    "no implied default" rule was specifically meant to prevent. Both now
+    share `promptConfirmScan`'s full no-default/re-ask behavior too, not
+    just its wording.
+  - Fixed a related robustness gap the re-ask loop exposed: asking
+    `rl.question()` a second time after the input stream already ended
+    could surface Node's raw internal "readline was closed" message
+    instead of this CLI's own clean EOF error — normalized in
+    `src/prompt.ts`.
+  - Every informational stderr line defaulted to `console.error`, which
+    Node.js automatically renders in red on a color-capable TTY — a Node
+    built-in this codebase never asked for, and the actual source of what
+    looked like every "calm" line (the local-only notice, the expectation
+    line, the connectable-repo notice, ...) rendering as a red alert.
+    `src/stderr.ts`'s `writeStderrLine` (a plain `process.stderr.write`)
+    is now the default everywhere except `src/program.ts`'s real `Error:
+    ...` path, which keeps `console.error` on purpose.
+  - Author enumeration (a full `git log` walk) could take several real
+    seconds on a repo with a few thousand commits, with zero visible
+    feedback between the startup lines and the first question — read as a
+    hang. A dim `Reading git history...` line (TTY-only, stderr) now
+    prints right before it.
+  - The scan→submit hand-off calls `buildBundleInteractively` a second
+    time in the same process (`submit` needs its own freshly-built bundle,
+    since the printed byte-for-byte payload must reflect what it's about
+    to upload, built at upload time — not scan's earlier one, which
+    carries a different `created_at`). Without accounting for this, that
+    second call printed its own intro lines (the expectation line, the
+    local-scan line, "Reading git history...") again, right in the middle
+    of the combined output, immediately after the connectable-repo notice.
+    A new `suppressIntro` option on `BuildBundleOptions`, set only by the
+    hand-off call site, silences them on the rebuild; a standalone
+    `redential submit` still prints them normally, since that run IS the
+    start of its own flow. The second local `git log` walk itself is an
+    accepted, documented cost — never a second network call, never a
+    second prompt for the same decision.
 
 ## [0.12.0] - 2026-08-14
 

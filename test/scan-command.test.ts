@@ -216,18 +216,21 @@ describe("executeScanCommand", () => {
     });
   });
 
-  // Owner follow-up (2026-08): the textual three-state CTA moved out of
-  // formatSummary entirely (the summary now ends in one dim closing line,
-  // see test/summary.test.ts) — the three states now drive, respectively,
-  // a plain stderr guidance line (no session), the live post-scan prompt
-  // (session, nothing new to submit), or nothing at all (already
-  // submitted). Asserted here via `warnings`/the prompt callback, not
-  // `logs[0]` (which now only ever contains the summary itself).
+  // Owner directive (2026-08): the old separate "Add this to your
+  // Redential profile?" post-scan prompt is GONE entirely — the same
+  // decision used to be asked twice (once here, once again inside
+  // `submit`'s own "Upload this bundle?" prompt moments later). `scan` now
+  // continues UNCONDITIONALLY straight into `submit`'s own flow (mocked
+  // below via `mockExecuteSubmitCommand`) whenever there's a stored
+  // session and something new to submit — no gating prompt of its own at
+  // this layer at all. The textual three-state CTA moved out of
+  // formatSummary entirely too (the summary now ends in one dim closing
+  // line, see test/summary.test.ts).
   describe("closing next-step hint — three states, end to end", () => {
-    it("no stored session: prints a plain login+submit reminder, never invokes the live prompt", async () => {
+    it("no stored session: prints a plain login+submit reminder, never continues into submit", async () => {
       const dir = repoWithOneCommit();
       const warnings: string[] = [];
-      let promptCalled = false;
+      mockExecuteSubmitCommand.mockClear();
       await executeScanCommand({
         repoPath: dir,
         author: ["you@example.com"],
@@ -237,22 +240,18 @@ describe("executeScanCommand", () => {
         log: () => {},
         warn: (m) => warnings.push(m),
         isTTY: true,
-        promptAddToProfileFn: async () => {
-          promptCalled = true;
-          return false;
-        },
       });
 
-      expect(promptCalled).toBe(false);
+      expect(mockExecuteSubmitCommand).not.toHaveBeenCalled();
       expect(warnings.some((w) => w.includes("Log in and run `redential submit`"))).toBe(true);
     });
 
-    it("stored session, nothing submitted yet: invokes the live post-scan prompt", async () => {
+    it("stored session, nothing submitted yet: continues straight into submit's own flow", async () => {
       const dir = repoWithOneCommit();
       const configDir = tempConfigDir();
       saveCredentials({ access_token: "t", site_url: getSiteUrl(), obtained_at: "now" }, configDir);
+      mockExecuteSubmitCommand.mockClear();
 
-      let promptCalled = false;
       await executeScanCommand({
         repoPath: dir,
         author: ["you@example.com"],
@@ -262,16 +261,12 @@ describe("executeScanCommand", () => {
         log: () => {},
         warn: () => {},
         isTTY: true,
-        promptAddToProfileFn: async () => {
-          promptCalled = true;
-          return false;
-        },
       });
 
-      expect(promptCalled).toBe(true);
+      expect(mockExecuteSubmitCommand).toHaveBeenCalledTimes(1);
     });
 
-    it("stored session, but the last submission was for a DIFFERENT site: treated as not-yet-submitted (prompt fires)", async () => {
+    it("stored session, but the last submission was for a DIFFERENT site: treated as not-yet-submitted (continues into submit)", async () => {
       const dir = repoWithOneCommit();
       const configDir = tempConfigDir();
       const siteUrl = getSiteUrl();
@@ -296,7 +291,7 @@ describe("executeScanCommand", () => {
         configDir
       );
 
-      let promptCalled = false;
+      mockExecuteSubmitCommand.mockClear();
       await executeScanCommand({
         repoPath: dir,
         author: ["you@example.com"],
@@ -306,16 +301,12 @@ describe("executeScanCommand", () => {
         log: () => {},
         warn: () => {},
         isTTY: true,
-        promptAddToProfileFn: async () => {
-          promptCalled = true;
-          return false;
-        },
       });
 
-      expect(promptCalled).toBe(true);
+      expect(mockExecuteSubmitCommand).toHaveBeenCalledTimes(1);
     });
 
-    it("stored session, this exact bundle already submitted: no reminder, no live prompt", async () => {
+    it("stored session, this exact bundle already submitted: no reminder, never continues into submit", async () => {
       const dir = repoWithOneCommit();
       const configDir = tempConfigDir();
       const siteUrl = getSiteUrl();
@@ -337,7 +328,7 @@ describe("executeScanCommand", () => {
       );
 
       const warnings: string[] = [];
-      let promptCalled = false;
+      mockExecuteSubmitCommand.mockClear();
       await executeScanCommand({
         repoPath: dir,
         author: ["you@example.com"],
@@ -347,17 +338,13 @@ describe("executeScanCommand", () => {
         log: () => {},
         warn: (m) => warnings.push(m),
         isTTY: true,
-        promptAddToProfileFn: async () => {
-          promptCalled = true;
-          return false;
-        },
       });
 
-      expect(promptCalled).toBe(false);
+      expect(mockExecuteSubmitCommand).not.toHaveBeenCalled();
       expect(warnings.some((w) => w.includes("Log in and run"))).toBe(false);
     });
 
-    it("a new commit after submitting changes the bundle content: the live prompt comes back", async () => {
+    it("a new commit after submitting changes the bundle content: continues into submit again", async () => {
       const dir = repoWithOneCommit();
       const configDir = tempConfigDir();
       const siteUrl = getSiteUrl();
@@ -385,7 +372,7 @@ describe("executeScanCommand", () => {
         files: { "b.ts": "console.log(2)\n" },
       });
 
-      let promptCalled = false;
+      mockExecuteSubmitCommand.mockClear();
       await executeScanCommand({
         repoPath: dir,
         author: ["you@example.com"],
@@ -395,39 +382,30 @@ describe("executeScanCommand", () => {
         log: () => {},
         warn: () => {},
         isTTY: true,
-        promptAddToProfileFn: async () => {
-          promptCalled = true;
-          return false;
-        },
       });
 
-      expect(promptCalled).toBe(true);
+      expect(mockExecuteSubmitCommand).toHaveBeenCalledTimes(1);
     });
   });
 
-  describe("post-scan 'Add this to your Redential profile?' prompt (console-UX overhaul)", () => {
-    it("only fires when there's a stored session and nothing new to submit is pending — never with no session", async () => {
+  describe("post-scan hand-off into submit (console-UX overhaul, owner directive 2026-08: no separate prompt)", () => {
+    it("only continues into submit when there's a stored session and nothing new to submit is pending — never with no session", async () => {
       const dir = repoWithOneCommit();
-      const logs: string[] = [];
-      let promptCalled = false;
+      mockExecuteSubmitCommand.mockClear();
       await executeScanCommand({
         repoPath: dir,
         author: ["you@example.com"],
         yes: true,
         toolVersion: "test",
         configDir: tempConfigDir(),
-        log: (m) => logs.push(m),
+        log: () => {},
         isTTY: true,
-        promptAddToProfileFn: async () => {
-          promptCalled = true;
-          return false;
-        },
       });
 
-      expect(promptCalled).toBe(false);
+      expect(mockExecuteSubmitCommand).not.toHaveBeenCalled();
     });
 
-    it("never fires when this exact bundle content was already submitted", async () => {
+    it("never continues into submit when this exact bundle content was already submitted", async () => {
       const dir = repoWithOneCommit();
       const configDir = tempConfigDir();
       const siteUrl = getSiteUrl();
@@ -448,7 +426,7 @@ describe("executeScanCommand", () => {
         configDir
       );
 
-      let promptCalled = false;
+      mockExecuteSubmitCommand.mockClear();
       await executeScanCommand({
         repoPath: dir,
         author: ["you@example.com"],
@@ -457,42 +435,16 @@ describe("executeScanCommand", () => {
         configDir,
         log: () => {},
         isTTY: true,
-        promptAddToProfileFn: async () => {
-          promptCalled = true;
-          return false;
-        },
       });
 
-      expect(promptCalled).toBe(false);
+      expect(mockExecuteSubmitCommand).not.toHaveBeenCalled();
     });
 
-    it("declining prints a stderr note pointing at `redential submit` for later", async () => {
+    it("hands off to submit in-process, reusing the already-confirmed author/authorization, without pre-answering the upload confirmation", async () => {
       const dir = repoWithOneCommit();
       const configDir = tempConfigDir();
       saveCredentials({ access_token: "t", site_url: getSiteUrl(), obtained_at: "now" }, configDir);
-
-      const logs: string[] = [];
-      const warnings: string[] = [];
-      await executeScanCommand({
-        repoPath: dir,
-        author: ["you@example.com"],
-        yes: true,
-        toolVersion: "test",
-        configDir,
-        log: (m) => logs.push(m),
-        warn: (m) => warnings.push(m),
-        isTTY: true,
-        promptAddToProfileFn: async () => false,
-      });
-
-      expect(logs).toHaveLength(1);
-      expect(warnings.some((w) => w.includes("redential submit"))).toBe(true);
-    });
-
-    it("accepting hands off to submit in-process, reusing the already-confirmed author/authorization", async () => {
-      const dir = repoWithOneCommit();
-      const configDir = tempConfigDir();
-      saveCredentials({ access_token: "t", site_url: getSiteUrl(), obtained_at: "now" }, configDir);
+      mockExecuteSubmitCommand.mockClear();
 
       await executeScanCommand({
         repoPath: dir,
@@ -503,7 +455,6 @@ describe("executeScanCommand", () => {
         log: () => {},
         warn: () => {},
         isTTY: true,
-        promptAddToProfileFn: async () => true,
       });
 
       expect(mockExecuteSubmitCommand).toHaveBeenCalledTimes(1);
@@ -513,8 +464,8 @@ describe("executeScanCommand", () => {
       // exact same scan — never re-asked here.
       expect(submitOpts.author).toEqual(["you@example.com"]);
       expect(submitOpts.yes).toBe(true);
-      // Upload consent itself is NOT pre-answered — submit's own upload
-      // prompt still fires normally.
+      // Upload consent itself is NOT pre-answered — submit's own single
+      // upload prompt still fires normally.
       expect(submitOpts.confirmUpload).toBe(false);
       expect(submitOpts.isTTY).toBe(true);
     });
@@ -535,7 +486,6 @@ describe("executeScanCommand", () => {
         warn: () => {},
         isTTY: true,
         since: "2years",
-        promptAddToProfileFn: async () => true,
       });
 
       expect(mockExecuteSubmitCommand).toHaveBeenCalledTimes(1);

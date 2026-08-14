@@ -2,6 +2,7 @@ import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Readable, Writable } from "node:stream";
 
 // node:http/https export non-configurable properties in this runtime, so
 // vi.spyOn on the real module throws ("Cannot redefine property"). vi.mock
@@ -37,15 +38,33 @@ import { executeExplainCommand } from "../../src/explain-command.js";
 import { executeScanCommand } from "../../src/scan-command.js";
 import { saveCredentials } from "../../src/credentials.js";
 import { getSiteUrl } from "../../src/config.js";
+import { __setDefaultStreamsForTest } from "../../src/prompt.js";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 
 const dirs: string[] = [];
 afterEach(() => {
   while (dirs.length > 0) cleanup(dirs.pop()!);
+  __setDefaultStreamsForTest(null);
 });
 afterAll(() => {
   globalThis.fetch = realFetch;
 });
+
+// Feeds several lines in sequence (as if the user answered two separate
+// real prompts — the private-label prompt, then the upload confirmation)
+// — see test/prompt.test.ts's identical helper for the full rationale on
+// why each line is delivered via `setImmediate` inside `_read()`.
+function multiLineInput(...lines: string[]): Readable {
+  let i = 0;
+  return new Readable({
+    read() {
+      if (i >= lines.length) return;
+      const line = lines[i];
+      i++;
+      setImmediate(() => this.push(`${line}\n`));
+    },
+  });
+}
 
 function tempConfigDir(): string {
   const dir = mkdtempSync(join(tmpdir(), "redential-config-"));
@@ -116,19 +135,62 @@ describe("zero network calls during scan", () => {
     expect(mocks.fetch).not.toHaveBeenCalled();
   });
 
-  // Reviewer follow-up (2026-08): `scan`'s post-scan "Add this to your
-  // Redential profile?" hand-off (scan-command.ts's `maybeAddToProfile`)
-  // dynamically imports submit-command.ts, a genuinely network-capable
-  // module — the ONE deliberate exception to "scan never touches the
-  // network" (see docs/scan.md's "Post-scan hand-off to submit" and
-  // CLAUDE.md's zero-network INVIOLABLE bullet). These two paths are the
-  // ones that must stay network-free even with that exception wired in:
-  // declining the hand-off, and never being offered it at all (no stored
-  // session). The "accept" path is deliberately NOT covered here — it's
-  // supposed to reach the network via `submit`'s own already-tested flow
-  // (test/submit.test.ts), so asserting zero network calls on that path
-  // would be asserting the wrong thing.
-  it("never touches http/https when the post-scan hand-off is declined (a stored session exists)", async () => {
+  // Reviewer follow-up (2026-08), then re-fixed by a final owner-mandated
+  // reorder (2026-08): `scan`'s post-scan hand-off (scan-command.ts's
+  // `continueIntoSubmit`) dynamically imports submit-command.ts, a
+  // genuinely network-capable module. It's no longer an exception to
+  // "scan never touches the network" at all, though: every network call
+  // inside `submit`'s own flow (the identity-corroboration lookup, the
+  // remote-visibility gate probe, the bundle upload) was moved to fire
+  // ONLY after the single "Upload this to your Redential profile? (Y/n)"
+  // confirmation is answered yes. So BOTH of the paths below stay
+  // completely network-free: no stored session (nothing to continue into
+  // submit for at all), and a stored session with new content where the
+  // handoff runs all the way to the upload question and the user declines
+  // it. See test/submit.test.ts for the "accepted" path, which — same as
+  // before — is supposed to reach the network from that point on.
+  it("never touches http/https when there's no stored session — nothing to continue into submit for", async () => {
+    const dir = createRepo();
+    dirs.push(dir);
+    commit(dir, {
+      message: "x",
+      authorName: "You",
+      authorEmail: "you@example.com",
+      files: { "a.ts": "1\n" },
+    });
+    const configDir = tempConfigDir(); // no saveCredentials — no session
+
+    await executeScanCommand({
+      repoPath: dir,
+      author: ["you@example.com"],
+      yes: true,
+      toolVersion: "0.1.0",
+      configDir,
+      log: () => {},
+      warn: () => {},
+      isTTY: true,
+    });
+
+    expect(mocks.httpRequest).not.toHaveBeenCalled();
+    expect(mocks.httpGet).not.toHaveBeenCalled();
+    expect(mocks.httpsRequest).not.toHaveBeenCalled();
+    expect(mocks.httpsGet).not.toHaveBeenCalled();
+    expect(mocks.fetch).not.toHaveBeenCalled();
+  });
+
+  // THE guarantee the owner's whole merged-confirmation design rests on
+  // (owner directive, 2026-08): drives the FULL post-scan hand-off — a
+  // stored session, new content to submit, so `continueIntoSubmit` runs
+  // all the way into `submit`'s own flow — through to the private-label
+  // prompt and the single upload confirmation, using REAL prompt functions
+  // (via prompt.ts's `__setDefaultStreamsForTest`, not injected fakes —
+  // `continueIntoSubmit` builds its own `SubmitCommandOptions` internally
+  // and doesn't expose injectable prompt fns from `executeScanCommand`'s
+  // own options, so this is the only way to answer those two real prompts
+  // in a test). Answers the label prompt, then explicitly declines the
+  // upload question — and asserts that absolutely nothing reached any of
+  // the mocked network entry points, anywhere in the whole run.
+  it("session + new content, hand-off runs to the upload question, declined: ZERO network calls anywhere in the whole run", async () => {
     const dir = createRepo();
     dirs.push(dir);
     commit(dir, {
@@ -140,61 +202,29 @@ describe("zero network calls during scan", () => {
     const configDir = tempConfigDir();
     saveCredentials({ access_token: "t", site_url: getSiteUrl(), obtained_at: "now" }, configDir);
 
-    let promptCalled = false;
-    await executeScanCommand({
-      repoPath: dir,
-      author: ["you@example.com"],
-      yes: true,
-      toolVersion: "0.1.0",
-      configDir,
-      log: () => {},
-      warn: () => {},
-      isTTY: true,
-      promptAddToProfileFn: async () => {
-        promptCalled = true;
-        return false; // decline — the hand-off must never fire
+    const input = multiLineInput("Acme Corp", "n");
+    const out = new Writable({
+      write(_chunk, _encoding, callback) {
+        callback();
       },
     });
+    __setDefaultStreamsForTest({ input, output: out });
 
-    expect(promptCalled).toBe(true);
-    expect(mocks.httpRequest).not.toHaveBeenCalled();
-    expect(mocks.httpGet).not.toHaveBeenCalled();
-    expect(mocks.httpsRequest).not.toHaveBeenCalled();
-    expect(mocks.httpsGet).not.toHaveBeenCalled();
-    expect(mocks.fetch).not.toHaveBeenCalled();
-  });
+    try {
+      await executeScanCommand({
+        repoPath: dir,
+        author: ["you@example.com"],
+        yes: true,
+        toolVersion: "0.1.0",
+        configDir,
+        log: () => {},
+        warn: () => {},
+        isTTY: true,
+      });
+    } finally {
+      __setDefaultStreamsForTest(null);
+    }
 
-  it("never touches http/https, and never offers the hand-off at all, when there's no stored session", async () => {
-    const dir = createRepo();
-    dirs.push(dir);
-    commit(dir, {
-      message: "x",
-      authorName: "You",
-      authorEmail: "you@example.com",
-      files: { "a.ts": "1\n" },
-    });
-    const configDir = tempConfigDir(); // no saveCredentials — no session
-
-    let promptCalled = false;
-    await executeScanCommand({
-      repoPath: dir,
-      author: ["you@example.com"],
-      yes: true,
-      toolVersion: "0.1.0",
-      configDir,
-      log: () => {},
-      warn: () => {},
-      isTTY: true,
-      promptAddToProfileFn: async () => {
-        promptCalled = true;
-        return true;
-      },
-    });
-
-    // No session -> the plain reminder fires instead, never the live
-    // prompt (see scan-command.ts) — asserted here as the reason the
-    // network stays untouched, not just an incidental side effect.
-    expect(promptCalled).toBe(false);
     expect(mocks.httpRequest).not.toHaveBeenCalled();
     expect(mocks.httpGet).not.toHaveBeenCalled();
     expect(mocks.httpsRequest).not.toHaveBeenCalled();
