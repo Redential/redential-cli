@@ -40,6 +40,9 @@ for local development/testing against a mock server).
 3. The CLI polls `POST {SITE_URL}/api/cli/device/token` with
    `{device_code}` every `interval` seconds until:
    - `{access_token}`, **HTTP 200** — success, stored locally (see below).
+     The response MAY also include an `account_label` string (a handle or
+     masked email the server chooses to identify the account) — optional,
+     and validated before it's ever persisted (see below).
    - `{error: "authorization_pending"}`, **HTTP 400** — keep polling.
    - `{error: "slow_down"}`, **HTTP 400** — keep polling, backing off by 5s.
    - `{error: "access_denied"}` or `{error: "expired_token"}`, **HTTP 400**
@@ -71,11 +74,30 @@ no env var reads, no dependency):
 | Windows | `%USERPROFILE%\AppData\Roaming\redential\credentials.json` |
 
 Same directory as the device salt (`salt.ts`), written with mode `0600`.
-Contents: `{access_token, site_url, obtained_at}`. `site_url` records which
-`SITE_URL` issued the token: `submit` refuses (and asks you to log in
-again) if the CLI's current `SITE_URL` doesn't match, so a
-`REDENTIAL_SITE_URL` change can never silently send a stored token to a
-different host.
+Contents: `{access_token, site_url, obtained_at, account_label?}`.
+`site_url` records which `SITE_URL` issued the token: `submit` refuses
+(and asks you to log in again) if the CLI's current `SITE_URL` doesn't
+match, so a `REDENTIAL_SITE_URL` change can never silently send a stored
+token to a different host.
+
+**`account_label` (optional, issue #63).** The device-token response
+(above) MAY include an `account_label` string — a handle or masked email
+the server chooses to identify the account, so `status` can later show
+which account the stored session actually belongs to (a real footgun
+otherwise: a machine logged in long ago, a second account or a company
+workspace invitation created later, and `submit` quietly uploading to the
+wrong identity). The response body is untrusted server input (`pollJson`
+in `src/http-client.ts` blind-casts JSON to a type, it doesn't validate
+it), so `login.ts`'s `sanitizeAccountLabel` validates the value before it
+is ever written to this file: it must be a string, is trimmed, and is
+rejected — silently, never as a login error, since the field is optional
+by design — if it's empty after trimming, longer than 64 characters, or
+contains control characters (same bar as [private-label.md](private-label.md)'s
+validation, checked independently rather than sharing code with it, since
+one validates something the user types and the other something the
+server sends). A dropped label never fails or changes login in any other
+way; the session is simply stored without it, identical to how an older
+server that never sends the field behaves.
 
 **0600 on Windows.** NTFS has no POSIX permission bits, so the `mode: 0o600`
 passed to `writeFileSync` is a no-op there — it restricts nothing and
@@ -122,8 +144,14 @@ you're logged in:
 - CLI version and the config dir path (from `DEFAULT_CONFIG_DIR`, above).
 - Login state: logged in and to which `SITE_URL`, a stored session for a
   *different* `SITE_URL` (told apart explicitly, same check `submit`
-  itself makes), or not logged in at all. **Never prints `access_token`**
-  — same "never log the token" rule as every error path in this CLI.
+  itself makes), or not logged in at all. When the stored session has an
+  `account_label` (above), the logged-in line names it — e.g. `Logged in:
+  yes (as jane@example-EXAMPLE.com, https://www.redential.com)` — so
+  `status` finally answers "as whom", not just "yes/no" (issue #63).
+  Sessions without one (older CLI versions, or a server that doesn't send
+  the field) show exactly the same line as before this feature.
+  **Never prints `access_token`** — same "never log the token" rule as
+  every error path in this CLI.
 - The last submission on record (if any): timestamp, plus **prefixes**
   (12 hex characters) of the bundle hash and repo fingerprint — enough to
   eyeball "is this the record I think it is" without printing the full

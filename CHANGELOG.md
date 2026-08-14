@@ -8,6 +8,7 @@ always bump at least minor; breaking schema changes bump major.
 ## [Unreleased]
 
 ### Added
+- `status` shows which account the stored session belongs to when the server provides an account label at login (#63).
 - Add near-miss negative fixtures for Firebase Auth, OAuth/OIDC, ActiveRecord, GitHub Actions, and Jest signature detection.
 
 ## [0.11.0] - 2026-08-10

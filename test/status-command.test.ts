@@ -46,6 +46,41 @@ describe("executeStatusCommand", () => {
     expect(logs[0]).not.toContain("super-secret-token-value");
   });
 
+  it("shows the stored account_label alongside the logged-in state, never the token", () => {
+    const configDir = tempConfigDir();
+    const siteUrl = getSiteUrl();
+    saveCredentials(
+      {
+        access_token: "super-secret-token-value",
+        site_url: siteUrl,
+        obtained_at: "now",
+        account_label: "jane@example-EXAMPLE.com",
+      },
+      configDir
+    );
+
+    const logs: string[] = [];
+    executeStatusCommand({ toolVersion: "1.2.3", configDir, log: (m) => logs.push(m) });
+
+    expect(logs[0]).toMatch(/Logged in: yes/);
+    expect(logs[0]).toContain("jane@example-EXAMPLE.com");
+    expect(logs[0]).toContain(siteUrl);
+    expect(logs[0]).not.toContain("super-secret-token-value");
+  });
+
+  it("shows the exact same logged-in line as before this feature when no account_label is stored (old credentials.json)", () => {
+    const configDir = tempConfigDir();
+    const siteUrl = getSiteUrl();
+    // Simulates a credentials.json written by an older CLI version, before
+    // account_label existed.
+    saveCredentials({ access_token: "super-secret-token-value", site_url: siteUrl, obtained_at: "now" }, configDir);
+
+    const logs: string[] = [];
+    executeStatusCommand({ toolVersion: "1.2.3", configDir, log: (m) => logs.push(m) });
+
+    expect(logs[0]).toContain(`Logged in: yes (${siteUrl})`);
+  });
+
   it("flags a stored session for a different site as not usable here, without discarding the info", () => {
     const configDir = tempConfigDir();
     saveCredentials(

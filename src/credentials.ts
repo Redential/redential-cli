@@ -9,6 +9,15 @@ export interface Credentials {
    * silently sending a bearer token to a different host. */
   site_url: string;
   obtained_at: string;
+  /** Optional display identity (handle or masked email) the server
+   * returned at login time — lets `status` show whom the stored session
+   * belongs to (issue #63). Absent for sessions stored by older CLI
+   * versions or when the server doesn't send one; already validated
+   * (trimmed, non-empty, <= 64 chars, no control characters) by
+   * `login.ts`'s `sanitizeAccountLabel` before it ever reaches this file —
+   * never re-validated here, since this module only persists/reads what
+   * was already checked at the point it entered the process. */
+  account_label?: string;
 }
 
 function credentialsPath(configDir: string = DEFAULT_CONFIG_DIR): string {

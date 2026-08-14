@@ -16,6 +16,38 @@ interface DeviceAuthorization {
 interface DeviceTokenResponse {
   access_token?: string;
   error?: "authorization_pending" | "slow_down" | "expired_token" | "access_denied";
+  // Optional display identity (handle or masked email) the server may
+  // attach to a successful token response — see `sanitizeAccountLabel`
+  // below and docs/login-submit.md. Untrusted server input: validated
+  // before ever reaching credentials.json.
+  account_label?: unknown;
+}
+
+const ACCOUNT_LABEL_MAX_LENGTH = 64;
+// eslint-disable-next-line no-control-regex
+const ACCOUNT_LABEL_CONTROL_CHAR_PATTERN = /[\x00-\x1f\x7f]/;
+
+/**
+ * Validates the optional `account_label` the device-token endpoint MAY
+ * return (issue #63) — used only so `status` can later show which account
+ * the stored session belongs to. `pollJson` blind-casts the response body
+ * to `DeviceTokenResponse`, so this field is untrusted server input; this
+ * is the one place it's checked before it can ever reach disk. A rejected
+ * value is silently dropped, never an error: the field is optional by
+ * design, so login must succeed identically whether or not it's present or
+ * valid. Same control-character bar as private-label.ts's
+ * `CONTROL_CHAR_PATTERN` (kept local here rather than imported/exported —
+ * the two checks are similar by convention, not required to stay coupled,
+ * since one validates a value the user types and the other a value the
+ * server sends).
+ */
+function sanitizeAccountLabel(raw: unknown): string | undefined {
+  if (typeof raw !== "string") return undefined;
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) return undefined;
+  if (trimmed.length > ACCOUNT_LABEL_MAX_LENGTH) return undefined;
+  if (ACCOUNT_LABEL_CONTROL_CHAR_PATTERN.test(trimmed)) return undefined;
+  return trimmed;
 }
 
 function requestDeviceAuthorization(siteUrl: string): Promise<DeviceAuthorization> {
@@ -138,8 +170,14 @@ export async function runLogin(opts: LoginOptions = {}): Promise<void> {
 
     const result = await pollDeviceToken(siteUrl, auth.device_code);
     if (result.access_token) {
+      const accountLabel = sanitizeAccountLabel(result.account_label);
       saveCredentials(
-        { access_token: result.access_token, site_url: siteUrl, obtained_at: new Date().toISOString() },
+        {
+          access_token: result.access_token,
+          site_url: siteUrl,
+          obtained_at: new Date().toISOString(),
+          ...(accountLabel !== undefined ? { account_label: accountLabel } : {}),
+        },
         opts.configDir
       );
       log("Logged in.");

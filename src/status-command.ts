@@ -21,8 +21,10 @@ const PREFIX_LENGTH = 12;
  * (only reads local files this CLI itself already writes —
  * credentials.json, last-submission.json — never the scanned repo),
  * works whether or not the user is logged in. Never prints
- * `access_token` — only whether a session exists and which site_url it's
- * for, same "never log the token" rule as everywhere else in this CLI.
+ * `access_token` — only whether a session exists, which site_url it's
+ * for, and — when the server provided one at login (issue #63) — the
+ * account's display label, same "never log the token" rule as everywhere
+ * else in this CLI.
  */
 export function executeStatusCommand(opts: StatusCommandOptions): void {
   const log = opts.log ?? console.log;
@@ -37,7 +39,11 @@ export function executeStatusCommand(opts: StatusCommandOptions): void {
   lines.push(`Site: ${siteUrl}`);
 
   if (credentials && credentials.site_url === siteUrl) {
-    lines.push(`Logged in: yes (${siteUrl})`);
+    lines.push(
+      credentials.account_label
+        ? `Logged in: yes (as ${credentials.account_label}, ${siteUrl})`
+        : `Logged in: yes (${siteUrl})`
+    );
   } else if (credentials) {
     lines.push(
       `Logged in: stored session is for a different site (${credentials.site_url}) — run \`redential login\` again to use ${siteUrl}`

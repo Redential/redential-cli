@@ -238,6 +238,93 @@ describe("runLogin (device flow against a mocked local server)", () => {
     ).resolves.toBeUndefined();
   });
 
+  it("persists a valid account_label alongside the token", async () => {
+    const server = await startMockServer((req) => {
+      if (req.url === "/api/cli/device/authorize") {
+        return {
+          status: 200,
+          body: { device_code: "dc-9", user_code: "X", verification_uri: "http://x", expires_in: 600, interval: 0 },
+        };
+      }
+      return { status: 200, body: { access_token: "tok", account_label: "jane@example-EXAMPLE.com" } };
+    });
+    servers.push(server);
+    process.env.REDENTIAL_SITE_URL = server.url;
+
+    const configDir = tempConfigDir();
+    await runLogin({
+      configDir,
+      log: () => {},
+      sleepFn: instantSleep,
+      openFn: noOpen,
+      checkForUpdateFn: noCheckForUpdate,
+    });
+
+    const stored = JSON.parse(readFileSync(join(configDir, "credentials.json"), "utf8"));
+    expect(stored.account_label).toBe("jane@example-EXAMPLE.com");
+  });
+
+  it("stores no account_label field when the server omits it", async () => {
+    const server = await startMockServer((req) => {
+      if (req.url === "/api/cli/device/authorize") {
+        return {
+          status: 200,
+          body: { device_code: "dc-10", user_code: "X", verification_uri: "http://x", expires_in: 600, interval: 0 },
+        };
+      }
+      return { status: 200, body: { access_token: "tok" } };
+    });
+    servers.push(server);
+    process.env.REDENTIAL_SITE_URL = server.url;
+
+    const configDir = tempConfigDir();
+    await runLogin({
+      configDir,
+      log: () => {},
+      sleepFn: instantSleep,
+      openFn: noOpen,
+      checkForUpdateFn: noCheckForUpdate,
+    });
+
+    const stored = JSON.parse(readFileSync(join(configDir, "credentials.json"), "utf8"));
+    expect("account_label" in stored).toBe(false);
+  });
+
+  it.each([
+    ["ANSI escape sequence", "[31mfake[0m"],
+    ["embedded newline", "line1\nLogged in as admin"],
+    ["longer than 64 chars after trim", "  " + "x".repeat(65) + "  "],
+    ["a number instead of a string", 12345],
+    ["an object instead of a string", { evil: true }],
+  ])("silently drops a hostile account_label (%s) without failing login", async (_label, accountLabel) => {
+    const server = await startMockServer((req) => {
+      if (req.url === "/api/cli/device/authorize") {
+        return {
+          status: 200,
+          body: { device_code: "dc-11", user_code: "X", verification_uri: "http://x", expires_in: 600, interval: 0 },
+        };
+      }
+      return { status: 200, body: { access_token: "tok", account_label: accountLabel } };
+    });
+    servers.push(server);
+    process.env.REDENTIAL_SITE_URL = server.url;
+
+    const configDir = tempConfigDir();
+    await expect(
+      runLogin({
+        configDir,
+        log: () => {},
+        sleepFn: instantSleep,
+        openFn: noOpen,
+        checkForUpdateFn: noCheckForUpdate,
+      })
+    ).resolves.toBeUndefined();
+
+    const stored = JSON.parse(readFileSync(join(configDir, "credentials.json"), "utf8"));
+    expect(stored.access_token).toBe("tok");
+    expect("account_label" in stored).toBe(false);
+  });
+
   it("prints an upgrade notice via checkForUpdateFn after a successful login, but never lets it fail login", async () => {
     const server = await startMockServer((req) => {
       if (req.url === "/api/cli/device/authorize") {
