@@ -123,6 +123,14 @@ let ambiguousBundleJson: string;
 let unattributedBundle: Bundle;
 let unattributedBundleJson: string;
 
+// Timeout is passed as the hook's own argument, not a describe-level option
+// — vitest's `describe(name, { timeout })` sets the *test* timeout, not the
+// hookTimeout, so a slow beforeAll needs this explicitly. This hook runs
+// three full scans (each real git work over a tmpdir fixture), which can run
+// past vitest's 10s hook default on resource-constrained CI runners
+// (observed: windows-latest/Node 22). 30s gives comfortable headroom
+// without weakening any assertion, matching the file's other slow-fixture
+// budgets (see test/submit.test.ts's shallow-clone advisory describe).
 beforeAll(async () => {
   const dir = fixtureDirectPattern();
   dirs.push(dir);
@@ -178,7 +186,7 @@ beforeAll(async () => {
     configDir: tempConfigDir(),
   });
   unattributedBundleJson = JSON.stringify(unattributedBundle);
-});
+}, 30_000);
 
 describe("proof-graph privacy boundary (H3, docs/proof-graph-spike.md's Invariants)", () => {
   // Principle: "In-memory only — the graph ... is never serialized to

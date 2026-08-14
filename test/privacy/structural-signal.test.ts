@@ -37,6 +37,14 @@ let unattributedBundle: Bundle;
 let unattributedBundleJson: string;
 let noStructuralBundle: Bundle;
 
+// Timeout is passed as the hook's own argument, not a describe-level option
+// — vitest's `describe(name, { timeout })` sets the *test* timeout, not the
+// hookTimeout, so a slow beforeAll needs this explicitly. This hook runs
+// four full scans (each real git work over a tmpdir fixture), which can run
+// past vitest's 10s hook default on resource-constrained CI runners
+// (observed: windows-latest/Node 22). 30s gives comfortable headroom
+// without weakening any assertion, matching the file's other slow-fixture
+// budgets (see test/submit.test.ts's shallow-clone advisory describe).
 beforeAll(async () => {
   const directDir = fixtureDirectPattern();
   dirs.push(directDir);
@@ -90,7 +98,7 @@ beforeAll(async () => {
     toolVersion: "0.1.0",
     configDir: tempConfigDir(),
   });
-});
+}, 30_000);
 
 // Cleanup runs once, after all describe blocks below have used the shared
 // fixtures — mirrors the afterAll pattern in proof-graph-boundaries.test.ts.
