@@ -41,7 +41,8 @@
   },
   "dependencies": {
     "commander": "^12.1.0",
-    "typescript": "^5.6.0"
+    "typescript": "^5.6.0",
+    "undici": "6.28.0"
   },
   "devDependencies": {
     "vitest": "^2.1.0"

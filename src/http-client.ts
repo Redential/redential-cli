@@ -1,4 +1,27 @@
+import { EnvHttpProxyAgent } from "undici";
 import { NetworkError } from "./errors.js";
+
+/**
+ * Node's built-in fetch ignores HTTP_PROXY/HTTPS_PROXY (issue #83). Attach
+ * undici's EnvHttpProxyAgent only when a proxy env var is set, so an unset
+ * environment stays byte-identical to today's dispatcher-less fetch.
+ * NO_PROXY/no_proxy are honored by the agent itself.
+ */
+function proxyEnvSet(): boolean {
+  return Boolean(
+    process.env.HTTP_PROXY ||
+      process.env.HTTPS_PROXY ||
+      process.env.http_proxy ||
+      process.env.https_proxy
+  );
+}
+
+function cliFetch(url: string, init: RequestInit): Promise<Response> {
+  if (!proxyEnvSet()) {
+    return fetch(url, init);
+  }
+  return fetch(url, { ...init, dispatcher: new EnvHttpProxyAgent() } as RequestInit);
+}
 
 /**
  * The only module allowed to call `fetch` for JSON requests (login.ts and
@@ -15,7 +38,7 @@ export async function postJson<T>(
   const host = new URL(url).host;
   let res: Response;
   try {
-    res = await fetch(url, {
+    res = await cliFetch(url, {
       method: "POST",
       headers: { "content-type": "application/json", ...headers },
       body: JSON.stringify(body),
@@ -46,7 +69,7 @@ export async function postRawJson<T>(
   const host = new URL(url).host;
   let res: Response;
   try {
-    res = await fetch(url, {
+    res = await cliFetch(url, {
       method: "POST",
       headers: { "content-type": "application/json", ...headers },
       body: rawBody,
@@ -78,7 +101,7 @@ export async function pollJson<T>(url: string, body: unknown): Promise<T> {
   const host = new URL(url).host;
   let res: Response;
   try {
-    res = await fetch(url, {
+    res = await cliFetch(url, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
@@ -116,7 +139,7 @@ export async function postJsonStatusOnly(
 ): Promise<number> {
   const host = new URL(url).host;
   try {
-    const res = await fetch(url, {
+    const res = await cliFetch(url, {
       method: "POST",
       headers: { "content-type": "application/json", ...headers },
       body: JSON.stringify(body),
@@ -135,7 +158,7 @@ export async function postJsonStatusOnly(
  */
 export async function headRequest(url: string, timeoutMs: number): Promise<{ status: number } | null> {
   try {
-    const res = await fetch(url, {
+    const res = await cliFetch(url, {
       method: "HEAD",
       redirect: "follow",
       signal: AbortSignal.timeout(timeoutMs),
@@ -161,7 +184,7 @@ export async function getJson<T>(
   headers: Record<string, string> = {}
 ): Promise<T | null> {
   try {
-    const res = await fetch(url, { method: "GET", headers, signal: AbortSignal.timeout(timeoutMs) });
+    const res = await cliFetch(url, { method: "GET", headers, signal: AbortSignal.timeout(timeoutMs) });
     if (!res.ok) return null;
     return (await res.json()) as T;
   } catch {

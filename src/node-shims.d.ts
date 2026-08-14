@@ -154,3 +154,12 @@ declare module "node:readline/promises" {
     output: unknown;
   }): Interface;
 }
+
+// Exact surface http-client.ts uses from the pinned `undici` package
+// (EnvHttpProxyAgent for HTTP_PROXY/HTTPS_PROXY/NO_PROXY — issue #83).
+// Hand-written so we still do not depend on @types/node.
+declare module "undici" {
+  export class EnvHttpProxyAgent {
+    constructor();
+  }
+}
