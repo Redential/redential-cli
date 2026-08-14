@@ -58,4 +58,19 @@ describe("http-client proxy dispatcher (#83 slice 1)", () => {
     const init = fetchMock.mock.calls[0][1] as Record<string, unknown>;
     expect(init.dispatcher).toBeDefined();
   });
+
+  it("reuses one EnvHttpProxyAgent across calls", async () => {
+    for (const key of proxyKeys) delete process.env[key];
+    process.env.HTTP_PROXY = "http://127.0.0.1:8888";
+    const fetchMock = vi.fn(async () => jsonOk());
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    await postJson("https://example.test/a", {});
+    await postJson("https://example.test/b", {});
+
+    const first = (fetchMock.mock.calls[0][1] as Record<string, unknown>).dispatcher;
+    const second = (fetchMock.mock.calls[1][1] as Record<string, unknown>).dispatcher;
+    expect(first).toBeDefined();
+    expect(second).toBe(first);
+  });
 });

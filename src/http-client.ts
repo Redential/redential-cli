@@ -3,9 +3,9 @@ import { NetworkError } from "./errors.js";
 
 /**
  * Node's built-in fetch ignores HTTP_PROXY/HTTPS_PROXY (issue #83). Attach
- * undici's EnvHttpProxyAgent only when a proxy env var is set, so an unset
- * environment stays byte-identical to today's dispatcher-less fetch.
- * NO_PROXY/no_proxy are honored by the agent itself.
+ * a single module-level EnvHttpProxyAgent only when a proxy env var is set,
+ * so an unset environment stays byte-identical to today's dispatcher-less
+ * fetch. NO_PROXY/no_proxy are honored by the agent itself.
  */
 function proxyEnvSet(): boolean {
   return Boolean(
@@ -16,11 +16,17 @@ function proxyEnvSet(): boolean {
   );
 }
 
+let proxyAgent: InstanceType<typeof EnvHttpProxyAgent> | undefined;
+
+function proxyDispatcher(): InstanceType<typeof EnvHttpProxyAgent> {
+  return (proxyAgent ??= new EnvHttpProxyAgent());
+}
+
 function cliFetch(url: string, init: RequestInit): Promise<Response> {
   if (!proxyEnvSet()) {
     return fetch(url, init);
   }
-  return fetch(url, { ...init, dispatcher: new EnvHttpProxyAgent() } as RequestInit);
+  return fetch(url, { ...init, dispatcher: proxyDispatcher() } as RequestInit);
 }
 
 /**
