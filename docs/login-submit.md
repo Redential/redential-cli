@@ -218,7 +218,14 @@ entry points share every invariant below identically. It then:
       ```
       — the label is never part of the bundle JSON below; this is the one
       place its exact value is shown before consent (principle 4).
-   5. A header line —
+   5. If the bundle contains an audited npm release-check candidate, a
+      disclosure explains that confirmation will allow selected public
+      package names to be queried from npm, which receives those names and
+      normal connection data such as the user's IP address. It also states
+      that npm never receives source, the repository URL, the bundle, or the
+      Redential token. This disclosure sits outside `WHAT GETS UPLOADED`
+      because that box describes data sent to Redential.
+   6. A header line —
       ```
       Exact payload (byte-for-byte what gets sent):
       ```
@@ -266,7 +273,11 @@ entry points share every invariant below identically. It then:
    or an identity lookup ever leaves the machine — this is `submit`-only
    behavior; `scan` still only ever warns, never blocks, since `scan` has
    no network access to make the real determination.
-6. Fetches identity corroboration (below) and, if it succeeds, prints one
+6. For the small audited subset of npm-backed skills described below,
+   checks the public npm package creation date. Every lookup completes or
+   aborts before the upload starts. Findings are warnings only; lookup
+   failures and incomplete data are silent and never block the upload.
+7. Fetches identity corroboration (below) and, if it succeeds, prints one
    informational line with the result — see that section for exactly what
    is and isn't sent. Moved here, after the visibility gate (owner
    directive, 2026-08): corroboration is informational, not part of the
@@ -274,9 +285,9 @@ entry points share every invariant below identically. It then:
    upload question — it fires only once the user has already said yes.
    Never blocks or delays the next step: any failure here simply skips the
    line and sends no header.
-7. `POST {SITE_URL}/api/cli/bundles` with `Authorization: Bearer
+8. `POST {SITE_URL}/api/cli/bundles` with `Authorization: Bearer
    <access_token>` and the printed bundle JSON as the body — plus, if step
-   6's corroboration check succeeded, an
+   7's corroboration check succeeded, an
    `X-Redential-Identity-Corroboration` header (below). On success:
    `{id}`. Only the `id` is ever printed back — never the full response
    body, so a change on the server side can't accidentally start echoing
@@ -286,16 +297,16 @@ entry points share every invariant below identically. It then:
    relocated here from `scan`'s own summary, which used to show it
    unconditionally before any upload happened; see
    [scan.md](scan.md#the-summary-default-tty-output)).
-8. `POST {SITE_URL}/api/cli/private-label` with `{bundle_id: <the id from
-   step 7>, private_label: <the label resolved in step 2>}` — only after
-   step 7 has already succeeded. See
+9. `POST {SITE_URL}/api/cli/private-label` with `{bundle_id: <the id from
+   step 8>, private_label: <the label resolved in step 2>}` — only after
+   step 8 has already succeeded. See
    [docs/private-label.md](private-label.md) for the full contract and
    failure semantics: this request is never retried, and a failure here
    never triggers a second bundle upload — it only prints a warning
    (naming the label, so it can be set again from the web) and `submit`
    still exits 0, since the bundle itself is already safely uploaded (see
    [exit-codes.md](exit-codes.md)).
-9. Records the upload locally (`last-submission.json`, above) — not part
+10. Records the upload locally (`last-submission.json`, above) — not part
    of what's sent, just local bookkeeping for a later `scan`'s next-step
    hint. Unlike the version-check notice below, this is not best-effort:
    a failure here (e.g. an unwritable config dir) surfaces as a real
@@ -337,6 +348,73 @@ this gate is its real, definitive answer:
 - A captive corporate proxy that answers `200` for every host will make
   this probe look public and block submit. That is a false block, not a
   leak — see [corporate-networks.md](corporate-networks.md).
+
+## npm release-date check (submit-only)
+
+After upload confirmation and after the remote-visibility gate has allowed
+submission, `submit` checks a deliberately small, audited subset of detected
+skills against the public npm registry. It requests the official full
+packument with:
+
+```text
+GET https://registry.npmjs.org/{encoded-package-name}
+Accept: application/json
+```
+
+A scoped package is encoded as one path segment (for example,
+`%40scope%2Fpackage`). There is no query string, request body,
+`Authorization` header, CLI-created `Cookie`, Redential header, or Redential
+token. npm sees the selected public package name and ordinary connection
+metadata, including the source IP. It never receives the bundle, repository
+URL or remote, path, source, label, identity, or token.
+
+The initial audited set is intentionally conservative:
+
+- `better-auth` for `auth/better-auth`;
+- `@lemonsqueezy/lemonsqueezy.js` for `payments/lemonsqueezy`;
+- `@paddle/paddle-js` and `@paddle/paddle-node-sdk` for `payments/paddle`.
+
+`signatures/package-map.json` stores only those eligible package keys. Their
+slugs are still derived from the existing detection map; the list neither
+detects skills nor records which package caused a detection. CI requires all
+map keys for an eligible slug to be audited and excludes any slug reachable
+through Tier 2. Consequently, ambiguous or cross-ecosystem slugs such as
+`ai/openai-api` and `auth/firebase-auth` never trigger this check.
+
+For each eligible detected slug, the CLI reads only `time.created`. If a slug
+has several mapped npm references, all must return valid canonical UTC dates;
+the earliest date is used. A warning appears only when the bundle's
+`first_seen` is strictly earlier. Equality or a later date is not a finding.
+Vendored code and private forks can legitimately predate a public npm release,
+so the warning is non-accusatory, never adds a prompt, and explicitly says the
+upload will continue. A known, low-risk limitation: if a package was ever
+unpublished and republished on npm, `time.created` resets to the republish
+date, so a legitimately old package can show a misleadingly recent date — an
+acceptable gap given the check is already warn-only and never blocks the
+upload.
+
+The checker is bounded to four concurrent requests, 1.5 seconds per request,
+and 3 seconds for the entire operation. Every started request is awaited until
+it resolves or its abort timeout fires; npm work never continues in the
+background or overlaps the Redential upload. A 404, 429, 5xx, network failure,
+timeout, malformed response, missing/invalid date, incomplete multi-package
+result, exhausted deadline, or unexpected checker error silently omits the
+finding and allows upload. No result is cached: persisting it would create a
+local technology history and require separate TTL, permissions, corruption,
+and migration decisions.
+
+TTY users see the npm disclosure after the private-label line and before the
+payload header, still leaving the exact JSON immediately adjacent to the
+upload question. Non-TTY stdout remains JSON-only with the bundle as its first
+output; after `--confirm-upload` and a successful visibility gate, the same
+disclosure is written to stderr immediately before npm is contacted. A decline,
+a visibility refusal, or a bundle with no eligible skill produces no npm
+request. `--confirm-upload` therefore authorizes both the reviewed upload and
+these subsequent network steps.
+
+The bundle schema and the byte-for-byte Redential upload body are unchanged.
+This new network destination was discussed in issue #81; no bundle field,
+Redential upload header, or schema change is involved.
 
 ## Identity corroboration (submit-only)
 
@@ -385,7 +463,7 @@ identity is exactly as valid as before, just without an extra
 corroboration marker server-side.
 
 On upload, the two counts travel as a single optional HTTP header on the
-`POST /api/cli/bundles` request (step 7 above):
+`POST /api/cli/bundles` request (step 8 above):
 `X-Redential-Identity-Corroboration: {"corroborated_count": N,
 "total_claimed": M}` (compact JSON). This is the only place they go — they
 are never added to the bundle body, so the bundle stays byte-for-byte

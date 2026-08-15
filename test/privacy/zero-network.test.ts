@@ -194,10 +194,10 @@ describe("zero network calls during scan", () => {
     const dir = createRepo();
     dirs.push(dir);
     commit(dir, {
-      message: "x",
+      message: "use better auth",
       authorName: "You",
       authorEmail: "you@example.com",
-      files: { "a.ts": "1\n" },
+      files: { "auth.ts": 'import { betterAuth } from "better-auth";\n' },
     });
     const configDir = tempConfigDir();
     saveCredentials({ access_token: "t", site_url: getSiteUrl(), obtained_at: "now" }, configDir);

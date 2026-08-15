@@ -8,6 +8,12 @@ const PACKAGE_MAP_PATH = fileURLToPath(new URL("../signatures/package-map.json",
 const TAXONOMY_PATH = fileURLToPath(new URL("../taxonomy.json", import.meta.url));
 
 const SLUG_SHAPE = /^[a-z0-9]+(-[a-z0-9]+)*\/[a-z0-9]+(-[a-z0-9]+)*$/;
+const AUDITED_NPM_RELEASE_PACKAGES = [
+  "better-auth",
+  "@lemonsqueezy/lemonsqueezy.js",
+  "@paddle/paddle-js",
+  "@paddle/paddle-node-sdk",
+];
 
 describe("signatures/package-map.json", () => {
   it("has at least 400 entries", () => {
@@ -79,6 +85,29 @@ describe("signatures/package-map.json", () => {
       seen.add(k);
     }
     expect([...dupes]).toEqual([]);
+  });
+
+  it("keeps the npm release-check allowlist small, map-backed, and detection-neutral", () => {
+    const raw = JSON.parse(readFileSync(PACKAGE_MAP_PATH, "utf8")) as {
+      map: Record<string, string>;
+      npmReleaseCheckPackages: string[];
+    };
+    expect(raw.npmReleaseCheckPackages).toEqual(AUDITED_NPM_RELEASE_PACKAGES);
+    for (const packageName of raw.npmReleaseCheckPackages) {
+      expect(raw.map[packageName], `${packageName} must remain a detection-map key`).toBeDefined();
+    }
+    expect(loadPackageMap(PACKAGE_MAP_PATH)).toEqual(new Map(Object.entries(raw.map)));
+  });
+
+  it("requires every map key for an eligible npm-release slug to be audited", () => {
+    const raw = JSON.parse(readFileSync(PACKAGE_MAP_PATH, "utf8")) as {
+      map: Record<string, string>;
+      npmReleaseCheckPackages: string[];
+    };
+    const eligibleSlugs = new Set(raw.npmReleaseCheckPackages.map((packageName) => raw.map[packageName]));
+    for (const [packageName, slug] of Object.entries(raw.map)) {
+      if (eligibleSlugs.has(slug)) expect(raw.npmReleaseCheckPackages).toContain(packageName);
+    }
   });
 
   it("db/bigquery wins over infra/gcp-sdk for a bigquery-only fixture (spec precedence)", () => {

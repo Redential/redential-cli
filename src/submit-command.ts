@@ -4,7 +4,13 @@ import { formatConsentSummary } from "./summary.js";
 import { getSiteUrl } from "./config.js";
 import { readCredentials } from "./credentials.js";
 import { getRemoteUrl } from "./git.js";
-import { checkVisibilityGate, fetchVerifiedEmails, postBundle, postPrivateLabel } from "./submit.js";
+import {
+  checkVisibilityGate,
+  fetchNpmPackument,
+  fetchVerifiedEmails,
+  postBundle,
+  postPrivateLabel,
+} from "./submit.js";
 import { promptConfirmUpload, promptPrivateLabel } from "./prompt.js";
 import { checkForUpdate } from "./version-check.js";
 import { bundleContentHash, saveLastSubmission } from "./submission-record.js";
@@ -13,6 +19,13 @@ import { getOrCreateSalt } from "./salt.js";
 import { validatePrivateLabel } from "./private-label.js";
 import { writeStderrLine } from "./stderr.js";
 import type { Bundle } from "./types.js";
+import {
+  checkNpmAnachronisms,
+  formatNpmAnachronismWarning,
+  hasNpmReleaseCheckCandidates,
+  NPM_RELEASE_CHECK_DISCLOSURE,
+  type NpmAnachronism,
+} from "./npm-anachronism.js";
 
 export type SubmitCommandOptions = BuildBundleOptions & {
   /** Separate from `yes` (authorization-to-scan) on purpose — this is
@@ -40,8 +53,12 @@ export type SubmitCommandOptions = BuildBundleOptions & {
   // Injectable for tests, so the visibility gate doesn't need a real
   // network call to github.com to exercise the blocked/unblocked paths.
   probeFn?: Parameters<typeof checkVisibilityGate>[1];
-  // Injectable so tests don't make a real request to the npm registry;
-  // defaults to the real checkForUpdate (src/version-check.ts).
+  // Injectable so tests can exercise release-date findings and failures
+  // without contacting the npm registry. The full checker is injected,
+  // keeping its fail-open boundary at this command layer.
+  checkNpmAnachronismsFn?: (bundle: Bundle) => Promise<NpmAnachronism[]>;
+  // Injectable so tests don't make the post-upload CLI version request to
+  // the npm registry; defaults to checkForUpdate (src/version-check.ts).
   checkForUpdateFn?: () => Promise<void>;
   // True when stdout is an interactive terminal — cli.ts passes
   // `process.stdout.isTTY`. Determines whether the human-readable
@@ -178,6 +195,7 @@ export async function executeSubmitCommand(opts: SubmitCommandOptions): Promise<
 
   const bundle = await buildBundleInteractively(opts);
   const bundleJson = JSON.stringify(bundle, null, 2);
+  const hasNpmCandidates = hasNpmReleaseCheckCandidates(bundle);
 
   // Thin-history / shallow-clone advisory — see thinHistoryNotice's own
   // comment. Printed here, before any of the consent-surface output below
@@ -223,12 +241,14 @@ export async function executeSubmitCommand(opts: SubmitCommandOptions): Promise<
   //      that travels is shown before the y/n, and the label travels just
   //      as much as the bundle does, even though it's a separate request
   //      (see postPrivateLabel below).
-  //   4. the payload header + the exact JSON (byte-for-byte what gets sent
+  //   4. the npm registry disclosure, only when an audited detected skill
+  //      is eligible for the post-confirmation release-date check.
+  //   5. the payload header + the exact JSON (byte-for-byte what gets sent
   //      — this print IS the guarantee). INVARIANT (owner directive,
   //      2026-08): the exact JSON is ALWAYS the last thing printed before
   //      the single upload confirmation below, on every path — nothing may
   //      come between them.
-  //   5. the single upload prompt — "Upload this to your Redential
+  //   6. the single upload prompt — "Upload this to your Redential
   //      profile? (Y/n)" — immediately after the JSON.
   // ZERO-NETWORK INVARIANT (owner directive, 2026-08): EVERYTHING above
   // this prompt is purely local — no identity-corroboration lookup, no
@@ -254,6 +274,7 @@ export async function executeSubmitCommand(opts: SubmitCommandOptions): Promise<
       privateLabel = await (opts.promptPrivateLabelFn ?? promptPrivateLabel)();
     }
     log(formatPrivateLabelLine(privateLabel, opts.plain));
+    if (hasNpmCandidates) log(NPM_RELEASE_CHECK_DISCLOSURE);
     log("Exact payload (byte-for-byte what gets sent):");
     log(bundleJson);
   }
@@ -283,6 +304,26 @@ export async function executeSubmitCommand(opts: SubmitCommandOptions): Promise<
   if (visibility.message) warn(visibility.message);
   if (visibility.blocked) {
     throw new SubmitError("Submit refused: see the message above.");
+  }
+
+  // Conservative npm release-date check. It starts only after consent and
+  // the visibility gate, and every request it starts has completed or
+  // aborted before identity lookup/upload begins. Non-TTY users receive
+  // the same disclosure on stderr immediately before the first lookup;
+  // TTY users already saw it on the pre-confirmation consent surface.
+  if (hasNpmCandidates) {
+    if (!opts.isTTY) warn(NPM_RELEASE_CHECK_DISCLOSURE);
+    try {
+      const findings = await (
+        opts.checkNpmAnachronismsFn ??
+        ((checkedBundle: Bundle) => checkNpmAnachronisms(checkedBundle, fetchNpmPackument))
+      )(bundle);
+      const npmWarning = formatNpmAnachronismWarning(findings);
+      if (npmWarning) warn(npmWarning);
+    } catch {
+      // Fail open: malformed metadata, a fake transport that throws, or any
+      // unexpected checker failure must never block the reviewed upload.
+    }
   }
 
   // Identity corroboration (optional X-Redential-Identity-Corroboration

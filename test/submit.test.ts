@@ -161,6 +161,20 @@ function repoWithOneCommit(remote?: string): string {
   return dir;
 }
 
+function repoWithBetterAuth(remote?: string): string {
+  const dir = createRepo();
+  dirs.push(dir);
+  if (remote) setRemote(dir, remote);
+  commit(dir, {
+    message: "use better auth",
+    authorName: "You",
+    authorEmail: "you@example.com",
+    authorDate: "2022-06-01T00:00:00Z",
+    files: { "auth.ts": 'import { betterAuth } from "better-auth";\n' },
+  });
+  return dir;
+}
+
 // Every test below builds a real git repo (multiple `git` process spawns)
 // and, in most cases, also starts a mock HTTP server — comfortably under
 // vitest's default 5s budget locally, but not on loaded CI runners (seen
@@ -1156,5 +1170,230 @@ describe("submit's thin-history / shallow-clone advisory (non-blocking)", { time
     expect(warnings.some((w) => w.includes("truncated (shallow) clone"))).toBe(true);
     expect(warnings.some((w) => w.includes("git fetch --unshallow"))).toBe(true);
     expect(bundleRequests(server)).toHaveLength(1);
+  });
+});
+
+describe("submit npm release-date integration", { timeout: 30_000 }, () => {
+  it("shows the TTY disclosure before the payload and keeps JSON immediately adjacent to the prompt", async () => {
+    process.env.REDENTIAL_SITE_URL = "https://site.example";
+    const dir = repoWithBetterAuth();
+    const configDir = tempConfigDir();
+    saveCredentials({ access_token: "t", site_url: process.env.REDENTIAL_SITE_URL, obtained_at: "now" }, configDir);
+    const logs: string[] = [];
+    let lastLineAtPrompt = "";
+    let npmCalled = false;
+
+    await executeSubmitCommand({
+      repoPath: dir,
+      author: ["you@example.com"],
+      yes: true,
+      confirmUpload: false,
+      label: "acme-backend",
+      toolVersion: "0.13.0",
+      configDir,
+      log: (message) => logs.push(message),
+      warn: () => {},
+      isTTY: true,
+      promptConfirmUploadFn: async () => {
+        lastLineAtPrompt = logs.at(-1) ?? "";
+        return false;
+      },
+      checkNpmAnachronismsFn: async () => {
+        npmCalled = true;
+        return [];
+      },
+    });
+
+    const disclosureIndex = logs.findIndex((line) => line.includes("npm receives those package names"));
+    const payloadHeaderIndex = logs.indexOf("Exact payload (byte-for-byte what gets sent):");
+    expect(disclosureIndex).toBeGreaterThanOrEqual(0);
+    expect(disclosureIndex).toBeLessThan(payloadHeaderIndex);
+    expect(lastLineAtPrompt.trim().startsWith("{")).toBe(true);
+    expect(npmCalled).toBe(false);
+  });
+
+  it("orders visibility, the completed npm check, warning, identity lookup, and upload", async () => {
+    const events: string[] = [];
+    const server = await startMockServer((req) => {
+      if (req.url === "/api/cli/identity/emails") {
+        events.push("identity");
+        return { status: 404, body: {} };
+      }
+      if (req.url === "/api/cli/bundles") {
+        events.push("upload");
+        return { status: 200, body: { id: "ok" } };
+      }
+      return { status: 404, body: {} };
+    });
+    servers.push(server);
+    process.env.REDENTIAL_SITE_URL = server.url;
+    const dir = repoWithBetterAuth("https://github.com/acme/private.git");
+    const configDir = tempConfigDir();
+    saveCredentials({ access_token: "t", site_url: server.url, obtained_at: "now" }, configDir);
+
+    await executeSubmitCommand({
+      repoPath: dir,
+      author: ["you@example.com"],
+      yes: true,
+      confirmUpload: true,
+      label: "acme-backend",
+      toolVersion: "0.13.0",
+      configDir,
+      log: () => {},
+      warn: (message) => {
+        if (message.includes("timeline conflicts")) events.push("warning");
+      },
+      probeFn: async () => {
+        events.push("visibility");
+        return { status: 404 };
+      },
+      checkNpmAnachronismsFn: async () => {
+        events.push("npm:start");
+        await Promise.resolve();
+        events.push("npm:end");
+        return [
+          {
+            slug: "auth/better-auth",
+            firstSeen: "2022-06-01T00:00:00.000Z",
+            earliestMappedNpmRelease: "2023-09-18T00:00:00Z",
+          },
+        ];
+      },
+      checkForUpdateFn: noCheckForUpdate,
+    });
+
+    expect(events).toEqual(["visibility", "npm:start", "npm:end", "warning", "identity", "upload"]);
+  });
+
+  it("fails open when the complete npm checker throws and still uploads", async () => {
+    const server = await startMockServer((req) => {
+      if (req.url === "/api/cli/bundles") return { status: 200, body: { id: "ok" } };
+      return { status: 404, body: {} };
+    });
+    servers.push(server);
+    process.env.REDENTIAL_SITE_URL = server.url;
+    const dir = repoWithBetterAuth();
+    const configDir = tempConfigDir();
+    saveCredentials({ access_token: "t", site_url: server.url, obtained_at: "now" }, configDir);
+
+    await executeSubmitCommand({
+      repoPath: dir,
+      author: ["you@example.com"],
+      yes: true,
+      confirmUpload: true,
+      label: "acme-backend",
+      toolVersion: "0.13.0",
+      configDir,
+      log: () => {},
+      warn: () => {},
+      checkNpmAnachronismsFn: async () => {
+        throw new Error("fake checker failure");
+      },
+      checkForUpdateFn: noCheckForUpdate,
+    });
+
+    expect(bundleRequests(server)).toHaveLength(1);
+  });
+
+  it("does not run the npm checker when no audited detected skill is present", async () => {
+    const server = await startMockServer((req) => {
+      if (req.url === "/api/cli/bundles") return { status: 200, body: { id: "ok" } };
+      return { status: 404, body: {} };
+    });
+    servers.push(server);
+    process.env.REDENTIAL_SITE_URL = server.url;
+    const dir = repoWithOneCommit();
+    const configDir = tempConfigDir();
+    saveCredentials({ access_token: "t", site_url: server.url, obtained_at: "now" }, configDir);
+    let npmCalled = false;
+
+    await executeSubmitCommand({
+      repoPath: dir,
+      author: ["you@example.com"],
+      yes: true,
+      confirmUpload: true,
+      label: "acme-backend",
+      toolVersion: "0.13.0",
+      configDir,
+      log: () => {},
+      warn: () => {},
+      checkNpmAnachronismsFn: async () => {
+        npmCalled = true;
+        return [];
+      },
+      checkForUpdateFn: noCheckForUpdate,
+    });
+
+    expect(npmCalled).toBe(false);
+    expect(bundleRequests(server)).toHaveLength(1);
+  });
+
+  it("does not run the npm checker when visibility blocks", async () => {
+    const dir = repoWithBetterAuth("https://github.com/acme/public.git");
+    const configDir = tempConfigDir();
+    process.env.REDENTIAL_SITE_URL = "https://site.example";
+    saveCredentials({ access_token: "t", site_url: process.env.REDENTIAL_SITE_URL, obtained_at: "now" }, configDir);
+    let npmCalled = false;
+
+    await expect(
+      executeSubmitCommand({
+        repoPath: dir,
+        author: ["you@example.com"],
+        yes: true,
+        confirmUpload: true,
+        label: "acme-backend",
+        toolVersion: "0.13.0",
+        configDir,
+        log: () => {},
+        warn: () => {},
+        probeFn: async () => ({ status: 200 }),
+        checkNpmAnachronismsFn: async () => {
+          npmCalled = true;
+          return [];
+        },
+      })
+    ).rejects.toBeInstanceOf(SubmitError);
+    expect(npmCalled).toBe(false);
+  });
+
+  it("keeps non-TTY stdout JSON-first and sends disclosure and warning only to stderr", async () => {
+    const server = await startMockServer((req) => {
+      if (req.url === "/api/cli/bundles") return { status: 200, body: { id: "ok" } };
+      return { status: 404, body: {} };
+    });
+    servers.push(server);
+    process.env.REDENTIAL_SITE_URL = server.url;
+    const dir = repoWithBetterAuth();
+    const configDir = tempConfigDir();
+    saveCredentials({ access_token: "t", site_url: server.url, obtained_at: "now" }, configDir);
+    const logs: string[] = [];
+    const warnings: string[] = [];
+
+    await executeSubmitCommand({
+      repoPath: dir,
+      author: ["you@example.com"],
+      yes: true,
+      confirmUpload: true,
+      label: "acme-backend",
+      toolVersion: "0.13.0",
+      configDir,
+      log: (message) => logs.push(message),
+      warn: (message) => warnings.push(message),
+      isTTY: false,
+      checkNpmAnachronismsFn: async () => [
+        {
+          slug: "auth/better-auth",
+          firstSeen: "2022-06-01T00:00:00.000Z",
+          earliestMappedNpmRelease: "2023-09-18T00:00:00Z",
+        },
+      ],
+      checkForUpdateFn: noCheckForUpdate,
+    });
+
+    expect(logs[0].trim().startsWith("{")).toBe(true);
+    expect(logs.join("\n")).not.toContain("npm receives those package names");
+    expect(warnings.some((message) => message.includes("npm receives those package names"))).toBe(true);
+    expect(warnings.some((message) => message.includes("timeline conflicts"))).toBe(true);
+    expect(bundleRequests(server)[0].body).toBe(logs[0]);
   });
 });

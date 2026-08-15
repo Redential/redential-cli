@@ -17,6 +17,8 @@ wrong, not the test.
 |---|---|
 | `test/scan.test.ts` → "requires explicit confirmation before producing a bundle" | `runScan` throws unless `confirmed` is explicitly `true` — `--author` alone (non-interactive identity selection) never implies authorization. |
 | `test/prompt.test.ts` (both cases) | If the interactive attestation/author prompt hits EOF (closed stdin) before an answer, the CLI fails loudly (throws) instead of silently proceeding — no confirmation can be assumed by default. |
+| `test/privacy/zero-network.test.ts` → Better Auth hand-off declined at the upload question | Even when the reviewed bundle contains an audited npm release-check candidate, the complete `scan` → `submit` hand-off makes zero `fetch`/HTTP/HTTPS calls when upload consent is declined. |
+| `test/privacy/submit-guardrail.test.ts` → npm release lookup privacy boundary | The npm GET happens only after confirmation and the visibility gate, finishes before identity/upload, carries only the audited public package path, and contains no token, bundle, remote, repository URL, label, body, query, authorization, or CLI cookie. |
 
 ## 3. Bounded output
 
@@ -35,6 +37,7 @@ wrong, not the test.
 |---|---|
 | `test/scan.test.ts` → single-commit / multiple-author cases (implicit) | `runScan` is a pure function of its inputs (repo state + explicit `now`): given the same repository and the same `now`, it returns byte-identical JSON on every call — there is no hidden enrichment step between what a caller inspects and what `submit` would later send, since both would come from calling the same function on the same reviewed bundle. |
 | `test/privacy/submit-guardrail.test.ts` → "the request body equals the exact string logged before the upload confirmation" | Closes the gap noted below: `submit` prints the bundle via the same `buildBundleInteractively` path `scan` uses, then uploads that **exact printed string** (`postRawJson`, never a re-serialization of the parsed object) — proven by asserting the mock server's received request body is `===` the printed line, not just deep-equal after re-parsing. |
+| `test/privacy/submit-guardrail.test.ts` → npm release lookup privacy boundary | Adding the npm check does not enrich or reserialize the Redential payload: the exact JSON printed for review is still byte-for-byte the bundle POST body, while any timeline warning stays stderr-only and non-blocking. |
 
 _Gap closed: `submit` now exists (see [login-submit.md](login-submit.md))_
 _and sends the exact bytes `scan`'s bundle-building path printed, verified_

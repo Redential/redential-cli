@@ -686,5 +686,11 @@
     "hvac": "security/hashicorp-vault",
     "node-vault": "security/hashicorp-vault",
     "pgvector": "ai/vector-search"
-  }
+  },
+  "npmReleaseCheckPackages": [
+    "better-auth",
+    "@lemonsqueezy/lemonsqueezy.js",
+    "@paddle/paddle-js",
+    "@paddle/paddle-node-sdk"
+  ]
 }
