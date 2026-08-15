@@ -12,12 +12,14 @@ Node's error text — those can contain tokens.
 ## Proxy env vars
 
 Node's built-in `fetch` ignores `HTTP_PROXY` / `HTTPS_PROXY`. This CLI
-attaches undici's `EnvHttpProxyAgent` when any of these are set:
+attaches undici's `EnvHttpProxyAgent` only when one of these is set:
 
 - `HTTP_PROXY` / `http_proxy`
 - `HTTPS_PROXY` / `https_proxy`
-- `NO_PROXY` / `no_proxy` (honored by the agent: hosts that must bypass
-  the proxy, typically `localhost` and your internal git host)
+
+`NO_PROXY` / `no_proxy` do **not** attach the agent. They are read by
+the agent after it exists: hosts that must bypass the proxy, typically
+`localhost` and your internal git host.
 
 Example:
 
@@ -27,13 +29,16 @@ export NO_PROXY=localhost,127.0.0.1,.corp.example
 npx redential login
 ```
 
-Leave them unset on a direct network — the client then uses the same
-dispatcher-less `fetch` as a machine with no proxy.
+Leave the HTTP(S)_PROXY vars unset on a direct network — the client
+then uses the same dispatcher-less `fetch` as a machine with no proxy.
 
-A `407` from the proxy (or undici's `UND_ERR_PROXY`) prints `proxy
-required`. That usually means the env var is missing, the URL is wrong,
-or the proxy wants authentication the CLI does not prompt for — set the
-vars your IT docs specify; do not paste a password into an issue.
+A `407` HTTP response, or a CONNECT tunnel that is not 200 (undici
+surfaces that as `UND_ERR_ABORTED`), prints `proxy required`. That
+usually means the env var is missing, the URL is wrong, or the proxy
+wants authentication the CLI does not prompt for — set the vars your
+IT docs specify; do not paste a password into an issue. TLS through
+the proxy failing (`UND_ERR_PRX_TLS`) uses the certificate message
+below, not this one.
 
 ## Corporate CA (`NODE_EXTRA_CA_CERTS`)
 

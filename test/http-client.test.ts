@@ -126,6 +126,35 @@ describe("http-client reach errors (#83 slice 2)", () => {
     });
   });
 
+  it("names proxy required when CONNECT is not 200 (UND_ERR_ABORTED)", async () => {
+    const leak = "Proxy response (407) !== 200 when HTTP Tunneling";
+    globalThis.fetch = vi.fn(async () => {
+      throw Object.assign(new Error(leak), { code: "UND_ERR_ABORTED" });
+    }) as unknown as typeof fetch;
+
+    await expect(postJson("https://example.test/api", {})).rejects.toSatisfy((err: unknown) => {
+      expect(err).toBeInstanceOf(NetworkError);
+      const message = (err as Error).message;
+      expect(message).toBe("Could not reach example.test: proxy required.");
+      expect(message).not.toContain("407");
+      expect(message).not.toContain("Tunneling");
+      return true;
+    });
+  });
+
+  it("names a TLS failure for UND_ERR_PRX_TLS", async () => {
+    globalThis.fetch = vi.fn(async () => {
+      throw Object.assign(new Error("tls connection to a proxy failed"), { code: "UND_ERR_PRX_TLS" });
+    }) as unknown as typeof fetch;
+
+    await expect(postJson("https://example.test/api", {})).rejects.toSatisfy((err: unknown) => {
+      expect(err).toBeInstanceOf(NetworkError);
+      expect((err as Error).message).toContain("could not verify TLS certificate");
+      expect((err as Error).message).not.toContain("proxy failed");
+      return true;
+    });
+  });
+
   it("keeps the generic reach message when the code is unknown", async () => {
     globalThis.fetch = vi.fn(async () => {
       throw Object.assign(new Error("socket hang up with a token=xyz"), { code: "ECONNRESET" });

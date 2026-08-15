@@ -41,6 +41,7 @@ const TLS_CODES = new Set([
   "SELF_SIGNED_CERT_IN_CHAIN",
   "ERR_TLS_CERT_ALTNAME_INVALID",
   "ERR_SSL_WRONG_VERSION_NUMBER",
+  "UND_ERR_PRX_TLS",
 ]);
 
 /** Walk `code` / `cause` / AggregateError `errors` only — never `message`. */
@@ -66,7 +67,7 @@ function reachErrorMessage(host: string, err: unknown): string {
   if (codes.some((c) => TLS_CODES.has(c))) {
     return `Could not reach ${host}: could not verify TLS certificate (corporate proxy? see docs/corporate-networks.md).`;
   }
-  if (codes.some((c) => c === "UND_ERR_PROXY")) {
+  if (codes.some((c) => c === "UND_ERR_ABORTED")) {
     return `Could not reach ${host}: proxy required.`;
   }
   if (codes.some((c) => c === "ECONNREFUSED")) {
