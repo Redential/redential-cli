@@ -7,6 +7,15 @@ const HEAD_TIMEOUT_MS = 5000;
 const EMAILS_TIMEOUT_MS = 5000;
 
 /**
+ * Transport for submit's npm release-date check. The caller constructs the
+ * fixed registry URL; this wrapper adds only npm's documented JSON accept
+ * header and delegates timeout cancellation to getJson.
+ */
+export async function fetchNpmPackument(url: string, timeoutMs: number): Promise<unknown | null> {
+  return getJson<unknown>(url, timeoutMs, { accept: "application/json" });
+}
+
+/**
  * Converts a git remote URL (https, scp-like `git@host:org/repo.git`, or
  * `ssh://`) into an https URL worth HEAD-requesting. Only ever called after
  * isKnownPublicHost has already confirmed the URL carries no embedded

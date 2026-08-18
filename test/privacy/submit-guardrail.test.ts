@@ -6,7 +6,8 @@ import { cleanup, commit, createRepo, setRemote } from "../support/fixtures.js";
 import { startMockServer, type MockServer } from "../support/mock-server.js";
 import { saveCredentials } from "../../src/credentials.js";
 import { executeSubmitCommand } from "../../src/submit-command.js";
-import { checkVisibilityGate } from "../../src/submit.js";
+import { checkVisibilityGate, fetchNpmPackument } from "../../src/submit.js";
+import { checkNpmAnachronisms } from "../../src/npm-anachronism.js";
 import { NetworkError } from "../../src/errors.js";
 
 const dirs: string[] = [];
@@ -22,6 +23,20 @@ afterEach(async () => {
 function tempConfigDir(): string {
   const dir = mkdtempSync(join(tmpdir(), "redential-config-"));
   dirs.push(dir);
+  return dir;
+}
+
+function repoWithBetterAuth(remote?: string): string {
+  const dir = createRepo();
+  dirs.push(dir);
+  if (remote) setRemote(dir, remote);
+  commit(dir, {
+    message: "use better auth",
+    authorName: "You",
+    authorEmail: "you@example.com",
+    authorDate: "2022-06-01T00:00:00Z",
+    files: { "auth.ts": 'import { betterAuth } from "better-auth";\n' },
+  });
   return dir;
 }
 
@@ -100,6 +115,83 @@ describe("the visibility probe never fires against a credentialed remote URL", (
 
     expect(probeCalled).toBe(false);
     expect(result.blocked).toBe(false);
+  });
+});
+
+describe("npm release lookup privacy boundary", { timeout: 30_000 }, () => {
+  it("runs a bounded public-package GET after visibility and before upload, without Redential or repository data", async () => {
+    const events: string[] = [];
+    const registry = await startMockServer((req) => {
+      events.push("npm");
+      return { status: 200, body: { time: { created: "2023-09-18T00:00:00.000Z" } } };
+    });
+    servers.push(registry);
+    const site = await startMockServer((req) => {
+      if (req.url === "/api/cli/identity/emails") {
+        events.push("identity");
+        return { status: 404, body: {} };
+      }
+      if (req.url === "/api/cli/bundles") {
+        events.push("upload");
+        return { status: 200, body: { id: "ok" } };
+      }
+      if (req.url === "/api/cli/private-label") return { status: 204, body: {} };
+      return { status: 404, body: {} };
+    });
+    servers.push(site);
+    process.env.REDENTIAL_SITE_URL = site.url;
+
+    const remote = "https://github.com/acme/private-employer-repo.git";
+    const label = "Private employer work";
+    const token = "xxx-EXAMPLE-token";
+    const dir = repoWithBetterAuth(remote);
+    const configDir = tempConfigDir();
+    saveCredentials({ access_token: token, site_url: site.url, obtained_at: "now" }, configDir);
+    const logs: string[] = [];
+    const warnings: string[] = [];
+
+    await executeSubmitCommand({
+      repoPath: dir,
+      author: ["you@example.com"],
+      yes: true,
+      confirmUpload: true,
+      label,
+      toolVersion: "0.13.0",
+      configDir,
+      log: (message) => logs.push(message),
+      warn: (message) => {
+        warnings.push(message);
+        if (message.includes("timeline conflicts")) events.push("warning");
+      },
+      probeFn: async () => {
+        events.push("visibility");
+        return { status: 404 };
+      },
+      checkNpmAnachronismsFn: (bundle) =>
+        checkNpmAnachronisms(bundle, fetchNpmPackument, { registryBaseUrl: registry.url }),
+      checkForUpdateFn: async () => {},
+    });
+
+    expect(events).toEqual(["visibility", "npm", "warning", "identity", "upload"]);
+    expect(registry.requests).toHaveLength(1);
+    const npmRequest = registry.requests[0];
+    expect(npmRequest.method).toBe("GET");
+    expect(npmRequest.url).toBe("/better-auth");
+    expect(npmRequest.url).not.toContain("?");
+    expect(npmRequest.body).toBe("");
+    expect(npmRequest.headers.accept).toBe("application/json");
+    expect(npmRequest.headers.authorization).toBeUndefined();
+    expect(npmRequest.headers.cookie).toBeUndefined();
+
+    const serializedRequest = JSON.stringify(npmRequest);
+    for (const forbidden of [token, remote, label, site.url, "schema_version", "repo_fingerprint"]) {
+      expect(serializedRequest).not.toContain(forbidden);
+    }
+    const printedBundle = logs.find((line) => line.trim().startsWith("{"));
+    const uploaded = site.requests.find((request) => request.url === "/api/cli/bundles");
+    expect(uploaded?.body).toBe(printedBundle);
+    expect(warnings.some((message) => message.includes("upload will continue"))).toBe(true);
+    expect(logs.join("\n")).not.toContain("timeline conflicts");
   });
 });
 

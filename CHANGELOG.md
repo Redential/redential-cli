@@ -11,6 +11,18 @@ always bump at least minor; breaking schema changes bump major.
 - Honor `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY` on login and submit via undici's `EnvHttpProxyAgent` (#83).
 - Network errors name a closed failure class (`connection refused`, TLS / corporate CA, `proxy required`) without echoing `error.message`, headers, or body (#83).
 - Document corporate proxy / CA setup and the submit visibility-probe captive-proxy edge (`docs/corporate-networks.md`, #83).
+- Add a submit-only, post-consent npm release-date check for the small audited
+  Better Auth, Lemon Squeezy, and Paddle package subset (#81). It runs only
+  after the remote-visibility gate, completes or aborts before upload, and
+  warns without blocking when a skill's first-seen date predates the earliest
+  complete mapped npm reference. npm receives only selected public package
+  names and normal connection data; failures are silent and no result is
+  cached. Ambiguous cross-ecosystem and Tier 2 slugs are excluded. The bundle,
+  schema, Redential upload body, and closed taxonomy are unchanged.
+
+### Changed
+- `--confirm-upload` help now states that it authorizes both the reviewed
+  upload and subsequent network steps, including eligible npm lookups (#81).
 
 ### Fixed
 - Tier 1 import extraction no longer credits commented-out imports inside

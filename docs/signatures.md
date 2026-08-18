@@ -59,6 +59,32 @@ run anything, or name a slug outside `taxonomy.json` (enforced at load
 time — see "Closed vocabulary" below). This is the whole reason Tier 1 can
 scale to hundreds of entries without hundreds of regexes to audit.
 
+### Audited npm release-check metadata
+
+`signatures/package-map.json` also contains `npmReleaseCheckPackages`, a
+small list of public npm package keys eligible for `submit`'s post-consent
+release-date check. This list is **not a detection tier** and never creates a
+skill match. Detection still uses only `map`; the checker looks up each listed
+key in that map to derive its slug, so package-to-slug knowledge is not
+duplicated.
+
+The initial list contains only `better-auth`,
+`@lemonsqueezy/lemonsqueezy.js`, `@paddle/paddle-js`, and
+`@paddle/paddle-node-sdk`. Tests require every key to exist in `map`, every
+map key pointing to an eligible slug to appear in the list, and no eligible
+slug to be produced by a Tier 2 signature. Adding another map key for one of
+those slugs therefore fails CI until the entire slug is reaudited. Slugs that
+are shared with another ecosystem or reachable through Tier 2 are excluded;
+for example, `ai/openai-api` and `auth/firebase-auth` never trigger an npm
+lookup merely because their slugs appear in a bundle.
+
+This conservative metadata deliberately does not claim which package caused a
+historical detection: the bundle records only a slug. It allows `submit` to
+compare a small unambiguous subset while leaving `scan`, skill detection, the
+bundle, and the closed vocabulary unchanged. See
+[login-submit.md](login-submit.md#npm-release-date-check-submit-only) for the
+network and warning contract.
+
 ### PHP scope, honestly
 
 `composer.json`'s `require` block is parsed as structured JSON — exact,

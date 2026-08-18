@@ -167,7 +167,11 @@ program
     "answer the scan-authorization confirmation (y) non-interactively",
     false
   )
-  .option("--confirm-upload", "confirm the upload itself non-interactively (separate from --yes)", false)
+  .option(
+    "--confirm-upload",
+    "confirm the upload and post-review network steps non-interactively, including eligible npm release-date lookups (separate from --yes)",
+    false
+  )
   .option(
     "--label <text>",
     "a private nickname for this repo, visible only to you (see docs/private-label.md); " +

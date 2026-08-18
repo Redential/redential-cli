@@ -47,3 +47,14 @@ describe("--version", ()=>{
         expect(output.trim()).toBe(expectedVersion);
     })
 })
+
+describe("submit help", () => {
+  it("states that --confirm-upload authorizes upload and the eligible npm lookup", () => {
+    const submit = createProgram().commands.find((command) => command.name() === "submit");
+    expect(submit).toBeDefined();
+    const help = submit!.helpInformation().replace(/\s+/g, " ");
+    expect(help).toContain("--confirm-upload");
+    expect(help).toContain("confirm the upload and post-review network steps");
+    expect(help).toContain("npm release-date lookups");
+  });
+});

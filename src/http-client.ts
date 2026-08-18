@@ -234,10 +234,11 @@ export async function headRequest(url: string, timeoutMs: number): Promise<{ sta
  * Anonymous-or-authenticated GET with a timeout. Returns null (never
  * throws) on any failure — network error, timeout, non-2xx status, or a
  * body that isn't valid JSON — so a broken or offline endpoint can never
- * delay or fail the command it's attached to. Two best-effort callers:
- * version-check.ts's npm-registry freshness check (no headers), and
- * submit.ts's fetchVerifiedEmails (a bearer `Authorization` header, for
- * the identity-corroboration lookup) — both share this fail-open contract.
+ * delay or fail the command it's attached to. Best-effort callers are
+ * version-check.ts's npm-registry freshness check, submit.ts's npm
+ * packument transport (an `Accept` header only), and submit.ts's
+ * fetchVerifiedEmails (a bearer `Authorization` header for identity
+ * corroboration). All share this fail-open contract.
  */
 export async function getJson<T>(
   url: string,
