@@ -61,6 +61,13 @@ describe("extractImportedPackages — JS/TS", () => {
     expect(extractImportedPackages('// see https://npmjs.com/package/stripe for docs', "a.ts")).toEqual([]);
   });
 
+  it("does not treat a relative import as a package", () => {
+    expect(extractImportedPackages('import { a } from "./util";', "a.ts")).toEqual([]);
+    expect(extractImportedPackages('import b from "../lib/x";', "a.ts")).toEqual([]);
+    expect(extractImportedPackages('export * from "./local";', "a.ts")).toEqual([]);
+    expect(extractImportedPackages('const x = require("./local");', "a.ts")).toEqual([]);
+  });
+
   it("never scans a markdown file, even if it contains real-looking import syntax", () => {
     expect(extractImportedPackages('import Stripe from "stripe";', "README.md")).toEqual([]);
   });
@@ -88,6 +95,12 @@ describe("extractImportedPackages — Python", () => {
     expect(extractImportedPackages("from django.db import models", "a.py")).toEqual(["django"]);
   });
 
+  it("does not treat a relative from-import as a package", () => {
+    expect(extractImportedPackages("from . import helpers", "a.py")).toEqual([]);
+    expect(extractImportedPackages("from .models import User", "a.py")).toEqual([]);
+    expect(extractImportedPackages("from ..pkg import thing", "a.py")).toEqual([]);
+  });
+
   it("does not match a # comment", () => {
     expect(extractImportedPackages("# import pandas as pd", "a.py")).toEqual([]);
   });
@@ -111,6 +124,11 @@ describe("extractImportedPackages — Go", () => {
 
   it("does not match a // comment", () => {
     expect(extractImportedPackages('// import "fmt"', "main.go")).toEqual([]);
+  });
+
+  it("does not match a // commented import inside an import block", () => {
+    const diff = 'import (\n\t"fmt"\n\t// "github.com/spf13/cobra"\n\t"github.com/gin-gonic/gin"\n)';
+    expect(extractImportedPackages(diff, "main.go")).toEqual(["fmt", "github.com/gin-gonic/gin"]);
   });
 });
 

@@ -127,6 +127,15 @@ function normalizeJs(raw: string): string {
   return raw.split("/")[0];
 }
 
+// A relative ("./x", "../x") or absolute ("/x") specifier is a local module,
+// not a third-party package — never a package-map candidate. Same intent as
+// Ruby's require_relative and Rust's crate/self/super exclusions below;
+// without this, `import x from "./util"` normalizes to a bare "." (and
+// "../lib/x" to "..") and pollutes the candidate list.
+function isLocalModuleSpecifier(raw: string): boolean {
+  return raw.startsWith(".") || raw.startsWith("/");
+}
+
 function extractJsImports(text: string): string[] {
   const found: string[] = [];
   // import ... from "pkg" / export ... from "pkg" (also covers `export * from`,
@@ -151,12 +160,13 @@ function extractJsImports(text: string): string[] {
     const openQuotePos = indices[2][0] - 1;
     const { line, offsetInLine } = lineAndOffsetAt(text, openQuotePos);
     if (isInsideStringLiteral(line, offsetInLine)) continue;
+    if (isLocalModuleSpecifier(m[2])) continue;
     found.push(normalizeJs(m[2]));
   }
   // import "pkg"; (side-effect import, no `from`)
   const bareImportRe = /^[ \t]*import\s+["']([^"'\n]+)["']\s*;?/gm;
   for (const m of text.matchAll(bareImportRe)) {
-    if (isRealStatement(text, m.index!)) found.push(normalizeJs(m[1]));
+    if (isRealStatement(text, m.index!) && !isLocalModuleSpecifier(m[1])) found.push(normalizeJs(m[1]));
   }
   // require("pkg") / import("pkg") — dynamic import, anywhere a real
   // statement could reasonably put it (assignment, await, bare call).
@@ -165,6 +175,7 @@ function extractJsImports(text: string): string[] {
     const { line, offsetInLine } = lineAndOffsetAt(text, m.index!);
     if (isCommentLine(line)) continue;
     if (isInsideStringLiteral(line, offsetInLine)) continue;
+    if (isLocalModuleSpecifier(m[1])) continue;
     found.push(normalizeJs(m[1]));
   }
   return found;
@@ -258,7 +269,13 @@ function extractPython(text: string): string[] {
   // from pkg[.sub] import x
   const fromRe = /^[ \t]*from\s+([\w.]+)\s+import\b/gm;
   for (const m of text.matchAll(fromRe)) {
-    if (isRealStatement(text, m.index!)) found.push(m[1].split(".")[0]);
+    if (!isRealStatement(text, m.index!)) continue;
+    // A relative import (`from . import x`, `from .models import X`) has a
+    // leading-dot module, so its first dotted segment is empty — a local
+    // module, not a package. Same `if (root)` guard the `import` form above
+    // already applies; without it, an empty "" leaks into the candidate list.
+    const root = m[1].split(".")[0];
+    if (root) found.push(root);
   }
   return found;
 }
@@ -276,7 +293,14 @@ function extractGo(text: string): string[] {
   for (const m of text.matchAll(blockRe)) {
     if (!isRealStatement(text, m.index!)) continue;
     const pathRe = /["']([^"'\n]+)["']/g;
-    for (const p of m[1].matchAll(pathRe)) found.push(normalize(p[1]));
+    // Skip `//`-commented lines inside the block — a commented-out import
+    // (`// "github.com/foo/bar"`) is not a real dependency. The single-line
+    // form above already rejects these via isRealStatement; the block body
+    // needs the same check per line, or a commented-out path is attributed.
+    for (const line of m[1].split("\n")) {
+      if (isCommentLine(line)) continue;
+      for (const p of line.matchAll(pathRe)) found.push(normalize(p[1]));
+    }
   }
   return found;
 }
