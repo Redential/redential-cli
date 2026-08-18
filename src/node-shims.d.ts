@@ -143,6 +143,25 @@ declare module "node:child_process" {
   ): ChildProcess;
 }
 
+declare module "node:module" {
+  // Just enough of `createRequire` for src/embedded-assets.ts, which needs a
+  // CJS-style `require` from within an ESM module to reach `node:sea` (a
+  // built-in with no ESM-friendly static-import story across the Node
+  // versions this repo supports) — never used to require anything outside
+  // Node's own built-in module namespace.
+  export function createRequire(url: string): (id: string) => unknown;
+}
+
+declare module "node:sea" {
+  // Node's Single Executable Applications API (docs/install-binaries.md,
+  // scripts/build-sea.mjs). `isSea()` is false for every runtime shape
+  // except a binary built by this repo's own build:sea script; `getAsset`
+  // reads one entry from that binary's embedded asset table (declared in
+  // sea-config.json at build time).
+  export function isSea(): boolean;
+  export function getAsset(key: string, encoding: string): string;
+}
+
 declare module "node:readline/promises" {
   export interface Interface {
     question(prompt: string): Promise<string>;

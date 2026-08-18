@@ -11,6 +11,12 @@ on:
   pull_request:
   push:
     branches: [main]
+  # Lets a maintainer force the binary-smoke job below without touching a
+  # packaging file first (e.g. to re-check it after a Node/OS-runner image
+  # update). Doesn't add any new trigger surface for `test`/`huge-repo` — a
+  # manual run of those two is harmless, they already run unconditionally on
+  # every PR/push.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -62,3 +68,92 @@ jobs:
       - run: npm ci
 
       - run: npm run test:slow
+
+  # Decides whether binary-smoke (below) needs to run at all: it's expensive
+  # (a full SEA build + git-fixture scan, times three OS runners) and only
+  # worth paying for when something packaging-related actually changed —
+  # every other PR/push skips it. Deliberately implemented with a plain `git
+  # diff` instead of a third-party paths-filter action: this repo already
+  # trusts nothing outside `actions/*` in its workflows, and the check itself
+  # is a handful of lines.
+  changed-packaging:
+    runs-on: ubuntu-latest
+    if: github.event_name != 'workflow_dispatch'
+    outputs:
+      packaging: ${{ steps.check.outputs.packaging }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - id: check
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE="${{ github.event.pull_request.base.sha }}"
+          else
+            BASE="${{ github.event.before }}"
+          fi
+          # No usable base (e.g. a brand-new branch, or a force-push whose
+          # `before` SHA no longer exists locally) — fail open, not closed:
+          # run the smoke job rather than silently skip it on an ambiguous
+          # diff.
+          if [ -z "$BASE" ] || ! git cat-file -e "$BASE" 2>/dev/null; then
+            echo "packaging=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          CHANGED=$(git diff --name-only "$BASE" HEAD -- \
+            scripts/build-sea.mjs scripts/smoke-sea.mjs scripts/install.sh scripts/install.ps1 \
+            .github/workflows/release.yml .github/workflows/ci.yml)
+          if [ -n "$CHANGED" ]; then
+            echo "packaging=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "packaging=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  # Builds the actual SEA binary (scripts/build-sea.mjs) on each OS and runs
+  # the same smoke checks release.yml's `binaries` job does (scripts/smoke-sea.mjs)
+  # — --version, a non-TTY `--json` scan of a throwaway git fixture, a
+  # schema-valid bundle with detected_skills proving the embedded
+  # taxonomy/signatures, and the EOF error path. Only three platforms (not
+  # release.yml's full five) — the goal here is catching a packaging
+  # regression fast, not covering every release artifact; release.yml's own
+  # job is what actually gates what ships.
+  binary-smoke:
+    needs: changed-packaging
+    if: always() && (github.event_name == 'workflow_dispatch' || needs.changed-packaging.outputs.packaging == 'true')
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - run: npm ci
+
+      - run: npm run build:sea
+
+      # Same OS/arch -> filename mapping as release.yml's `binaries` job —
+      # see that job's own comment on why this runs via `node -e` instead of
+      # duplicating scripts/build-sea.mjs's platformAssetName() in YAML.
+      - name: Determine built binary name
+        shell: bash
+        run: |
+          node -e "
+            const map = { darwin: 'macos', linux: 'linux', win32: 'win' };
+            const archMap = { arm64: 'arm64', x64: 'x64' };
+            const ext = process.platform === 'win32' ? '.exe' : '';
+            console.log('BINARY_NAME=redential-' + map[process.platform] + '-' + archMap[process.arch] + ext);
+          " >> "$GITHUB_ENV"
+
+      # Spawns the binary directly, never through `npx`/a `.cmd` shim (the
+      # Windows npx lesson) — scripts/smoke-sea.mjs itself only ever calls
+      # `execFileSync(binPath, ...)`.
+      - run: node scripts/smoke-sea.mjs build/bin/${{ env.BINARY_NAME }}
+        shell: bash

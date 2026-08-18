@@ -27,12 +27,10 @@
 // persist a serialization of the graph — exactly what
 // docs/proof-graph-spike.md's "In-memory only" invariant forbids. Keeping
 // the only output surface "plain text a human reads once in a terminal"
-// keeps that invariant true by construction rather than by convention. This
-// module imports only `readFileSync` from `node:fs` (a single local
-// taxonomy.json label lookup) — no write/mkdir/append call appears anywhere
-// in this file.
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+// keeps that invariant true by construction rather than by convention. The
+// only local file this command reads is taxonomy.json (for a slug's label),
+// via skill-detect.ts's loadTaxonomyEntries — no write/mkdir/append call
+// appears anywhere in this file.
 import { readHeadSnapshot } from "./proof-graph/snapshot.js";
 import { TscParserAdapter, type ParsedFile } from "./proof-graph/parser-adapter.js";
 import { buildGraph } from "./proof-graph/graph.js";
@@ -46,7 +44,7 @@ import {
 } from "./proof-graph/infer.js";
 import { createProgressReporter } from "./proof-graph/progress.js";
 import { getAllCommits, getConfiguredUserEmail, type RawCommit } from "./git.js";
-import { loadTaxonomySlugs } from "./skill-detect.js";
+import { loadTaxonomySlugs, loadTaxonomyEntries } from "./skill-detect.js";
 import { parseSince, describeSince } from "./since.js";
 import { ScanError } from "./errors.js";
 
@@ -81,17 +79,12 @@ export interface ExplainCommandOptions {
   progressWrite?: (message: string) => void;
 }
 
-// Mirrors skill-detect.ts's own DEFAULT_TAXONOMY_PATH resolution (this file
-// sits at the same depth under src/). loadTaxonomySlugs (imported above,
-// used for the actual closed-vocabulary validation below) only returns the
-// bare slug set, not labels — re-reading the same small JSON file locally
-// for the label is simpler than widening skill-detect.ts's exported surface
-// for this one lookup.
-const DEFAULT_TAXONOMY_PATH = fileURLToPath(new URL("../taxonomy.json", import.meta.url));
-
-function taxonomyLabel(slug: string, path: string = DEFAULT_TAXONOMY_PATH): string {
-  const taxonomy = JSON.parse(readFileSync(path, "utf8")) as { skills: { slug: string; label: string }[] };
-  return taxonomy.skills.find((s) => s.slug === slug)?.label ?? slug;
+// loadTaxonomyEntries (skill-detect.ts) is the single SEA-aware taxonomy.json
+// reader shared across the codebase (see src/embedded-assets.ts) — reused
+// here instead of a second hand-rolled readFileSync, so this file never needs
+// its own SEA/filesystem branch.
+function taxonomyLabel(slug: string): string {
+  return loadTaxonomyEntries().find((s) => s.slug === slug)?.label ?? slug;
 }
 
 const CLASSIFICATION_MEANING: Record<StructuralFinding["confidence"], string> = {

@@ -54,8 +54,21 @@ If you don't have it yet:
 - **Linux/other**: grab an installer from
   [nodejs.org](https://nodejs.org)
 
-Standalone binaries that need no Node install at all are on the roadmap,
-but not available yet.
+Standalone binaries that need no Node install at all are on the
+[roadmap](https://github.com/Redential/redential-cli/issues/87) — or
+install the standalone binary (beta), available starting with the next
+release:
+
+```sh
+curl -fsSL https://redential.com/install.sh | sh
+```
+
+```powershell
+irm https://redential.com/install.ps1 | iex
+```
+
+See [docs/install-binaries.md](docs/install-binaries.md) for what these
+scripts do, checksum verification, and how to check build provenance.
 
 No login, no config, no global install. `scan` runs entirely locally and
 makes zero network calls.

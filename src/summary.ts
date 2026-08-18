@@ -1,5 +1,4 @@
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { loadTaxonomyEntries } from "./skill-detect.js";
 import type { Bundle, DetectedSkill } from "./types.js";
 
 /**
@@ -132,14 +131,13 @@ export function shouldUsePlainOutput(platform: string, env: Record<string, strin
 
 const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-// Mirrors skill-detect.ts's/explain-command.ts's own DEFAULT_TAXONOMY_PATH
-// resolution (this file sits at the same depth under src/). Read lazily and
-// cached at module scope — taxonomy.json is a static, checked-in file that
-// never changes within a single process lifetime, so there is no
-// correctness reason to re-read/re-parse it on every label lookup, only a
-// (small, still worth avoiding) repeated I/O + JSON.parse cost across a
-// summary with dozens of detected skills / categories.
-const DEFAULT_TAXONOMY_PATH = fileURLToPath(new URL("../taxonomy.json", import.meta.url));
+// loadTaxonomyEntries (skill-detect.ts) is the single SEA-aware taxonomy.json
+// reader shared across the codebase (see src/embedded-assets.ts). Read
+// lazily and cached at module scope — taxonomy.json is a static, checked-in
+// (or embedded) file that never changes within a single process lifetime, so
+// there is no correctness reason to re-read/re-parse it on every label
+// lookup, only a (small, still worth avoiding) repeated I/O + JSON.parse cost
+// across a summary with dozens of detected skills / categories.
 let cachedSkillLabels: Map<string, string> | null = null;
 
 /**
@@ -151,10 +149,9 @@ let cachedSkillLabels: Map<string, string> | null = null;
  * a defensive last resort, and is exercised in tests with deliberately
  * fake, non-taxonomy slugs).
  */
-function skillLabel(slug: string, path: string = DEFAULT_TAXONOMY_PATH): string {
+function skillLabel(slug: string): string {
   if (!cachedSkillLabels) {
-    const taxonomy = JSON.parse(readFileSync(path, "utf8")) as { skills: { slug: string; label: string }[] };
-    cachedSkillLabels = new Map(taxonomy.skills.map((s) => [s.slug, s.label]));
+    cachedSkillLabels = new Map(loadTaxonomyEntries().map((s) => [s.slug, s.label]));
   }
   return cachedSkillLabels.get(slug) ?? slug;
 }
