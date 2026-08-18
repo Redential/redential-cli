@@ -1,5 +1,7 @@
 import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { getJson } from "./http-client.js";
+import { readAssetOrFile } from "./embedded-assets.js";
 import { writeStderrLine } from "./stderr.js";
 
 /**
@@ -21,9 +23,12 @@ interface NpmRegistryLatest {
   version?: string;
 }
 
+// Same SEA/filesystem dual path as program.ts's getToolVersion — see
+// src/embedded-assets.ts.
 function getInstalledVersion(): string {
-  const pkgUrl = new URL("../package.json", import.meta.url);
-  const pkg = JSON.parse(readFileSync(pkgUrl, "utf8")) as { version: string };
+  const pkgUrl = fileURLToPath(new URL("../package.json", import.meta.url));
+  const text = readAssetOrFile("package.json", pkgUrl, (p) => readFileSync(p, "utf8"));
+  const pkg = JSON.parse(text) as { version: string };
   return pkg.version;
 }
 

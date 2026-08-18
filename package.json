@@ -1,6 +1,6 @@
 {
   "name": "@redential/cli",
-  "version": "0.13.0",
+  "version": "0.14.2",
   "description": "Local, metadata-only proof bundles from git history. Source code never leaves your machine.",
   "license": "Apache-2.0",
   "type": "module",
@@ -37,13 +37,17 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run --exclude \"**/test/slow/**\"",
     "test:slow": "vitest run test/slow",
-    "prepublishOnly": "npm test && npm run build"
+    "prepublishOnly": "npm test && npm run build",
+    "build:sea": "node scripts/build-sea.mjs",
+    "smoke:sea": "node scripts/smoke-sea.mjs"
   },
   "dependencies": {
     "commander": "^12.1.0",
     "typescript": "^5.6.0"
   },
   "devDependencies": {
+    "esbuild": "0.28.2",
+    "postject": "1.0.0-alpha.6",
     "vitest": "^2.1.0"
   }
 }

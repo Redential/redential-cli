@@ -15,5 +15,17 @@ if (!isNodeVersionSupported(process.version)) {
   process.exit(1);
 }
 
-const { createProgram } = await import("./program.js");
-createProgram().parse();
+// Invoked without a top-level `await`: identical runtime behavior (Node
+// keeps the process alive until this promise settles either way, and any
+// rejection here is a genuine bug — commander's own .action() handlers are
+// the ones responsible for catching and reporting command errors, see
+// program.ts's `run()`), but esbuild's CommonJS output target
+// (scripts/build-sea.mjs, the Node SEA binary build) doesn't support
+// top-level await, and this repo ships one source tree for both the
+// published ESM package and the bundled SEA binary.
+async function main(): Promise<void> {
+  const { createProgram } = await import("./program.js");
+  createProgram().parse();
+}
+
+void main();

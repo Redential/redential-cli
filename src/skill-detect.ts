@@ -6,6 +6,7 @@ import { isExcludedPath, heuristicallyGeneratedPaths } from "./churn-exclusions.
 import { extractImportedPackages, sanitizeForPatternMatching, extractAddedManifestDependencies } from "./import-detect.js";
 import { ScanError } from "./errors.js";
 import { debugLog } from "./debug.js";
+import { readAssetOrFile, readEmbeddedSignatureManifest } from "./embedded-assets.js";
 import type { DetectedSkill } from "./types.js";
 
 
@@ -79,34 +80,63 @@ function listJsonFilesRecursive(dir: string): string[] {
   return out;
 }
 
+function parseSignatureText(text: string, label: string): Signature {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    // Never echo file content in the error — just which file is broken.
+    throw new ScanError(`Malformed signature file: ${label}`);
+  }
+  const sig = parsed as Partial<Signature>;
+  if (typeof sig.slug !== "string" || !sig.fixtures) {
+    throw new ScanError(`Signature file missing required fields: ${label}`);
+  }
+  return sig as Signature;
+}
+
 /**
  * Loads every `signatures/**\/*.json` file EXCEPT package-map.json (Tier
  * 1's own data file — see loadPackageMap). `dir` is overridable ONLY so
  * tests (including the privacy test that proves a hostile signature can't
  * escape) can point detection at a fixture directory instead of the real
  * shipped one — production code always uses the default.
+ *
+ * Inside a Node SEA binary (see src/embedded-assets.ts) there is no
+ * `signatures/` directory on disk at all — the build embeds the same files
+ * as SEA assets plus a manifest listing their relative paths, and this
+ * function reads that instead. Both paths parse/validate identically; only
+ * where the bytes come from differs, and `dir` overrides never apply to the
+ * SEA path (tests always run outside a SEA binary).
  */
 export function loadSignatures(dir: string = DEFAULT_SIGNATURES_DIR): Signature[] {
-  return listJsonFilesRecursive(dir).map((file) => {
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(readFileSync(file, "utf8"));
-    } catch {
-      // Never echo file content in the error — just which file is broken.
-      throw new ScanError(`Malformed signature file: ${file}`);
-    }
-    const sig = parsed as Partial<Signature>;
-    if (typeof sig.slug !== "string" || !sig.fixtures) {
-      throw new ScanError(`Signature file missing required fields: ${file}`);
-    }
-    return sig as Signature;
-  });
+  const manifest = readEmbeddedSignatureManifest();
+  if (manifest) {
+    return manifest.map((relPath) => {
+      const text = readAssetOrFile(`signatures/${relPath}`, "", () => {
+        throw new ScanError(`Embedded signature asset missing: ${relPath}`);
+      });
+      return parseSignatureText(text, relPath);
+    });
+  }
+  return listJsonFilesRecursive(dir).map((file) => parseSignatureText(readFileSync(file, "utf8"), file));
 }
 
 /** Same override rationale as loadSignatures. */
 export function loadTaxonomySlugs(path: string = DEFAULT_TAXONOMY_PATH): Set<string> {
-  const taxonomy = JSON.parse(readFileSync(path, "utf8")) as { skills: { slug: string }[] };
+  const text = readAssetOrFile("taxonomy.json", path, (p) => readFileSync(p, "utf8"));
+  const taxonomy = JSON.parse(text) as { skills: { slug: string }[] };
   return new Set(taxonomy.skills.map((s) => s.slug));
+}
+
+/** Same taxonomy.json read as loadTaxonomySlugs, but keeps the label too —
+ * shared by summary.ts and explain-command.ts so the SEA/filesystem branch
+ * lives in exactly one place instead of being copy-pasted at every taxonomy
+ * label lookup site. */
+export function loadTaxonomyEntries(path: string = DEFAULT_TAXONOMY_PATH): { slug: string; label: string }[] {
+  const text = readAssetOrFile("taxonomy.json", path, (p) => readFileSync(p, "utf8"));
+  const taxonomy = JSON.parse(text) as { skills: { slug: string; label: string }[] };
+  return taxonomy.skills;
 }
 
 /**
@@ -115,9 +145,10 @@ export function loadTaxonomySlugs(path: string = DEFAULT_TAXONOMY_PATH): Set<str
  * always uses the shipped default.
  */
 export function loadPackageMap(path: string = DEFAULT_PACKAGE_MAP_PATH): Map<string, string> {
+  const text = readAssetOrFile("signatures/package-map.json", path, (p) => readFileSync(p, "utf8"));
   let parsed: unknown;
   try {
-    parsed = JSON.parse(readFileSync(path, "utf8"));
+    parsed = JSON.parse(text);
   } catch {
     throw new ScanError(`Malformed package map file: ${path}`);
   }

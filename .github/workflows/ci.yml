@@ -11,6 +11,12 @@ on:
   pull_request:
   push:
     branches: [main]
+  # Lets a maintainer force the binary-smoke job below without touching a
+  # packaging file first (e.g. to re-check it after a Node/OS-runner image
+  # update). Doesn't add any new trigger surface for `test`/`huge-repo` — a
+  # manual run of those two is harmless, they already run unconditionally on
+  # every PR/push.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -62,3 +68,195 @@ jobs:
       - run: npm ci
 
       - run: npm run test:slow
+
+  # Decides whether binary-smoke (below) needs to run at all: it's expensive
+  # (a full SEA build + git-fixture scan, times three OS runners) and only
+  # worth paying for when something packaging-related actually changed —
+  # every other PR/push skips it. Deliberately implemented with a plain `git
+  # diff` instead of a third-party paths-filter action: this repo already
+  # trusts nothing outside `actions/*` in its workflows, and the check itself
+  # is a handful of lines.
+  changed-packaging:
+    runs-on: ubuntu-latest
+    if: github.event_name != 'workflow_dispatch'
+    outputs:
+      packaging: ${{ steps.check.outputs.packaging }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - id: check
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE="${{ github.event.pull_request.base.sha }}"
+          else
+            BASE="${{ github.event.before }}"
+          fi
+          # No usable base (e.g. a brand-new branch, or a force-push whose
+          # `before` SHA no longer exists locally) — fail open, not closed:
+          # run the smoke job rather than silently skip it on an ambiguous
+          # diff.
+          if [ -z "$BASE" ] || ! git cat-file -e "$BASE" 2>/dev/null; then
+            echo "packaging=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          CHANGED=$(git diff --name-only "$BASE" HEAD -- \
+            scripts/build-sea.mjs scripts/smoke-sea.mjs scripts/install.sh scripts/install.ps1 \
+            .github/workflows/release.yml .github/workflows/ci.yml)
+          if [ -n "$CHANGED" ]; then
+            echo "packaging=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "packaging=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  # Builds the actual SEA binary (scripts/build-sea.mjs) on each OS and runs
+  # the same smoke checks release.yml's `binaries` job does (scripts/smoke-sea.mjs)
+  # — --version, a non-TTY `--json` scan of a throwaway git fixture, a
+  # schema-valid bundle with detected_skills proving the embedded
+  # taxonomy/signatures, and the EOF error path. Only three platforms (not
+  # release.yml's full five) — the goal here is catching a packaging
+  # regression fast, not covering every release artifact; release.yml's own
+  # job is what actually gates what ships.
+  binary-smoke:
+    needs: changed-packaging
+    if: always() && (github.event_name == 'workflow_dispatch' || needs.changed-packaging.outputs.packaging == 'true')
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - run: npm ci
+
+      - run: npm run build:sea
+
+      # Same OS/arch -> filename mapping as release.yml's `binaries` job —
+      # see that job's own comment on why this runs via `node -e` instead of
+      # duplicating scripts/build-sea.mjs's platformAssetName() in YAML.
+      - name: Determine built binary name
+        shell: bash
+        run: |
+          node -e "
+            const map = { darwin: 'macos', linux: 'linux', win32: 'win' };
+            const archMap = { arm64: 'arm64', x64: 'x64' };
+            const ext = process.platform === 'win32' ? '.exe' : '';
+            console.log('BINARY_NAME=redential-' + map[process.platform] + '-' + archMap[process.arch] + ext);
+          " >> "$GITHUB_ENV"
+
+      # Spawns the binary directly, never through `npx`/a `.cmd` shim (the
+      # Windows npx lesson) — scripts/smoke-sea.mjs itself only ever calls
+      # `execFileSync(binPath, ...)`.
+      - run: node scripts/smoke-sea.mjs build/bin/${{ env.BINARY_NAME }}
+        shell: bash
+
+      # Cross-target coverage (release.yml's macos-13 -> macos-14
+      # cross-target fix): builds the darwin-x64 binary on this same
+      # macos-latest (Apple Silicon) runner and smoke-tests it too, so a
+      # packaging regression on the cross-target path is caught here
+      # instead of only at release time. We CANNOT run an x64 macOS binary
+      # natively on this arm64 runner — macOS translates x64 executables
+      # through Rosetta transparently (both `arch -x86_64 <binary>` and a
+      # direct `execFileSync(binary, ...)`, which is what smoke-sea.mjs
+      # does, work identically — verified locally on an arm64 dev machine).
+      # GitHub's macos-14 runner images document `softwareupdate
+      # --install-rosetta --agree-to-license` as how to add Rosetta if a
+      # future image ever ships without it; the `|| true` below means a
+      # missing/failed Rosetta install doesn't hard-fail this step, it just
+      # lets the next step's execution attempt surface the real error.
+      # Honest note: if this ever proves flaky in CI (Rosetta unavailable
+      # on some runner generation), narrow this to a `--version`-only
+      # check rather than pretending full-scan coverage when it isn't
+      # reliable.
+      - name: Ensure Rosetta is available (darwin-x64 cross-target)
+        if: runner.os == 'macOS'
+        run: softwareupdate --install-rosetta --agree-to-license || true
+
+      - name: Build + smoke-test the cross-target darwin-x64 binary
+        if: runner.os == 'macOS'
+        run: |
+          node scripts/build-sea.mjs --target darwin-x64
+          node scripts/smoke-sea.mjs build/bin/redential-macos-x64
+        shell: bash
+
+  # Exercises the exact copy-paste commands a user runs to install redential
+  # (docs/install-binaries.md's one-liners), against the LATEST published
+  # release's assets — not the commit under test, which is why this is
+  # dispatch-only: `binary-smoke` above already proves this commit's build
+  # works, but only a real GitHub Release has assets for install.sh/install.ps1
+  # to download in the first place. A maintainer runs this by hand after
+  # cutting a release (or on demand) to confirm the installers themselves,
+  # the exact strings in the README/docs, and the resulting binary all still
+  # agree with each other.
+  installer-e2e:
+    if: github.event_name == 'workflow_dispatch'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Install redential (literal user one-liner)
+        if: runner.os != 'Windows'
+        run: curl -fsSL https://raw.githubusercontent.com/Redential/redential-cli/main/scripts/install.sh | sh
+
+      - name: Add ~/.local/bin to PATH
+        if: runner.os != 'Windows'
+        run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: redential --version
+        if: runner.os != 'Windows'
+        run: redential --version
+
+      - name: Full scan of a throwaway git fixture
+        if: runner.os != 'Windows'
+        run: |
+          fixture_dir="$(mktemp -d)"
+          cd "$fixture_dir"
+          git init -q
+          git config user.email "t@example.com"
+          git config user.name "Dev"
+          printf '{"name":"fixture","dependencies":{"stripe":"^14.0.0"}}' > package.json
+          git add package.json
+          git commit -q -m "add stripe dep"
+          redential scan --repo . --author t@example.com --yes --json </dev/null | grep -q "schema_version"
+
+      - name: Install redential (literal user one-liner, PowerShell)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: iwr -useb https://raw.githubusercontent.com/Redential/redential-cli/main/scripts/install.ps1 | iex
+
+      - name: redential --version
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          & "$env:LOCALAPPDATA\redential\bin\redential.exe" --version
+
+      - name: Full scan of a throwaway git fixture
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $fixtureDir = Join-Path $env:TEMP ("redential-installer-e2e-" + [System.Guid]::NewGuid().ToString())
+          New-Item -ItemType Directory -Path $fixtureDir | Out-Null
+          Set-Location $fixtureDir
+          git init -q
+          git config user.email "t@example.com"
+          git config user.name "Dev"
+          Set-Content -Path package.json -Value '{"name":"fixture","dependencies":{"stripe":"^14.0.0"}}' -NoNewline
+          git add package.json
+          git commit -q -m "add stripe dep"
+          $bundle = & "$env:LOCALAPPDATA\redential\bin\redential.exe" scan --repo . --author t@example.com --yes --json
+          # -notmatch on an ARRAY filters elements instead of returning a boolean
+          # (classic pwsh gotcha) — join to a single string before testing.
+          if (($bundle -join "") -notmatch "schema_version") {
+            Write-Error "scan output missing schema_version"
+            exit 1
+          }

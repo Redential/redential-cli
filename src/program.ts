@@ -1,6 +1,8 @@
 import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 import { Command } from "commander";
+import { readAssetOrFile } from "./embedded-assets.js";
 import { ScanError, AuthError, SubmitError, NetworkError } from "./errors.js";
 import { executeScanCommand } from "./scan-command.js";
 import { executeSubmitCommand } from "./submit-command.js";
@@ -12,9 +14,15 @@ import { shouldUsePlainOutput } from "./summary.js";
 import { setDebugEnabled } from "./debug.js";
 
 
+// package.json has no filesystem path at all inside a SEA binary (see
+// src/embedded-assets.ts) — scripts/build-sea.mjs embeds it as the
+// "package.json" asset (version field only matters here, but the whole file
+// is public metadata already shipped in every npm tarball, so embedding it
+// unmodified adds no new disclosure).
 function getToolVersion(): string {
-  const pkgUrl = new URL("../package.json", import.meta.url);
-  const pkg = JSON.parse(readFileSync(pkgUrl, "utf8")) as { version: string };
+  const pkgUrl = fileURLToPath(new URL("../package.json", import.meta.url));
+  const text = readAssetOrFile("package.json", pkgUrl, (p) => readFileSync(p, "utf8"));
+  const pkg = JSON.parse(text) as { version: string };
   return pkg.version;
 }
 

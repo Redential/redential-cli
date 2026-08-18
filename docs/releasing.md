@@ -39,6 +39,43 @@ the rare case someone runs it by hand anyway, not as the intended flow.
    and CLAUDE.md's "Releases: only from GitHub Actions on tags... Release
    workflows NEVER run on `pull_request`").
 
+## The macos-13 retirement and the darwin-x64 cross-target build
+
+`release.yml`'s standalone-binaries job (see
+[`docs/install-binaries.md`](install-binaries.md#how-releases-are-built))
+used to build the Intel mac binary on a dedicated `macos-13` GitHub-hosted
+runner, same as every other platform: one binary, built natively, on that
+platform's own runner. That stopped being viable in practice — a release
+run was observed queued 75+ minutes waiting for a `macos-13` runner while
+every other matrix leg (including the `macos-14` arm64 leg) started within
+seconds, strongly suggesting GitHub's `macos-13` runner pool is retired or
+close to it, not just busy.
+
+The fix removes the `macos-13` leg entirely and instead CROSS-TARGETS the
+Intel binary from the `macos-14` (Apple Silicon) runner:
+`scripts/build-sea.mjs --target darwin-x64` downloads the official
+`darwin-x64` Node binary for the exact Node version the build is running
+under from `nodejs.org`, verifies its sha256 against that same release's
+own `SHASUMS256.txt` (mandatory — refuses and discards the download on any
+mismatch, no exceptions, this is a trust product), and injects the SEA
+blob into that verified binary instead of into the arm64 runner's own
+`node`. This is sound, not a compromise, because the SEA blob (the bundled
+CLI plus embedded `taxonomy.json`/`signatures/*.json`) is
+platform-independent JavaScript and data — `postject` just injects the
+same bytes into a different `node` executable, and macOS's ad-hoc
+`codesign` doesn't care which architecture the binary it's signing targets
+either. Only `darwin-x64` cross-target is implemented and tested; a
+Windows (`.zip`-packaged) foreign target isn't — see
+`scripts/build-sea.mjs`'s own top comment for that boundary.
+
+Both `release.yml` and `ci.yml`'s `binary-smoke` job smoke-test the
+cross-built `darwin-x64` binary on the arm64 runner that built it, via
+Rosetta (`softwareupdate --install-rosetta --agree-to-license` first, in
+case a future runner image ever ships without it — GitHub's own macOS
+runner images document this as how to add it). Direct execution of an x64
+binary on an arm64 mac with Rosetta installed already works transparently,
+without needing an `arch -x86_64` wrapper.
+
 ## Verifying provenance
 
 `--provenance` has `npm publish` attach a
