@@ -5,6 +5,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: strict [semver](https://semver.org/) — bundle schema changes
 always bump at least minor; breaking schema changes bump major.
 
+## [Unreleased]
+
+### Added
+- Docs: README install section now shows `npx`/`yarn dlx`/`pnpm dlx` side by side, plus a new "Don't have Node?" subsection and a matching FAQ entry for `command not found: npx`.
+
 ## [0.13.0] - 2026-08-14
 
 ### Changed

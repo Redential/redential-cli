@@ -110,6 +110,16 @@ trustworthy enough that you'd consider using it — which is why every
 privacy claim in this README maps to an executable test instead of a
 promise.
 
+### I got `command not found: npx` — what do I do?
+`npx` ships with npm, which ships with Node.js — so this means Node isn't
+installed (or isn't on your `PATH`). Install it: `brew install node` on
+macOS, `winget install OpenJS.NodeJS.LTS` on Windows, or an installer from
+[nodejs.org](https://nodejs.org) on Linux/other. git is the only other
+requirement. Standalone binaries that need no Node install at all are on
+the roadmap, but not available yet. Once Node is installed, `npx redential
+scan` (or the `yarn dlx`/`pnpm dlx` equivalents — see the [README](../README.md#how-it-works))
+should work.
+
 ### What about pair-programmed or AI-assisted commits?
 AI-assisted work is never flagged as lesser. The bundle carries honest,
 bounded signals about agent involvement (co-authorship counts, tool

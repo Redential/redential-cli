@@ -34,6 +34,29 @@ leaves your machine.
 npx redential scan
 ```
 
+Getting `command not found: npx`? See ["Don't have Node?"](#dont-have-node) below.
+
+Any of these run the same command:
+
+| Tool | Command |
+|---|---|
+| npx (npm) | `npx redential scan` |
+| Yarn | `yarn dlx redential scan` |
+| pnpm | `pnpm dlx redential scan` |
+
+### Don't have Node?
+
+Redential CLI needs Node.js installed (git is the only other requirement).
+If you don't have it yet:
+
+- **macOS**: `brew install node`
+- **Windows**: `winget install OpenJS.NodeJS.LTS`
+- **Linux/other**: grab an installer from
+  [nodejs.org](https://nodejs.org)
+
+Standalone binaries that need no Node install at all are on the roadmap,
+but not available yet.
+
 No login, no config, no global install. `scan` runs entirely locally and
 makes zero network calls.
 
