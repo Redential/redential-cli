@@ -103,3 +103,165 @@ jobs:
 
       - run: npm publish --provenance --access public
         working-directory: packages/redential
+
+  # Standalone binaries (issue #87, docs/install-binaries.md): a Node SEA
+  # executable built per-OS/arch by scripts/build-sea.mjs. Gated on
+  # `needs: publish` for the same reason `publish-alias` is: never ship a
+  # binary for a tag whose npm publish didn't succeed.
+  #
+  # macos-13 (Intel) entry REMOVED: GitHub's macos-13 runner pool appears
+  # retired in practice — this release job was observed queued 75+ minutes
+  # waiting for a macos-13 runner while every other matrix leg (including
+  # the macos-14 arm64 leg below) started within seconds. Rather than wait
+  # out an apparently-dead runner pool, the mac x64 binary is now built by
+  # CROSS-TARGETING from the macos-14 (Apple Silicon) runner instead:
+  # `scripts/build-sea.mjs --target darwin-x64` downloads and
+  # SHA256-verifies the official darwin-x64 Node binary from nodejs.org,
+  # then injects the SEA blob into THAT binary. This is sound specifically
+  # because the SEA blob (bundled JS + embedded assets) is
+  # platform-independent — postject just injects the same bytes into a
+  # different `node` binary, and codesign's ad-hoc signing doesn't care
+  # which arch it's signing. See scripts/build-sea.mjs's top comment for
+  # the full mechanism and its trust boundary (mandatory sha256
+  # verification against nodejs.org's own SHASUMS256.txt before any use).
+  #
+  # This job only builds + smoke-tests + uploads a workflow artifact per
+  # platform; attaching the assets to the GitHub Release and generating
+  # SHA256SUMS happens once, in `release-binaries` below, after every
+  # platform succeeds — one aggregation point instead of five racing
+  # `gh release upload` calls.
+  binaries:
+    needs: publish
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14 # arm64 (Apple Silicon), native build
+          - os: macos-14 # x64 (Intel), CROSS-TARGET build (see comment above)
+            target: darwin-x64
+          - os: ubuntu-latest # x64
+          - os: ubuntu-24.04-arm # arm64
+          - os: windows-latest # x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - run: npm ci
+
+      - run: npm run build:sea -- ${{ matrix.target && format('--target {0}', matrix.target) }}
+
+      # Computes the exact output filename (see scripts/build-sea.mjs's
+      # platformAssetName) without duplicating that OS/arch mapping in
+      # YAML. For a cross-target leg (matrix.target set), the name comes
+      # from the TARGET, not the runner's own host platform/arch — this
+      # mirrors build-sea.mjs's own target-vs-host distinction. `shell:
+      # bash` so this one step's syntax is identical on every runner,
+      # Windows included (GitHub-hosted Windows runners ship Git Bash) —
+      # everything else in this job uses each runner's own default shell.
+      - name: Determine built binary name
+        shell: bash
+        env:
+          MATRIX_TARGET: ${{ matrix.target }}
+        run: |
+          node -e "
+            const map = { darwin: 'macos', linux: 'linux', win32: 'win' };
+            const archMap = { arm64: 'arm64', x64: 'x64' };
+            const target = process.env.MATRIX_TARGET;
+            const [platform, arch] = target ? target.split('-') : [process.platform, process.arch];
+            const ext = platform === 'win32' ? '.exe' : '';
+            console.log('BINARY_NAME=redential-' + map[platform] + '-' + archMap[arch] + ext);
+          " >> "$GITHUB_ENV"
+
+      # Same checks the local Phase-1 smoke run does (--version, a
+      # non-TTY `--json` scan of a throwaway fixture, schema-valid bundle,
+      # detected_skills proving embedded taxonomy/signatures, the EOF error
+      # path) — see scripts/smoke-sea.mjs's own comments. Never spawns the
+      # binary through `npx`/a `.cmd` shim, on any OS.
+      #
+      # For the darwin-x64 cross-target leg, this runs the x64 binary on an
+      # arm64 macos-14 runner — macOS auto-translates an x64 executable
+      # through Rosetta transparently on direct execution when Rosetta is
+      # installed (verified locally: `arch -x86_64 <binary>` and direct
+      # execution both work identically). If a future macos-14 image ever
+      # ships without Rosetta pre-installed, install it first — GitHub's
+      # own macos runner images document `softwareupdate
+      # --install-rosetta --agree-to-license` as the way to add it.
+      - name: Ensure Rosetta is available (darwin-x64 cross-target leg only)
+        if: matrix.target == 'darwin-x64'
+        run: softwareupdate --install-rosetta --agree-to-license || true
+
+      - run: node scripts/smoke-sea.mjs build/bin/${{ env.BINARY_NAME }}
+        shell: bash
+
+      # Artifact name derives from BINARY_NAME (the TARGET-based filename
+      # computed above), not matrix.os: both mac legs run on os: macos-14
+      # (the native arm64 build and the darwin-x64 cross-target build), so
+      # `redential-binary-${{ matrix.os }}` would collide on the second
+      # upload — upload-artifact v4+ rejects a duplicate name with a 409,
+      # which would kill the whole release. BINARY_NAME is unique per leg
+      # (redential-macos-arm64 vs redential-macos-x64) because it already
+      # encodes platform+arch, matching how release-binaries flattens every
+      # artifact into one release-assets/ directory by filename anyway.
+      - uses: actions/upload-artifact@v7
+        with:
+          name: redential-binary-${{ env.BINARY_NAME }}
+          path: build/bin/${{ env.BINARY_NAME }}
+          if-no-files-found: error
+
+  # Aggregates every platform's binary (downloaded from the workflow
+  # artifacts `binaries` just uploaded), generates one SHA256SUMS covering
+  # all of them, attaches everything to the tag's GitHub Release, and
+  # attests build provenance for the binaries the same way `npm publish
+  # --provenance` already does for the npm tarball.
+  release-binaries:
+    needs: binaries
+    runs-on: ubuntu-latest
+    permissions:
+      # contents: write is scoped to THIS job only (the top-level
+      # `permissions:` block above stays `contents: read`) — it's needed for
+      # `gh release upload`, which writes assets onto an existing release of
+      # this same repo; nothing else in this workflow needs write access to
+      # contents.
+      contents: write
+      # Same id-token: write rationale as the `publish` job's own comment:
+      # this is what lets `attest-build-provenance` mint a Sigstore-signed
+      # attestation, this time for the binaries instead of the npm tarball.
+      # attestations: write is what lets it actually record that attestation
+      # against this repo.
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: artifacts
+
+      - name: Flatten artifacts into one release-assets directory
+        run: |
+          mkdir -p release-assets
+          find artifacts -type f -exec cp {} release-assets/ \;
+          ls -la release-assets
+
+      - name: Generate SHA256SUMS
+        run: |
+          cd release-assets
+          sha256sum * > SHA256SUMS
+          cat SHA256SUMS
+
+      - uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: "release-assets/*"
+
+      - name: Attach binaries + SHA256SUMS to the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # This job never checks out the repo (nothing here needs the
+          # source tree), so `gh` has no local git remote to infer the
+          # target repository from and does NOT fall back to
+          # `GITHUB_REPOSITORY` on its own — GH_REPO makes that explicit.
+          GH_REPO: ${{ github.repository }}
+        run: gh release upload "${{ github.ref_name }}" release-assets/* --clobber
