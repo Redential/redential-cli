@@ -5,6 +5,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: strict [semver](https://semver.org/) — bundle schema changes
 always bump at least minor; breaking schema changes bump major.
 
+## [Unreleased]
+
+### Fixed
+- Tier 1 import extraction no longer credits commented-out imports inside
+  Go import blocks (a genuine false-attribution vector), and drops
+  relative/local specifiers in JS (`./`, `../`, `/`) and leading-dot
+  Python modules that produced empty or `.` candidates (#85, by
+  @eeshsaxena).
+
 ## [0.14.2] - 2026-08-18
 
 ### Fixed
