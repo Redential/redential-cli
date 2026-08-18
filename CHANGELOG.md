@@ -5,6 +5,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: strict [semver](https://semver.org/) — bundle schema changes
 always bump at least minor; breaking schema changes bump major.
 
+## [Unreleased]
+
+### Fixed
+- Release pipeline: `release.yml`'s `binaries` job dropped its `macos-13` (Intel) matrix leg after a release run queued 75+ minutes waiting for a `macos-13` runner while every other leg started in seconds — GitHub's `macos-13` runner pool appears retired. The mac x64 binary is now built by CROSS-TARGETING from the `macos-14` (Apple Silicon) runner instead: `scripts/build-sea.mjs` gained a `--target <platform>-<arch>` flag (default: host, unchanged) that, for a foreign target, downloads the official Node binary for the exact running Node version from nodejs.org, verifies it against that release's own `SHASUMS256.txt` (sha256, mandatory, refuses and deletes the cached file on any mismatch), extracts just the `node` binary, and injects the SEA blob into it — sound because the blob (bundled JS + embedded assets) is platform-independent. Downloaded tarballs are cached under `build/cache/` (gitignored). Only `darwin-x64` cross-target is implemented/tested (a Windows `.zip` foreign target throws a descriptive not-implemented error rather than pretending to work). `ci.yml`'s `binary-smoke` job gained a step that cross-builds and smoke-tests the `darwin-x64` binary on its `macos-latest` (arm64) leg via Rosetta (`softwareupdate --install-rosetta` if needed), giving the cross-target path its own CI coverage instead of only being exercised at release time. The extracted `node` binary is now always re-extracted fresh from the just-verified tarball (never reused from a prior run without re-verification), and both `macos-14` legs in `release.yml` (native arm64 and cross-target x64) upload their artifact under a name derived from the built binary itself, avoiding a collision now that both run on the same `os:` value.
+
 ## [0.14.1] - 2026-08-18
 
 Note: `0.14.0` exists on npm as the main package only — its release run

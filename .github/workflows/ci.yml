@@ -157,3 +157,32 @@ jobs:
       # `execFileSync(binPath, ...)`.
       - run: node scripts/smoke-sea.mjs build/bin/${{ env.BINARY_NAME }}
         shell: bash
+
+      # Cross-target coverage (release.yml's macos-13 -> macos-14
+      # cross-target fix): builds the darwin-x64 binary on this same
+      # macos-latest (Apple Silicon) runner and smoke-tests it too, so a
+      # packaging regression on the cross-target path is caught here
+      # instead of only at release time. We CANNOT run an x64 macOS binary
+      # natively on this arm64 runner — macOS translates x64 executables
+      # through Rosetta transparently (both `arch -x86_64 <binary>` and a
+      # direct `execFileSync(binary, ...)`, which is what smoke-sea.mjs
+      # does, work identically — verified locally on an arm64 dev machine).
+      # GitHub's macos-14 runner images document `softwareupdate
+      # --install-rosetta --agree-to-license` as how to add Rosetta if a
+      # future image ever ships without it; the `|| true` below means a
+      # missing/failed Rosetta install doesn't hard-fail this step, it just
+      # lets the next step's execution attempt surface the real error.
+      # Honest note: if this ever proves flaky in CI (Rosetta unavailable
+      # on some runner generation), narrow this to a `--version`-only
+      # check rather than pretending full-scan coverage when it isn't
+      # reliable.
+      - name: Ensure Rosetta is available (darwin-x64 cross-target)
+        if: runner.os == 'macOS'
+        run: softwareupdate --install-rosetta --agree-to-license || true
+
+      - name: Build + smoke-test the cross-target darwin-x64 binary
+        if: runner.os == 'macOS'
+        run: |
+          node scripts/build-sea.mjs --target darwin-x64
+          node scripts/smoke-sea.mjs build/bin/redential-macos-x64
+        shell: bash

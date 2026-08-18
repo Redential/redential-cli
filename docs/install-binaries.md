@@ -116,8 +116,7 @@ the same idea applied to the npm package.
 ## How releases are built
 
 A `binaries` job in `.github/workflows/release.yml` builds one binary per
-platform (each on that platform's own GitHub-hosted runner — SEA embeds the
-*host* Node binary, there's no cross-compilation), smoke-tests it (see
+platform, smoke-tests it (see
 [`scripts/smoke-sea.mjs`](../scripts/smoke-sea.mjs) — `--version`, a
 non-interactive `--json` scan of a throwaway git fixture asserting a
 schema-valid bundle, and the input-closed error path), then a
@@ -126,6 +125,28 @@ schema-valid bundle, and the input-closed error path), then a
 GitHub Release. It only ever runs after `publish` (the npm release)
 succeeds, and — like every job in `release.yml` — only ever triggers on a
 pushed `v*` tag, never on `pull_request`.
+
+Four of the five binaries are built natively: each runs on that
+platform's own GitHub-hosted runner, and SEA embeds the *host* Node
+binary directly — no cross-compilation involved. `redential-macos-x64`
+(Intel) is the exception, and is CROSS-TARGET built instead, on the same
+`macos-14` (Apple Silicon) runner that builds `redential-macos-arm64`:
+GitHub's `macos-13` runner pool became unusably slow to schedule (see
+[`docs/releasing.md`](releasing.md#the-macos-13-retirement-and-the-darwin-x64-cross-target-build)),
+so rather than wait on a dead runner pool, `scripts/build-sea.mjs --target
+darwin-x64` downloads the official `darwin-x64` Node binary for the exact
+running Node version from nodejs.org, verifies its sha256 against that
+same release's own `SHASUMS256.txt` (refusing and discarding the download
+on any mismatch — this repo does not inject an unverified binary into
+anything it ships), and injects the SEA blob into that verified binary
+instead of into the host's own `node`. This is sound specifically because
+the SEA blob (the bundled CLI plus embedded `taxonomy.json`/`signatures/`)
+is platform-independent JavaScript and data — only the underlying `node`
+executable it gets injected into is platform-specific, and that's exactly
+the piece being downloaded and verified. The resulting binary is smoke-
+tested the same way as every other platform, just run through Rosetta on
+the arm64 runner building it (macOS translates an x64 executable
+transparently when Rosetta is installed).
 
 A separate `binary-smoke` job in `.github/workflows/ci.yml` builds and
 smoke-tests the binary on every push/PR that touches packaging-relevant
