@@ -5,7 +5,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: strict [semver](https://semver.org/) — bundle schema changes
 always bump at least minor; breaking schema changes bump major.
 
-## [Unreleased]
+## [0.15.0] - 2026-08-18
 
 ### Added
 - Honor `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY` on login and submit via undici's `EnvHttpProxyAgent` (#83).
