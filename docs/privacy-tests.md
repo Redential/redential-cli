@@ -99,10 +99,12 @@ is the real, network-backed check described above — an anonymous HTTP
 
 `login`/`submit` are the first commands with anything worth leaking through
 an error message — a bearer token, or the full bundle. `src/http-client.ts`
-builds every `NetworkError` from the request's host and HTTP status only,
-never from response headers or body.
+builds every `NetworkError` from the request's host, HTTP status, and a
+closed failure-class phrase from `error.code` — never from response
+headers, body, or `error.message`.
 
 | Test | Proves |
 |---|---|
 | `test/privacy/submit-guardrail.test.ts` → "a failed upload's error message names the host and status, never the token or bundle" | A `500` from the submit endpoint produces a `NetworkError` whose message contains the status code but neither the stored access token nor any bundle field (`schema_version` as a proxy for "the whole bundle got interpolated in"). |
+| `test/http-client.test.ts` → reach-error cases | Connect failures interpolate only the host plus a closed class phrase. A planted token in `error.message` or a `407` body never appears in `NetworkError.message`. |
 | `test/login.test.ts` (all cases, implicit) | `login`'s errors (`AuthError` for denied/expired/timed-out) are static, fixed strings — never built from the device code or any server response field, so there's no path for the code to end up in an error either. |

@@ -7,6 +7,11 @@ always bump at least minor; breaking schema changes bump major.
 
 ## [Unreleased]
 
+### Added
+- Honor `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY` on login and submit via undici's `EnvHttpProxyAgent` (#83).
+- Network errors name a closed failure class (`connection refused`, TLS / corporate CA, `proxy required`) without echoing `error.message`, headers, or body (#83).
+- Document corporate proxy / CA setup and the submit visibility-probe captive-proxy edge (`docs/corporate-networks.md`, #83).
+
 ### Fixed
 - Tier 1 import extraction no longer credits commented-out imports inside
   Go import blocks (a genuine false-attribution vector), and drops
