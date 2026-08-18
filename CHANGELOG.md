@@ -5,7 +5,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: strict [semver](https://semver.org/) — bundle schema changes
 always bump at least minor; breaking schema changes bump major.
 
-## [0.14.0] - 2026-08-18
+## [0.14.1] - 2026-08-18
+
+Note: `0.14.0` exists on npm as the main package only — its release run
+was cancelled mid-flight before the aliases and binaries were published,
+and re-running would have conflicted with the already-published version.
+`0.14.1` is byte-identical code, released through the full pipeline.
 
 ### Added
 - Docs: README install section now shows `npx`/`yarn dlx`/`pnpm dlx` side by side, plus a new "Don't have Node?" subsection and a matching FAQ entry for `command not found: npx`.
