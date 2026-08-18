@@ -186,3 +186,75 @@ jobs:
           node scripts/build-sea.mjs --target darwin-x64
           node scripts/smoke-sea.mjs build/bin/redential-macos-x64
         shell: bash
+
+  # Exercises the exact copy-paste commands a user runs to install redential
+  # (docs/install-binaries.md's one-liners), against the LATEST published
+  # release's assets — not the commit under test, which is why this is
+  # dispatch-only: `binary-smoke` above already proves this commit's build
+  # works, but only a real GitHub Release has assets for install.sh/install.ps1
+  # to download in the first place. A maintainer runs this by hand after
+  # cutting a release (or on demand) to confirm the installers themselves,
+  # the exact strings in the README/docs, and the resulting binary all still
+  # agree with each other.
+  installer-e2e:
+    if: github.event_name == 'workflow_dispatch'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Install redential (literal user one-liner)
+        if: runner.os != 'Windows'
+        run: curl -fsSL https://raw.githubusercontent.com/Redential/redential-cli/main/scripts/install.sh | sh
+
+      - name: Add ~/.local/bin to PATH
+        if: runner.os != 'Windows'
+        run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: redential --version
+        if: runner.os != 'Windows'
+        run: redential --version
+
+      - name: Full scan of a throwaway git fixture
+        if: runner.os != 'Windows'
+        run: |
+          fixture_dir="$(mktemp -d)"
+          cd "$fixture_dir"
+          git init -q
+          git config user.email "dev@example.com"
+          git config user.name "Dev"
+          printf '{"name":"fixture","dependencies":{"stripe":"^14.0.0"}}' > package.json
+          git add package.json
+          git commit -q -m "add stripe dep"
+          redential scan --repo . --author t@example.com --yes --json </dev/null | grep -q "schema_version"
+
+      - name: Install redential (literal user one-liner, PowerShell)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: iwr -useb https://raw.githubusercontent.com/Redential/redential-cli/main/scripts/install.ps1 | iex
+
+      - name: redential --version
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          & "$env:LOCALAPPDATA\redential\bin\redential.exe" --version
+
+      - name: Full scan of a throwaway git fixture
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $fixtureDir = Join-Path $env:TEMP ("redential-installer-e2e-" + [System.Guid]::NewGuid().ToString())
+          New-Item -ItemType Directory -Path $fixtureDir | Out-Null
+          Set-Location $fixtureDir
+          git init -q
+          git config user.email "dev@example.com"
+          git config user.name "Dev"
+          Set-Content -Path package.json -Value '{"name":"fixture","dependencies":{"stripe":"^14.0.0"}}' -NoNewline
+          git add package.json
+          git commit -q -m "add stripe dep"
+          $bundle = & "$env:LOCALAPPDATA\redential\bin\redential.exe" scan --repo . --author t@example.com --yes --json
+          if ($bundle -notmatch "schema_version") {
+            Write-Error "scan output missing schema_version"
+            exit 1
+          }
