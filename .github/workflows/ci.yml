@@ -222,7 +222,7 @@ jobs:
           fixture_dir="$(mktemp -d)"
           cd "$fixture_dir"
           git init -q
-          git config user.email "dev@example.com"
+          git config user.email "t@example.com"
           git config user.name "Dev"
           printf '{"name":"fixture","dependencies":{"stripe":"^14.0.0"}}' > package.json
           git add package.json
@@ -248,7 +248,7 @@ jobs:
           New-Item -ItemType Directory -Path $fixtureDir | Out-Null
           Set-Location $fixtureDir
           git init -q
-          git config user.email "dev@example.com"
+          git config user.email "t@example.com"
           git config user.name "Dev"
           Set-Content -Path package.json -Value '{"name":"fixture","dependencies":{"stripe":"^14.0.0"}}' -NoNewline
           git add package.json
