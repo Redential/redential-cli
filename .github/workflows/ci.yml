@@ -254,7 +254,9 @@ jobs:
           git add package.json
           git commit -q -m "add stripe dep"
           $bundle = & "$env:LOCALAPPDATA\redential\bin\redential.exe" scan --repo . --author t@example.com --yes --json
-          if ($bundle -notmatch "schema_version") {
+          # -notmatch on an ARRAY filters elements instead of returning a boolean
+          # (classic pwsh gotcha) — join to a single string before testing.
+          if (($bundle -join "") -notmatch "schema_version") {
             Write-Error "scan output missing schema_version"
             exit 1
           }
