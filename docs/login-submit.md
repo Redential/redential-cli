@@ -334,6 +334,9 @@ this gate is its real, definitive answer:
   check must never be flakier than `scan`'s own warn-only heuristic: on an
   inconclusive result, `submit` falls back to printing
   `publicHostWarning`'s own (longer) message and proceeds.
+- A captive corporate proxy that answers `200` for every host will make
+  this probe look public and block submit. That is a false block, not a
+  leak — see [corporate-networks.md](corporate-networks.md).
 
 ## Identity corroboration (submit-only)
 
@@ -458,9 +461,14 @@ the network, so the boundary is worth stating precisely:
 
 Every command-level error is one of `ScanError` / `AuthError` /
 `SubmitError` / `NetworkError` (`src/errors.ts`). `NetworkError` messages
-are built only from the request's host and HTTP status — never from
-response headers or body — so a failed request can never echo a bearer
-token or bundle content into a printed error. EOF on any interactive
+are built from the request's host, HTTP status, and a closed failure-class
+phrase taken from `error.code` (or HTTP 407) — never from response
+headers, body, or `error.message` — so a failed request can never echo a
+bearer token or bundle content into a printed error. Connect failures
+that used to collapse into `Could not reach <host>.` now name
+`connection refused`, `could not verify TLS certificate` (see
+[corporate-networks.md](corporate-networks.md)), or `proxy required`
+when the code is one of those classes. EOF on any interactive
 prompt (attestation, author selection, or `submit`'s upload confirmation)
 aborts with a non-zero exit code rather than hanging or silently
 proceeding, consistent with `scan`'s existing prompts.

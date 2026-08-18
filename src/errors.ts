@@ -14,6 +14,7 @@ export class SubmitError extends Error {}
 
 /** A request to SITE_URL (or a remote host, for the visibility check)
  * couldn't complete or came back with a non-2xx status. Message is built
- * from the request's host and status only — never headers or body — so it
+ * from the request's host, HTTP status, and a closed failure-class phrase
+ * from `error.code` — never headers, body, or `error.message` — so it
  * can never echo a bearer token or bundle content. */
 export class NetworkError extends Error {}

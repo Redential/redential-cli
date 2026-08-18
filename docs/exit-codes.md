@@ -27,7 +27,7 @@ below (it's whatever the underlying error happened to say), but the shape
 | `ScanError` | Invalid repo or git state, missing `--author` / `--yes` in non-interactive mode, validation failures (private label, `--since`, secrets in bundle), unsupported `explain` skill, malformed internal signature files. |
 | `AuthError` | `submit` without a stored session, wrong site URL on stored credentials, login denied/expired/timed out. |
 | `SubmitError` | Upload refused after the remote-visibility gate (confirmed-public repo). |
-| `NetworkError` | Login or submit HTTP failures (unreachable host, non-JSON response, unexpected status) after retries where applicable. |
+| `NetworkError` | Login or submit HTTP failures (unreachable host, TLS/proxy class, non-JSON response, unexpected status) after retries where applicable. See [corporate-networks.md](corporate-networks.md) for proxy and corporate-CA setup. |
 
 Messages are sanitized user-facing strings only — never tokens or bundle
 payloads.

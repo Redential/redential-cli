@@ -276,6 +276,20 @@ describe("zero network calls during scan", () => {
     }
   });
 
+  // Slice 1 of #83: the proxy agent is a network primitive. It must live in
+  // http-client.ts with fetch, never in login/submit/scan.
+  it("imports undici only from http-client.ts", () => {
+    const srcUrl = new URL("../../src/", import.meta.url);
+    const files = listSrcTsFiles(srcUrl).filter(
+      (f) => f !== "http-client.ts" && !f.endsWith(".d.ts")
+    );
+    const undiciPattern = /['"]undici['"]/;
+    for (const file of files) {
+      const contents = readFileSync(new URL(file, srcUrl), "utf8");
+      expect(contents, `${file} should not import undici`).not.toMatch(undiciPattern);
+    }
+  });
+
   // version-check.ts's checkForUpdate (the post-success "a newer version
   // exists" notice — see docs/login-submit.md's "Version check" section)
   // deliberately never references fetch/http/https directly: it goes
