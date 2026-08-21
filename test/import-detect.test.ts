@@ -130,6 +130,22 @@ describe("extractImportedPackages — Go", () => {
     const diff = 'import (\n\t"fmt"\n\t// "github.com/spf13/cobra"\n\t"github.com/gin-gonic/gin"\n)';
     expect(extractImportedPackages(diff, "main.go")).toEqual(["fmt", "github.com/gin-gonic/gin"]);
   });
+
+  it("keeps a kept path but ignores a quoted path in its trailing comment", () => {
+    const diff = 'import (\n\t"fmt" // "github.com/spf13/cobra"\n)';
+    expect(extractImportedPackages(diff, "main.go")).toEqual(["fmt"]);
+  });
+
+  it("drops a trailing-comment path while keeping the other real imports", () => {
+    const diff =
+      'import (\n\t"fmt"\n\t"github.com/gin-gonic/gin" // "github.com/spf13/cobra"\n)';
+    expect(extractImportedPackages(diff, "main.go")).toEqual(["fmt", "github.com/gin-gonic/gin"]);
+  });
+
+  it("does not treat // inside a quoted path as a comment", () => {
+    const diff = 'import (\n\t"github.com/foo//bar"\n)';
+    expect(extractImportedPackages(diff, "main.go")).toEqual(["github.com/foo//bar"]);
+  });
 });
 
 describe("extractImportedPackages — Ruby", () => {
