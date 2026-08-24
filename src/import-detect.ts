@@ -280,6 +280,21 @@ function extractPython(text: string): string[] {
   return found;
 }
 
+// Strip a trailing `//` line comment from a kept Go import-block line before
+// the path regex runs. A line like `"fmt" // "github.com/spf13/cobra"` is not
+// a whole-line comment (so isCommentLine keeps it), yet the path regex would
+// otherwise match the quoted path sitting inside the comment. Only cut at a
+// `//` that is outside a string literal — a `//` could appear inside a quoted
+// path — reusing the same approximate quote tracking as isInsideStringLiteral.
+function stripGoLineComment(line: string): string {
+  for (let i = 0; i + 1 < line.length; i++) {
+    if (line[i] === "/" && line[i + 1] === "/" && !isInsideStringLiteral(line, i)) {
+      return line.slice(0, i);
+    }
+  }
+  return line;
+}
+
 function extractGo(text: string): string[] {
   const found: string[] = [];
   const normalize = (p: string) => p.replace(/\/v\d+$/, "");
@@ -297,9 +312,12 @@ function extractGo(text: string): string[] {
     // (`// "github.com/foo/bar"`) is not a real dependency. The single-line
     // form above already rejects these via isRealStatement; the block body
     // needs the same check per line, or a commented-out path is attributed.
+    // A kept line can also carry a trailing comment whose text holds a quoted
+    // path (`"fmt" // "github.com/spf13/cobra"`); strip that before matching.
     for (const line of m[1].split("\n")) {
       if (isCommentLine(line)) continue;
-      for (const p of line.matchAll(pathRe)) found.push(normalize(p[1]));
+      const code = stripGoLineComment(line);
+      for (const p of code.matchAll(pathRe)) found.push(normalize(p[1]));
     }
   }
   return found;
