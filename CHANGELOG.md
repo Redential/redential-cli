@@ -5,6 +5,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: strict [semver](https://semver.org/) — bundle schema changes
 always bump at least minor; breaking schema changes bump major.
 
+## [Unreleased]
+
+### Fixed
+- Tier 1 Go import extraction no longer credits a package quoted inside a
+  trailing `//` comment on a kept import-block line (`"fmt" //
+  "github.com/spf13/cobra"`). The line is cut at the first `//` outside a
+  string literal, so a `//` inside a quoted import path is preserved
+  (#89, closes #88, by @eeshsaxena).
+
 ## [0.15.0] - 2026-08-18
 
 ### Added
