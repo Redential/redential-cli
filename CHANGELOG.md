@@ -5,6 +5,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: strict [semver](https://semver.org/) — bundle schema changes
 always bump at least minor; breaking schema changes bump major.
 
+## [Unreleased]
+
+### Fixed
+- Tier 1 import extraction now credits a single-line Go dot import
+  (`import . "path"`). The block form and the blank/aliased single-line forms
+  already handled it, so dropping only this form was a false negative for
+  Ginkgo/Gomega-style test suites (#90, by @eeshsaxena).
+
 ## [0.15.1] - 2026-08-24
 
 ### Fixed
