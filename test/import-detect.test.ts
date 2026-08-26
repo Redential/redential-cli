@@ -146,6 +146,21 @@ describe("extractImportedPackages — Go", () => {
     const diff = 'import (\n\t"github.com/foo//bar"\n)';
     expect(extractImportedPackages(diff, "main.go")).toEqual(["github.com/foo//bar"]);
   });
+
+  it("extracts a single-line blank import", () => {
+    expect(extractImportedPackages('import _ "github.com/lib/pq"', "main.go")).toEqual([
+      "github.com/lib/pq",
+    ]);
+  });
+
+  it("extracts a single-line dot import, matching the block form", () => {
+    // `import . "path"` merges the package's exported names into the file's
+    // scope; it is a real dependency (Ginkgo/Gomega test suites use it) and
+    // the block form already captures it, so the single-line form must too.
+    expect(extractImportedPackages('import . "github.com/onsi/ginkgo/v2"', "ginkgo_test.go")).toEqual([
+      "github.com/onsi/ginkgo",
+    ]);
+  });
 });
 
 describe("extractImportedPackages — Ruby", () => {
