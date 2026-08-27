@@ -298,8 +298,13 @@ function stripGoLineComment(line: string): string {
 function extractGo(text: string): string[] {
   const found: string[] = [];
   const normalize = (p: string) => p.replace(/\/v\d+$/, "");
-  // Single-line: import "path" or import alias "path"
-  const singleRe = /^[ \t]*import\s+(?:\w+\s+)?["']([^"'\n]+)["']/gm;
+  // Single-line: import "path", import alias "path", import _ "path"
+  // (blank), or import . "path" (dot import). Go's ImportSpec allows an
+  // optional local name that is either "." or a PackageName before the path;
+  // `_` is already covered by \w, but "." must be allowed explicitly or a
+  // single-line dot import (common in Ginkgo/Gomega test suites) is dropped
+  // even though the block form below already captures it.
+  const singleRe = /^[ \t]*import\s+(?:(?:\.|\w+)\s+)?["']([^"'\n]+)["']/gm;
   for (const m of text.matchAll(singleRe)) {
     if (isRealStatement(text, m.index!)) found.push(normalize(m[1]));
   }
