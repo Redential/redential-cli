@@ -7,6 +7,9 @@ always bump at least minor; breaking schema changes bump major.
 
 ## [Unreleased]
 
+### Added
+- Add `payments/square` to the closed skill taxonomy (#14).
+
 ### Fixed
 - Tier 1 import extraction now credits a single-line Go dot import
   (`import . "path"`). The block form and the blank/aliased single-line forms
