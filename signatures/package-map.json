@@ -64,6 +64,9 @@
     "braintree-web-drop-in": "payments/braintree",
     "razorpay": "payments/razorpay",
     "react-native-razorpay": "payments/razorpay",
+    "@adyen/api-library": "payments/adyen",
+    "@adyen/adyen-web": "payments/adyen",
+    "@adyen/react-native": "payments/adyen",
 
     "openai": "ai/openai-api",
     "@azure/openai": "ai/openai-api",

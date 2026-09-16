@@ -9,6 +9,7 @@ always bump at least minor; breaking schema changes bump major.
 
 ### Added
 - Add `payments/square` to the closed skill taxonomy (#14).
+- Detect Adyen via the `@adyen/api-library`, `@adyen/adyen-web`, and `@adyen/react-native` imports, mapped to `payments/adyen` (#14).
 
 ### Fixed
 - Tier 1 import extraction now credits a single-line Go dot import
