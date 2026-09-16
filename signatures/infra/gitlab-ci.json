@@ -1,0 +1,17 @@
+{
+  "slug": "infra/gitlab-ci",
+  "importPatterns": [],
+  "apiPatterns": [],
+  "configFilePatterns": [
+    "(^|/)\\.gitlab-ci\\.yml$"
+  ],
+  "fixtures": {
+    "positive": [
+      { "path": ".gitlab-ci.yml", "diff": "stages:\n  - test\n\ntest:\n  stage: test\n  image: node:22\n  script:\n    - npm ci\n    - npm test" }
+    ],
+    "negative": [
+      { "path": "README.md", "diff": "GitLab CI reads its pipeline definition from .gitlab-ci.yml at the repository root." },
+      { "path": ".github/workflows/gitlab-mirror.yml", "diff": "name: Mirror to GitLab\non: [push]\njobs:\n  mirror:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4" }
+    ]
+  }
+}

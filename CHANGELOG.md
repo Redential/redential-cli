@@ -8,6 +8,7 @@ always bump at least minor; breaking schema changes bump major.
 ## [Unreleased]
 
 ### Added
+- Add Tier 2 GitLab CI detection (`infra/gitlab-ci`) for `.gitlab-ci.yml`, with positive and near-miss fixtures (#24).
 - Add `payments/square` to the closed skill taxonomy (#14).
 
 ### Fixed
