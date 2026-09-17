@@ -104,6 +104,54 @@ function isInsideStringLiteral(line: string, matchStart: number): boolean {
   return count > 0;
 }
 
+// Strip a trailing `//` line comment from a line before a regex runs over it.
+// A line like `"fmt" // "github.com/spf13/cobra"` is not a whole-line comment
+// (so isCommentLine keeps it), yet a regex would otherwise match the quoted
+// text sitting inside the comment. Only cut at a `//` that is outside a
+// string literal — a `//` could appear inside a quoted path or URL. Uses
+// isInsideStringLiteral's quote rules in a single pass that skips escaped
+// characters, rather than calling it once per `//`: that would misread the
+// escaped slash in `/^https?:\/\//` as a comment start (cutting off a
+// `require("stripe")` later on the line), and would re-count quotes from the
+// line start for every `//`, which is quadratic on long minified lines.
+function stripTrailingLineComment(line: string): string {
+  let quoteChar: string | null = null;
+  for (let i = 0; i + 1 < line.length; i++) {
+    const c = line[i];
+    if (c === "\\") {
+      i++; // skip escaped char
+      continue;
+    }
+    if (c === "'" || c === '"' || c === "`") {
+      if (quoteChar === null) quoteChar = c;
+      else if (c === quoteChar) quoteChar = null;
+    } else if (quoteChar === null && c === "/" && line[i + 1] === "/") {
+      return line.slice(0, i);
+    }
+  }
+  return line;
+}
+
+// Blanks comment text with spaces: every whole line isCommentLine flags (so
+// also a ` * ...` doc-comment line whose `/**` opener is unchanged context),
+// and the trailing `//` comment on any other line. isRealStatement only
+// checks the line where a match STARTS, which is not enough for a regex that
+// can reach text past it: the JS/TS import/export-from regex bridges lines
+// (for multi-line import lists), so a line-leading `export const x = 1;` with
+// no `from` of its own would run on to `// adapted from "zod"` further down;
+// the Go import-block regex ends at the first `)`, even one inside
+// `// TODO(jdoe): ...`; and the unanchored require()/import() and
+// Package.swift `.package(url:` regexes match mid-line, including inside
+// `x(); // was require("fs-extra")`. Same shape as stripNonCodeRegions: never
+// removes a line or shifts a column, so offsets found in the result still
+// point at the same place in the original text.
+function blankLineComments(text: string): string {
+  return text
+    .split("\n")
+    .map((line) => (isCommentLine(line) ? "" : stripTrailingLineComment(line)).padEnd(line.length, " "))
+    .join("\n");
+}
+
 function lineAndOffsetAt(text: string, index: number): { line: string; offsetInLine: number } {
   const lineStart = text.lastIndexOf("\n", index - 1) + 1;
   let lineEnd = text.indexOf("\n", index);
@@ -136,8 +184,9 @@ function isLocalModuleSpecifier(raw: string): boolean {
   return raw.startsWith(".") || raw.startsWith("/");
 }
 
-function extractJsImports(text: string): string[] {
+function extractJsImports(source: string): string[] {
   const found: string[] = [];
+  const text = blankLineComments(source);
   // import ... from "pkg" / export ... from "pkg" (also covers `export * from`,
   // `export { x } from`, and multi-line named-import lists via [\s\S]*?).
   // `d` (hasIndices) exposes the captured package name's own start offset —
@@ -280,23 +329,9 @@ function extractPython(text: string): string[] {
   return found;
 }
 
-// Strip a trailing `//` line comment from a kept Go import-block line before
-// the path regex runs. A line like `"fmt" // "github.com/spf13/cobra"` is not
-// a whole-line comment (so isCommentLine keeps it), yet the path regex would
-// otherwise match the quoted path sitting inside the comment. Only cut at a
-// `//` that is outside a string literal — a `//` could appear inside a quoted
-// path — reusing the same approximate quote tracking as isInsideStringLiteral.
-function stripGoLineComment(line: string): string {
-  for (let i = 0; i + 1 < line.length; i++) {
-    if (line[i] === "/" && line[i + 1] === "/" && !isInsideStringLiteral(line, i)) {
-      return line.slice(0, i);
-    }
-  }
-  return line;
-}
-
-function extractGo(text: string): string[] {
+function extractGo(source: string): string[] {
   const found: string[] = [];
+  const text = blankLineComments(source);
   const normalize = (p: string) => p.replace(/\/v\d+$/, "");
   // Single-line: import "path", import alias "path", import _ "path"
   // (blank), or import . "path" (dot import). Go's ImportSpec allows an
@@ -309,21 +344,16 @@ function extractGo(text: string): string[] {
     if (isRealStatement(text, m.index!)) found.push(normalize(m[1]));
   }
   // Block: import (\n  "path1"\n  alias "path2"\n)
+  // Relies on the comment blanking above twice over: a commented-out path
+  // (`// "github.com/foo/bar"`) or a quoted path in a trailing comment
+  // (`"fmt" // "github.com/spf13/cobra"`) is not a real dependency, and a `)`
+  // inside a comment (`// TODO(jdoe): ...`) must not end this lazy match
+  // early and silently drop every import listed after it.
   const blockRe = /^[ \t]*import\s*\(([\s\S]*?)\)/gm;
   for (const m of text.matchAll(blockRe)) {
     if (!isRealStatement(text, m.index!)) continue;
     const pathRe = /["']([^"'\n]+)["']/g;
-    // Skip `//`-commented lines inside the block — a commented-out import
-    // (`// "github.com/foo/bar"`) is not a real dependency. The single-line
-    // form above already rejects these via isRealStatement; the block body
-    // needs the same check per line, or a commented-out path is attributed.
-    // A kept line can also carry a trailing comment whose text holds a quoted
-    // path (`"fmt" // "github.com/spf13/cobra"`); strip that before matching.
-    for (const line of m[1].split("\n")) {
-      if (isCommentLine(line)) continue;
-      const code = stripGoLineComment(line);
-      for (const p of code.matchAll(pathRe)) found.push(normalize(p[1]));
-    }
+    for (const p of m[1].matchAll(pathRe)) found.push(normalize(p[1]));
   }
   return found;
 }
@@ -574,8 +604,9 @@ function packageNameFromSpmUrl(url: string): string | null {
   return last.toLowerCase();
 }
 
-function extractPackageSwiftDependencies(text: string): string[] {
+function extractPackageSwiftDependencies(source: string): string[] {
   const found: string[] = [];
+  const text = blankLineComments(source);
   // .package(url: "...") or .package(name: "...", url: "...") — `name:`
   // before `url:` is the older (pre-SwiftPM-5.4) explicit-name form.
   const packageRe = /\.package\(\s*(?:name:\s*["'][^"']+["']\s*,\s*)?url:\s*["']([^"']+)["']/g;

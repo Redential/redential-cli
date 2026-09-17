@@ -15,6 +15,18 @@ always bump at least minor; breaking schema changes bump major.
   (`import . "path"`). The block form and the blank/aliased single-line forms
   already handled it, so dropping only this form was a false negative for
   Ginkgo/Gomega-style test suites (#90, by @eeshsaxena).
+- Tier 1 import extraction no longer lets `//` comments (or ` * ...`
+  doc-comment lines) add or hide imports in JS/TS, Go, and `Package.swift`.
+  In JS/TS, an `export const`, `export default`, or side-effect `import` with
+  no `from` of its own ran on into a later `// adapted from "zod"` comment
+  and credited `zod`, and a trailing comment inside a multi-line import list
+  hid the list's real source. `require()`/`import()` and `.package(url:`
+  matched inside trailing `//` comments. In Go, a `)` in a comment inside an
+  import block (`// TODO(jdoe): ...`) ended the block early and dropped every
+  import after it. Whole comment lines and trailing `//` comments (cut only
+  outside a string literal) are now blanked before matching, which also
+  detects a `require(`, `from`, or `.package(` whose package string follows a
+  comment line, previously missed.
 
 ## [0.15.1] - 2026-08-24
 
