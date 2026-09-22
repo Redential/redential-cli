@@ -61,6 +61,48 @@ describe("extractImportedPackages — JS/TS", () => {
     expect(extractImportedPackages('// see https://npmjs.com/package/stripe for docs', "a.ts")).toEqual([]);
   });
 
+  it("does not credit a // comment reached from an earlier import/export that has no `from`", () => {
+    // The import/export-from regex spans lines (for multi-line import lists),
+    // so a statement without its own `from` must not run on into a comment.
+    expect(extractImportedPackages('export const answer = 42;\n// adapted from "zod"\n', "a.ts")).toEqual([]);
+    expect(
+      extractImportedPackages(
+        "export default defineConfig({\n  // options copied from 'vite-plugin-pwa' docs\n  plugins: [],\n});\n",
+        "vite.config.ts"
+      )
+    ).toEqual([]);
+    expect(extractImportedPackages('import "./styles.css";\n// swap to the one from "lodash" later\n', "a.ts")).toEqual([]);
+  });
+
+  it("does not credit a doc-comment continuation line reached from an earlier export", () => {
+    // Editing an existing JSDoc block adds ` * ...` lines whose `/**` opener is
+    // unchanged context, so it isn't in the added lines to be blanked.
+    expect(extractImportedPackages('export function pick() {}\n * Mirrors the helper from "lodash".\n', "a.ts")).toEqual([]);
+  });
+
+  it("keeps a multi-line import's real source when a list line has a trailing // comment", () => {
+    const diff = 'import {\n  a, // re-exported from "old-pkg" before v2\n  b,\n} from "new-pkg";\n';
+    expect(extractImportedPackages(diff, "a.ts")).toEqual(["new-pkg"]);
+  });
+
+  it("does not match a require() inside a trailing // comment", () => {
+    expect(extractImportedPackages('const fs = await import("node:fs"); // was require("fs-extra")', "a.ts")).toEqual([
+      "node:fs",
+    ]);
+  });
+
+  it("does not treat // inside a string literal as a comment", () => {
+    expect(extractImportedPackages('const base = "https://cdn.example.com"; const z = require("zod");', "a.js")).toEqual([
+      "zod",
+    ]);
+  });
+
+  it("does not treat an escaped slash followed by / in a regex literal as a comment", () => {
+    expect(extractImportedPackages('const re = /^https?:\\/\\//; const s = require("stripe");', "a.js")).toEqual([
+      "stripe",
+    ]);
+  });
+
   it("does not treat a relative import as a package", () => {
     expect(extractImportedPackages('import { a } from "./util";', "a.ts")).toEqual([]);
     expect(extractImportedPackages('import b from "../lib/x";', "a.ts")).toEqual([]);
@@ -145,6 +187,22 @@ describe("extractImportedPackages — Go", () => {
   it("does not treat // inside a quoted path as a comment", () => {
     const diff = 'import (\n\t"github.com/foo//bar"\n)';
     expect(extractImportedPackages(diff, "main.go")).toEqual(["github.com/foo//bar"]);
+  });
+
+  it("does not let a ) in a // comment line end an import block early", () => {
+    // `// TODO(name): ...` is a common Go comment shape; its `)` used to close
+    // the lazily matched block and drop every import listed after it.
+    const diff =
+      'import (\n\t"context"\n\t// TODO(jdoe): drop once v2 lands\n\t"github.com/modelcontextprotocol/go-sdk/mcp"\n)';
+    expect(extractImportedPackages(diff, "main.go")).toEqual([
+      "context",
+      "github.com/modelcontextprotocol/go-sdk/mcp",
+    ]);
+  });
+
+  it("does not let a ) in a trailing comment end an import block early", () => {
+    const diff = 'import (\n\t"fmt" // formatting (stdlib)\n\t"github.com/gin-gonic/gin"\n)';
+    expect(extractImportedPackages(diff, "main.go")).toEqual(["fmt", "github.com/gin-gonic/gin"]);
   });
 
   it("extracts a single-line blank import", () => {
@@ -424,6 +482,22 @@ describe("extractImportedPackages — Swift", () => {
   it("does not match a commented-out Package.swift dependency", () => {
     const diff = '// .package(url: "https://github.com/Alamofire/Alamofire.git", from: "5.0.0"),';
     expect(extractImportedPackages(diff, "Package.swift")).toEqual([]);
+  });
+
+  it("does not match a Package.swift dependency inside a trailing // comment", () => {
+    // The kept dependency's own URL contains `//` inside its quotes, which
+    // must not be mistaken for the start of the comment.
+    const diff =
+      '.package(url: "https://github.com/apple/swift-log.git", from: "1.0.0"), // was .package(url: "https://github.com/vapor/vapor.git", from: "4.0.0")';
+    expect(extractImportedPackages(diff, "Package.swift")).toEqual(["swift-log"]);
+  });
+
+  it("extracts a multi-line .package( call with a // comment line before url:", () => {
+    // With the comment blanked, the pattern's whitespace runs across that line
+    // the same way it already runs across a plain line break.
+    const diff =
+      '.package(\n    // Pinned until the 6.x migration lands.\n    url: "https://github.com/Alamofire/Alamofire.git", from: "5.0.0"),';
+    expect(extractImportedPackages(diff, "Package.swift")).toEqual(["alamofire"]);
   });
 
   it("strips a literal .swift repo-name suffix so it matches the module's own import name (GRDB.swift -> grdb)", () => {
