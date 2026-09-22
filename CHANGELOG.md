@@ -11,6 +11,11 @@ always bump at least minor; breaking schema changes bump major.
 - Add `payments/square` to the closed skill taxonomy (#14).
 
 ### Fixed
+- Git subprocess failures no longer echo raw `stderr` in CLI error messages
+  (`git log`, `git ls-tree`, and synchronous `git` helpers). Stderr is used
+  only to classify known cases (e.g. not a repository); everything else gets
+  a closed `git <verb> failed (exit N).` phrase, matching the network error
+  discipline.
 - Tier 1 import extraction now credits a single-line Go dot import
   (`import . "path"`). The block form and the blank/aliased single-line forms
   already handled it, so dropping only this form was a false negative for
