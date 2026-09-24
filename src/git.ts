@@ -34,11 +34,23 @@ function git(repoPath: string, args: string[]): string {
   // argv only — NEVER repoPath/cwd (would reveal an employer/project name
   // if pasted into a public issue) and never the command's own output.
   debugLog(`git ${args.join(" ")}`);
-  return execFileSync("git", args, {
-    cwd: repoPath,
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "pipe"],
-  });
+  try {
+    return execFileSync("git", args, {
+      cwd: repoPath,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+  } catch (err) {
+    const execErr = err as { stderr?: string | Buffer; status?: number };
+    const stderr =
+      typeof execErr.stderr === "string"
+        ? execErr.stderr
+        : execErr.stderr instanceof Buffer
+          ? execErr.stderr.toString("utf8")
+          : "";
+    const code = typeof execErr.status === "number" ? execErr.status : null;
+    throw gitFailureError(repoPath, `git ${args[0] ?? "command"}`, code, stderr);
+  }
 }
 
 const RECORD_SEP = "\x01";
@@ -63,12 +75,11 @@ const NOT_A_GIT_REPO_PATTERN = /not a git repository/;
 
 /**
  * Turns a failed git subprocess's stderr into the Error a caller should
- * reject/throw with. A "not a git repository" failure becomes a ScanError
- * with an actionable, user-facing message (so program.ts's top-level
- * handler prints a clean one-line message instead of an uncaught stack
- * trace); every other failure keeps the existing generic Error shape,
- * unchanged, since it isn't a case this function has an actionable message
- * for.
+ * reject/throw with. Stderr is read only to classify the failure — same
+ * discipline as NetworkError (closed phrases out, never echo git's text).
+ * A "not a git repository" failure becomes a ScanError with an actionable,
+ * user-facing message (so program.ts's top-level handler prints a clean
+ * one-line message instead of an uncaught stack trace).
  */
 function gitFailureError(repoPath: string, command: string, code: number | null, stderr: string): Error {
   if (NOT_A_GIT_REPO_PATTERN.test(stderr)) {
@@ -76,7 +87,8 @@ function gitFailureError(repoPath: string, command: string, code: number | null,
       `Not a git repository: ${repoPath}. Run redential scan from inside a git repository, or pass --repo <path-to-repo>.`
     );
   }
-  return new Error(`${command} failed (exit ${code}): ${stderr.trim() || "unknown error"}`);
+  const exit = code === null ? "unknown" : String(code);
+  return new ScanError(`${command} failed (exit ${exit}).`);
 }
 
 function parseCommitRecord(record: string): RawCommit {

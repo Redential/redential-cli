@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { cleanup, commit, createRepo, createShallowClone } from "./support/fixtures.js";
@@ -371,6 +371,35 @@ describe("getConfiguredUserEmail", () => {
     dirs.push(dir);
     execFileSync("git", ["config", "user.email", "nobody-else@example.com"], { cwd: dir });
     expect(getConfiguredUserEmail(dir)).toBe("nobody-else@example.com");
+  });
+});
+
+describe("getAllCommits — git subprocess errors", () => {
+  it("rejects with a closed message when git log fails for a reason other than an empty repo", async () => {
+    const dir = createRepo();
+    dirs.push(dir);
+    commit(dir, {
+      message: "seed",
+      authorName: "A",
+      authorEmail: "a@example.com",
+      files: { "a.txt": "x" },
+    });
+    const objectsDir = join(dir, ".git", "objects");
+    for (const hex of readdirSync(objectsDir)) {
+      if (hex === "info") continue;
+      rmSync(join(objectsDir, hex), { recursive: true, force: true });
+    }
+
+    await expect(getAllCommits(dir)).rejects.toThrow(ScanError);
+    await expect(getAllCommits(dir)).rejects.toThrow(/git log failed \(exit/);
+    try {
+      await getAllCommits(dir);
+      expect.unreachable();
+    } catch (err) {
+      expect(err).toBeInstanceOf(ScanError);
+      expect((err as Error).message).not.toContain("fatal:");
+      expect((err as Error).message).not.toContain("bad object");
+    }
   });
 });
 
