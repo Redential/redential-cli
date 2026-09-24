@@ -38,6 +38,18 @@ one-shot commands leave behind and later one-shot commands read
 For scanning, one-shot stays the whole story: git is already the journal, a
 retroactive scan reconstructs everything.
 
+Consent shape: any prompt whose "yes" grants authorization to analyze a
+repository has **no implied default**. It reads `(y/n)`, never `(Y/n)` or
+`(y/N)`, and a bare Enter or any answer that isn't an explicit yes/no
+re-asks instead of being inferred. That holds on every path, including the
+repeat-scan fast paths, which delegate to the same confirmation rather than
+asking their own question (guarded in `test/prompt.test.ts`). The single
+upload confirmation after `submit` prints the exact JSON is a deliberate
+exception: it defaults to yes, because the literal bytes are on screen
+right before it and declining keeps the whole run network-silent (see
+[scan.md](scan.md)). Suggested by @rudi193-cmd in
+[#46](https://github.com/Redential/redential-cli/issues/46).
+
 ## 3. Bounded output
 
 Be precise about what this principle guarantees, because it is the one most
