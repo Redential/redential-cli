@@ -266,6 +266,49 @@ describe("runScan", () => {
     expect(validateAgainstSchema(schema, bundle)).toEqual([]);
   });
 
+  it("does not credit skills from imports inside a vendored tree (#27)", async () => {
+    const dir = repo();
+    const configDir = tempConfigDir();
+    commit(dir, {
+      message: "vendor stripe sdk copy",
+      authorName: "Ivy",
+      authorEmail: "ivy-vendor@example.com",
+      files: {
+        "vendor/stripe/fake.go":
+          'package fake\nimport "github.com/stripe/stripe-go/v76"\nfunc X() {}\n',
+      },
+    });
+    commit(dir, {
+      message: "real stripe integration",
+      authorName: "Ivy",
+      authorEmail: "ivy-vendor@example.com",
+      files: {
+        "src/lib/stripe.ts":
+          'import Stripe from "stripe";\n' +
+          "const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);\n" +
+          'const session = await stripe.checkout.sessions.create({ mode: "payment" });\n',
+      },
+    });
+
+    const bundle = await runScan({
+      repoPath: dir,
+      authors: ["ivy-vendor@example.com"],
+      confirmed: true,
+      toolVersion: "0.1.0",
+      configDir,
+    });
+
+    expect(bundle.detected_skills).toEqual([
+      {
+        slug: "payments/stripe",
+        commit_count: 1,
+        first_seen: bundle.commits.last_at,
+        last_seen: bundle.commits.last_at,
+      },
+    ]);
+    expect(validateAgainstSchema(schema, bundle)).toEqual([]);
+  });
+
   it("populates detected_skills from a real signature match (Stripe import + API call)", async () => {
     const dir = repo();
     const configDir = tempConfigDir();

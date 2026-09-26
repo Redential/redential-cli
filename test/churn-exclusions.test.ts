@@ -32,6 +32,18 @@ describe("isExcludedPath", () => {
     expect(isExcludedPath("rebuild-tool/index.ts")).toBe(false);
   });
 
+  it("excludes checked-in vendored dependency trees by directory segment", () => {
+    expect(isExcludedPath("vendor/github.com/foo/bar.go")).toBe(true);
+    expect(isExcludedPath("third_party/llvm/foo.cc")).toBe(true);
+    expect(isExcludedPath("lib/third-party/pkg/index.js")).toBe(true);
+    expect(isExcludedPath("vendored/deps/helper.py")).toBe(true);
+  });
+
+  it("does not exclude paths where vendor appears only inside a segment name", () => {
+    expect(isExcludedPath("src/vendor-api/client.ts")).toBe(false);
+    expect(isExcludedPath("apps/revendor/main.go")).toBe(false);
+  });
+
   it("does not exclude ordinary authored source", () => {
     expect(isExcludedPath("src/index.ts")).toBe(false);
     expect(isExcludedPath("src/main.js")).toBe(false);

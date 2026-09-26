@@ -163,6 +163,9 @@ can dwarf months of actually authored code and dominate every share.
 - **Build-output directories**: any path with `dist/`, `build/`, `.next/`,
   or `node_modules/` as a full path segment (not a substring — a directory
   literally named `redistribute/` is not excluded).
+- **Vendored dependency trees**: any path with `vendor/`, `vendored/`,
+  `third_party/`, or `third-party/` as a full path segment (Go `vendor/`,
+  Composer `vendor/`, Chromium-style `third_party/`, etc.).
 - **Heuristically generated files**: a path whose entire churn — within the
   selected author's own commits — is exactly ONE commit that added at least
   1,000 lines (`GENERATED_FILE_MIN_ADDED_LINES`), with no commit touching it
