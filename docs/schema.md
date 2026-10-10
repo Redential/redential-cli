@@ -163,6 +163,9 @@ can dwarf months of actually authored code and dominate every share.
 - **Build-output directories**: any path with `dist/`, `build/`, `.next/`,
   or `node_modules/` as a full path segment (not a substring — a directory
   literally named `redistribute/` is not excluded).
+- **Vendored dependency trees**: any path with `vendor/`, `vendored/`,
+  `third_party/`, or `third-party/` as a full path segment (Go `vendor/`,
+  Composer `vendor/`, Chromium-style `third_party/`, etc.).
 - **Heuristically generated files**: a path whose entire churn — within the
   selected author's own commits — is exactly ONE commit that added at least
   1,000 lines (`GENERATED_FILE_MIN_ADDED_LINES`), with no commit touching it
@@ -199,6 +202,15 @@ How detection works, and why it is safe to have in the bundle:
   [`taxonomy.json`](../taxonomy.json) (public, versioned in this repo). Any
   slug outside that list makes the bundle invalid. The taxonomy is the
   complete, enumerable universe of what detection can ever report.
+- **Same path exclusions as churn.** Every detection tier (Tier 1
+  imports, Tier 2 signatures, and the structural tier, including
+  `redential explain`) skips lockfiles, minified JS, build-output dirs, and
+  vendored dependency trees, the name/shape exclusions listed in "What is
+  excluded from churn". Tier 1/2 also skip heuristically generated files
+  (the single-commit 1,000+ line dump rule); the structural tier applies
+  its own extra generated-code exclusions instead (see "Snapshot-local
+  exclusions" in [proof-graph-spike.md](proof-graph-spike.md)). A vendored
+  copy of a library can never credit a slug.
 - **No evidence payload.** Per skill, only `commit_count`, `first_seen`,
   `last_seen`, and — since 1.2.0 — the two optional fields below. Never
   the matched lines, file names, or any excerpt.

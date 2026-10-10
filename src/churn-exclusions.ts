@@ -14,6 +14,12 @@ const MINIFIED_PATTERN = /\.min\.js$/i;
 // substring like "redistribute/" or a same-named leaf file.
 const GENERATED_DIR_PATTERN = /(^|\/)(dist|build|\.next|node_modules)\//i;
 
+// Checked-in third-party trees (Go vendor/, Composer vendor/, C++ third_party/,
+// etc.) — same full-segment rule as GENERATED_DIR_PATTERN so `vendor-api/` is
+// not excluded. Skill detection and churn shares skip these paths so a
+// vendored copy of a library cannot credit the author (#27).
+const VENDORED_DIR_PATTERN = /(^|\/)(vendor|vendored|third_party|third-party)\//i;
+
 // `path` is always a git-reported path (see categorize.ts's own note), so
 // splitting on "/" is correct on every host OS, including Windows — this
 // is deliberately not node:path's `basename`, which would split on "\"
@@ -26,7 +32,12 @@ function basename(path: string): string {
 /** Lockfile, minified bundle, or build-output path — excluded by name/shape
  * alone, with no need to look at commit history. */
 export function isExcludedPath(path: string): boolean {
-  return LOCKFILE_BASENAMES.has(basename(path)) || MINIFIED_PATTERN.test(path) || GENERATED_DIR_PATTERN.test(path);
+  return (
+    LOCKFILE_BASENAMES.has(basename(path)) ||
+    MINIFIED_PATTERN.test(path) ||
+    GENERATED_DIR_PATTERN.test(path) ||
+    VENDORED_DIR_PATTERN.test(path)
+  );
 }
 
 // A file whose entire churn history (within the selected author's commits)

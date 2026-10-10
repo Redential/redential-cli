@@ -13,6 +13,11 @@ always bump at least minor; breaking schema changes bump major.
 - Detect Adyen via the `@adyen/api-library`, `@adyen/adyen-web`, and `@adyen/react-native` imports, mapped to `payments/adyen` (#14).
 
 ### Fixed
+- Churn, categories, and skill detection (Tier 1/2 and the structural
+  tier, including `redential explain`) now skip paths under
+  `vendor/`, `vendored/`, `third_party/`, or `third-party/` (full path
+  segments only), so checked-in dependency trees cannot credit slugs the
+  author did not integrate (#96, refs #27, by @rudi193-cmd).
 - Git subprocess failures no longer echo raw `stderr` in CLI error messages
   (`git log`, `git ls-tree`, and synchronous `git` helpers). Stderr is used
   only to classify known cases (e.g. not a repository); everything else gets
