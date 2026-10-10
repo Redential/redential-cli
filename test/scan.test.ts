@@ -274,8 +274,8 @@ describe("runScan", () => {
       authorName: "Ivy",
       authorEmail: "ivy-vendor@example.com",
       files: {
-        "vendor/stripe/fake.go":
-          'package fake\nimport "github.com/stripe/stripe-go/v76"\nfunc X() {}\n',
+        "vendor/stripe/index.js":
+          'import Stripe from "stripe";\nconst s = new Stripe("k");\n',
       },
     });
     commit(dir, {
