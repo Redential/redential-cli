@@ -260,7 +260,7 @@ const DIFF_BATCH_SIZE = 200;
  *
  * Merge commits are skipped, same as getAllCommits' own numstat (which
  * emits none for them) — no combined-diff handling needed. Files excluded
- * from churn (lockfiles, build output, single-commit generated dumps —
+ * from churn (lockfiles, build output, vendored trees, single-commit generated dumps —
  * src/churn-exclusions.ts) are excluded here too, for BOTH tiers: a
  * vendored dependency's content matching an import pattern would be a
  * false "you wrote this" signal, not a real one.

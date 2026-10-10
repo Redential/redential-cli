@@ -202,6 +202,12 @@ How detection works, and why it is safe to have in the bundle:
   [`taxonomy.json`](../taxonomy.json) (public, versioned in this repo). Any
   slug outside that list makes the bundle invalid. The taxonomy is the
   complete, enumerable universe of what detection can ever report.
+- **Same exclusions as churn.** Every detection tier (Tier 1 imports,
+  Tier 2 signatures, and the structural tier, including `redential
+  explain`) skips the same paths listed in "What is excluded from churn":
+  lockfiles, minified JS, build-output dirs, vendored dependency trees, and
+  heuristically generated files. A vendored copy of a library can never
+  credit a slug.
 - **No evidence payload.** Per skill, only `commit_count`, `first_seen`,
   `last_seen`, and — since 1.2.0 — the two optional fields below. Never
   the matched lines, file names, or any excerpt.

@@ -404,8 +404,8 @@ function computeChurnBreakdown(userCommits: RawCommit[]): {
     for (const f of c.churn) {
       const churn = f.added + f.deleted;
       if (churn === 0) continue;
-      // Lockfiles, minified bundles, build-output dirs, and single-commit
-      // generated dumps are checked-in artifacts, not authored work — see
+      // Lockfiles, minified bundles, build-output dirs, vendored dependency
+      // trees, and single-commit generated dumps are checked-in artifacts, not authored work — see
       // docs/schema.md's "What is excluded from churn".
       if (isExcludedPath(f.path) || generatedPaths.has(f.path)) continue;
 
